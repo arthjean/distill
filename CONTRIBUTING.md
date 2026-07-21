@@ -13,7 +13,7 @@ Thank you for your interest in contributing to Distill! This document provides g
 
 ```bash
 # Clone the repository
-git clone https://github.com/ArthurDEV44/distill.git
+git clone https://github.com/arthjean/distill.git
 cd distill
 
 # Install dependencies
@@ -33,7 +33,7 @@ distill/
 ```
 
 > The landing page & docs site lives in a separate private repo
-> (`ArthurDEV44/distill-web`), deployed to distill-mcp.com.
+> (`arthjean/distill-web`), deployed to distill-mcp.com.
 
 ## Development Workflow
 

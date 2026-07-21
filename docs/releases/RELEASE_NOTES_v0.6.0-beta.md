@@ -69,7 +69,7 @@ This beta release marks the completion of all 6 development phases.
 ## Links
 
 - **npm**: https://www.npmjs.com/package/distill-mcp
-- **GitHub**: https://github.com/ArthurDEV44/ctxopt
+- **GitHub**: https://github.com/arthjean/ctxopt
 
 ---
 

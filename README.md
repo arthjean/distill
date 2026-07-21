@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/distill-mcp"><img alt="npm version" src="https://img.shields.io/npm/v/distill-mcp?color=cb3837&logo=npm"></a>
   <a href="https://www.npmjs.com/package/distill-mcp"><img alt="npm downloads" src="https://img.shields.io/npm/dm/distill-mcp?color=cb3837"></a>
-  <a href="https://github.com/ArthurDEV44/distill/actions/workflows/build.yml"><img alt="CI" src="https://github.com/ArthurDEV44/distill/actions/workflows/build.yml/badge.svg"></a>
+  <a href="https://github.com/arthjean/distill/actions/workflows/build.yml"><img alt="CI" src="https://github.com/arthjean/distill/actions/workflows/build.yml/badge.svg"></a>
   <a href="https://smithery.ai/server/@ArthurDEV44/distill-mcp"><img alt="Smithery" src="https://smithery.ai/badge/@ArthurDEV44/distill-mcp"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Node.js" src="https://img.shields.io/node/v/distill-mcp">
@@ -22,7 +22,7 @@
   <a href="#the-3-tools">The 3 tools</a> ·
   <a href="#where-it-fits">Where it fits</a> ·
   <a href="https://distill-mcp.com">Docs</a> ·
-  <a href="https://github.com/ArthurDEV44/distill/discussions">Discussions</a>
+  <a href="https://github.com/arthjean/distill/discussions">Discussions</a>
 </p>
 
 **Distill** is an open-source [MCP](https://modelcontextprotocol.io) server that compresses context *at the source*. Build output, logs, diffs, and whole-file reads get distilled down to the tokens that actually matter — so your agent reads more, spends less, and stays sharp deeper into a session. Three always-loaded tools, present from turn 1, replace dozens of individual calls. Works with Claude Code, Cursor, and Windsurf.
@@ -262,8 +262,8 @@ Built with Bun workspaces + Turborepo. The published package lives in `packages/
 
 ## Community
 
-- **[GitHub Discussions](https://github.com/ArthurDEV44/distill/discussions)** — questions, ideas, feedback
-- **[Issues](https://github.com/ArthurDEV44/distill/issues)** — bug reports
+- **[GitHub Discussions](https://github.com/arthjean/distill/discussions)** — questions, ideas, feedback
+- **[Issues](https://github.com/arthjean/distill/issues)** — bug reports
 - **[Documentation](https://distill-mcp.com)** — full docs site
 
 ## Contributing
@@ -285,7 +285,7 @@ If Distill saves you tokens, a ⭐ helps other people find it.
 
 <p align="center">
   <a href="https://www.npmjs.com/package/distill-mcp">npm</a> ·
-  <a href="https://github.com/ArthurDEV44/distill">GitHub</a> ·
+  <a href="https://github.com/arthjean/distill">GitHub</a> ·
   <a href="https://distill-mcp.com">Documentation</a> ·
-  <a href="https://github.com/ArthurDEV44/distill/discussions">Discussions</a>
+  <a href="https://github.com/arthjean/distill/discussions">Discussions</a>
 </p>

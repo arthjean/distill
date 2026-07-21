@@ -1,7 +1,7 @@
 {
   // knip v6 — strict JSON file, comments tolerated only via .jsonc extension.
   // Scope per PRD US-012: gate on packages/mcp-server/**.
-  // The web app moved to the external ArthurDEV44/distill-web repo; the
+  // The web app moved to the external arthjean/distill-web repo; the
   // eslint-config / typescript-config workspaces are out of scope.
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreWorkspaces": [

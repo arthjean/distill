@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas
-    url: https://github.com/ArthurDEV44/distill/discussions
+    url: https://github.com/arthjean/distill/discussions
     about: Use Discussions for support questions, roadmap ideas, and early feature proposals.
   - name: Latest release
     url: https://www.npmjs.com/package/distill-mcp

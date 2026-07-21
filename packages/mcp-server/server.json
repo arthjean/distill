@@ -3,7 +3,7 @@
   "name": "io.github.ArthurDEV44/distill",
   "description": "MCP server that cuts LLM token usage up to 98% via content-aware compression + AST code reading.",
   "repository": {
-    "url": "https://github.com/ArthurDEV44/distill",
+    "url": "https://github.com/arthjean/distill",
     "source": "github"
   },
   "version": "0.11.2",

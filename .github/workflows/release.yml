@@ -5,7 +5,7 @@ name: Release
 # over OIDC and npm mints a short-lived credential for this single publish, with
 # a verifiable provenance attestation. Setup once on npmjs.com:
 # package distill-mcp > Settings > Trusted Publishing > GitHub Actions,
-# repo ArthurDEV44/distill, workflow release.yml.
+# repo arthjean/distill, workflow release.yml.
 #
 # Flow: bump the version + push to main (CI runs full tests), then push a
 # matching vX.Y.Z tag to trigger this workflow. The GitHub Release and its notes

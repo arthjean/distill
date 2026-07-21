@@ -30,7 +30,7 @@ Turborepo monorepo. Node `>= 20`. ESM only.
 - `packages/typescript-config/` — TS presets (`base.json`, `nextjs.json`).
 
 The landing + fumadocs docs site (formerly `apps/web/`) moved to the external
-private repo `ArthurDEV44/distill-web`, deployed to distill-mcp.com.
+private repo `arthjean/distill-web`, deployed to distill-mcp.com.
 
 ## Environment setup
 
