@@ -1,0 +1,39 @@
+{
+  "schema_version": "distill.macos-qualification/v1",
+  "target": "macos-arm64",
+  "git_revision": "f912331e12bf32ed5e2b01ed2db9c05c797d83e4",
+  "source_worktree_clean": true,
+  "binary_sha256": "11963684cd1c716e6f407d66f8be9a02f138626a61598666f1a05cb5c48d2a7d",
+  "machine": {
+    "os_version": "15.7.7",
+    "kernel": "24.6.0",
+    "architecture": "arm64",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  },
+  "release_suite": {
+    "format": "passed",
+    "clippy": "passed",
+    "contract_and_corpus_tests": "passed",
+    "build": "passed"
+  },
+  "surfaces": {
+    "codex": {
+      "install": "installed",
+      "repeat": "unchanged",
+      "uninstall": "restored_absent"
+    },
+    "claude": {
+      "install": "installed",
+      "repeat": "unchanged",
+      "uninstall": "restored_absent"
+    },
+    "project": {
+      "fidelity": "extractive",
+      "artifact_id": "994b00b05db16966005e0efdccb2447f",
+      "byte_exact_restore": true
+    }
+  },
+  "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30122631269",
+  "completed_at": "2026-07-24T20:05:15Z",
+  "status": "GO"
+}
