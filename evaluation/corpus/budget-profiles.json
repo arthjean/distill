@@ -1,0 +1,37 @@
+{
+  "schema_version": "distill.budget-profiles/v1",
+  "profiles": [
+    {
+      "id": "bytes-zero",
+      "unit": "bytes",
+      "total_visible_limit": 0,
+      "reserved_envelope": 0
+    },
+    {
+      "id": "bytes-256-envelope-32",
+      "unit": "bytes",
+      "total_visible_limit": 256,
+      "reserved_envelope": 32
+    },
+    {
+      "id": "bytes-2048-envelope-128",
+      "unit": "bytes",
+      "total_visible_limit": 2048,
+      "reserved_envelope": 128
+    },
+    {
+      "id": "bytes-8192-envelope-256",
+      "unit": "bytes",
+      "total_visible_limit": 8192,
+      "reserved_envelope": 256
+    },
+    {
+      "id": "tokens-cl100k-v1-512-envelope-64",
+      "unit": "tokens",
+      "total_visible_limit": 512,
+      "reserved_envelope": 64,
+      "token_profile": "cl100k_base@js-tiktoken-1.0.15"
+    }
+  ]
+}
+

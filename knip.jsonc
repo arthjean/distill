@@ -26,6 +26,15 @@
     "shellcheck"
   ],
   "workspaces": {
+    ".": {
+      "entry": [
+        "evaluation/corpus/check.mjs",
+        "evaluation/legacy/run.mjs"
+      ],
+      "project": [
+        "evaluation/**/*.mjs"
+      ]
+    },
     "packages/mcp-server": {
       "entry": [
         // Public package surface

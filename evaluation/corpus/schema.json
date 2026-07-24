@@ -1,0 +1,347 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://distill-mcp.com/schemas/projection-corpus-v1.json",
+  "title": "Distill projection corpus fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "category",
+    "description",
+    "reducible",
+    "source",
+    "source_sha256",
+    "budget_profile",
+    "expected",
+    "annotations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "distill.projection-fixture/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "category": {
+      "enum": [
+        "build-output",
+        "test-output",
+        "logs",
+        "diff",
+        "diagnostics",
+        "stack-trace",
+        "source-code",
+        "json",
+        "empty",
+        "unicode",
+        "malformed-bytes",
+        "prompt-injection",
+        "boundary"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "reducible": {
+      "type": "boolean"
+    },
+    "source": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/inlineSource"
+        },
+        {
+          "$ref": "#/$defs/fileSource"
+        },
+        {
+          "$ref": "#/$defs/processSource"
+        }
+      ]
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "budget_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected": {
+      "$ref": "#/$defs/expected"
+    },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p0",
+        "p1"
+      ],
+      "properties": {
+        "p0": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact"
+          }
+        },
+        "p1": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "payload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "utf8"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "base64"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "prefix_base64",
+            "fill_byte",
+            "byte_length"
+          ],
+          "properties": {
+            "kind": {
+              "const": "padded"
+            },
+            "prefix_base64": {
+              "type": "string"
+            },
+            "fill_byte": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "byte_length": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10485760
+            }
+          }
+        }
+      ]
+    },
+    "inlineSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "kind": {
+          "const": "inline"
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
+      }
+    },
+    "fileSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "root_id",
+        "relative_path",
+        "payload"
+      ],
+      "properties": {
+        "kind": {
+          "const": "file"
+        },
+        "root_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relative_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "stream",
+        "payload"
+      ],
+      "properties": {
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stream": {
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
+      }
+    },
+    "processSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "stdout",
+        "stderr",
+        "events",
+        "exit_code",
+        "signal",
+        "timed_out",
+        "working_directory",
+        "truncated"
+      ],
+      "properties": {
+        "kind": {
+          "const": "process"
+        },
+        "stdout": {
+          "$ref": "#/$defs/payload"
+        },
+        "stderr": {
+          "$ref": "#/$defs/payload"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "working_directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "needle_base64"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "needle_base64": {
+          "type": "string",
+          "minLength": 4
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_kind",
+        "content_class",
+        "byte_length",
+        "utf8_valid",
+        "complete",
+        "truncated",
+        "acquisition"
+      ],
+      "properties": {
+        "source_kind": {
+          "enum": [
+            "inline",
+            "file",
+            "process"
+          ]
+        },
+        "content_class": {
+          "type": "string",
+          "minLength": 1
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10485760
+        },
+        "utf8_valid": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "acquisition": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}
