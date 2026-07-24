@@ -58,3 +58,49 @@ After downloading that receipt,
 `bun evaluation/release/check-us018.mjs` produces the aggregate US-018 verdict.
 It requires paired and macOS `GO` reports from the same clean source revision;
 passing either gate independently cannot unblock migration.
+
+The closed v1 qualification and all of its evidence remain immutable. The
+separately authorized `us018-v2-20260724` qualification is pre-registered in
+`paired-tasks-v2.json` and `paired-qualification-v2-ledger.json`. It defines 50
+task pairs, 100 subscription invocations, zero incremental dollars, ten
+five-task categories, balanced providers and invocation order, task-specific
+questions, strict JSON schemas, and exact source-line rubrics. A raw baseline
+below 48/50 or a projected-minus-raw delta below -2 percentage points is
+`NO-GO`.
+
+Before any subscription call, build the release binary and run:
+
+```bash
+bun evaluation/release/run-paired-v2.mjs --validate-only
+```
+
+The one-shot execution command writes its report and invocation ledger only to
+`/tmp/distill-us018-v2-20260724`, leaving the candidate worktree clean:
+
+```bash
+bun evaluation/release/run-paired-v2.mjs --execute
+```
+
+Before execution, commit the complete pre-registration, then consume it in one
+dedicated child commit that changes only
+`paired-qualification-v2-ledger.json`, records the pre-registration commit, and
+sets `status` to `CONSUMED`. Push that clean consumption commit so it is the
+candidate qualified by macOS and both model CLIs. The runner rejects any other
+history shape.
+
+The fixed state directory is a secondary one-shot lock. The durable anti-replay
+record is the pushed consumption commit plus
+`refs/distill/qualifications/us018-v2-20260724`. The runner atomically extends
+that Git ref after every invocation with hashes of the prompt, observation, raw
+CLI stdout/stderr, and parsed response. Provider failures count against the
+ceiling and are scored as failures; no observation is retried. Authentication
+preflight must report ChatGPT login for Codex and first-party Claude Max login
+for Claude, after all API and cloud-provider variables are removed. Copy the
+completed report and execution ledger into their distinct v2 evidence paths
+only after the run terminates.
+
+The macOS workflow remains unchanged. Download its receipt for the same
+candidate SHA as `evidence/macos-arm64-v2.json`, preserving the historical
+receipt. `bun evaluation/release/check-us018-v2.mjs` then verifies historical
+hashes, manifest and execution-ledger hashes, exactly 100 ordered invocations,
+both independent `GO` gates, and the same clean source revision.
