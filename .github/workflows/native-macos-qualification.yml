@@ -20,6 +20,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
+          components: rustfmt, clippy
       - name: Run native qualification
         run: ./scripts/qualify-macos.sh
       - name: Upload qualification evidence
