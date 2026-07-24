@@ -1,0 +1,72 @@
+{
+  "schema_version": "distill.native-distribution/v1",
+  "strategy": "direct-native-release-assets",
+  "current_native_tree": "393725a17d8f8445f8c27677ae811d4015a9a835",
+  "release_performed": false,
+  "version_changed": false,
+  "checksum_scope": "integrity only; publication must use an authenticated release channel and a separately approved provenance or signature policy",
+  "npm_launcher": {
+    "selected": false,
+    "decision": "not selected for v1",
+    "reason": "The product boundary is one native executable using the system runtime libraries present on the supported packaging hosts. An npm launcher would add a second runtime, platform resolution, and another failure surface without a current requirement.",
+    "legacy_package": "distill-mcp@0.11.2 remains frozen until the separately authorized US-020 migration"
+  },
+  "assets": [
+    {
+      "platform": "linux-x86_64",
+      "rust_host": "x86_64-unknown-linux-gnu",
+      "archive": "distill-linux-x86_64.tar.gz",
+      "checksum": "distill-linux-x86_64.tar.gz.sha256",
+      "runtime_dependencies": [
+        "GNU libc",
+        "libgcc_s",
+        "system libsqlite3.so.0"
+      ],
+      "packaging_command": "bun run package:native",
+      "qualification": {
+        "evidence": "evaluation/release/evidence/automated-linux-x86_64.json",
+        "git_revision": "d2292ec6a8321e7c2261f9a88021fb4c899ec4c4",
+        "native_tree": "4db3f396d0bcb2c1e7b1931a851399e8ea17eb26",
+        "same_as_current_native_tree": false
+      },
+      "status": "prepared_pending_same_tree_qualification"
+    },
+    {
+      "platform": "macos-arm64",
+      "rust_host": "aarch64-apple-darwin",
+      "archive": "distill-macos-arm64.tar.gz",
+      "checksum": "distill-macos-arm64.tar.gz.sha256",
+      "runtime_dependencies": ["macOS system runtime", "system libsqlite3"],
+      "packaging_command": "bun run package:native",
+      "qualification": {
+        "evidence": "evaluation/release/evidence/macos-arm64-v5.json",
+        "git_revision": "ba6e47faabdbc8c2578419f5ad72ad452774d2f3",
+        "native_tree": "393725a17d8f8445f8c27677ae811d4015a9a835",
+        "same_as_current_native_tree": true
+      },
+      "status": "qualified"
+    }
+  ],
+  "unsupported_platforms": [
+    {
+      "platform": "windows-x86_64",
+      "reason": "No build, storage-permission, setup, or release qualification"
+    },
+    {
+      "platform": "windows-arm64",
+      "reason": "No build, storage-permission, setup, or release qualification"
+    },
+    {
+      "platform": "macos-x86_64",
+      "reason": "Outside the v1 release gate and not executed"
+    },
+    {
+      "platform": "linux-arm64",
+      "reason": "Outside the v1 release gate and not executed"
+    },
+    {
+      "platform": "linux-x86_64-musl",
+      "reason": "The qualified target is GNU Linux; no musl or static-link qualification exists"
+    }
+  ]
+}

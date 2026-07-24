@@ -27,6 +27,13 @@ native Claude `Read` or `Bash`. MCP stdout contains JSON-RPC only, and
 application failures use bounded `isError` tool results without raw source
 bodies.
 
+No v1 support is claimed for Cursor, Windsurf, Continue, generic MCP clients,
+Windows, macOS x86_64, Linux arm64, or Linux musl. The complete migration and
+unsupported-surface matrix is
+[`mcp-first-to-native.md`](../migration/mcp-first-to-native.md). The adapter
+boundaries and direct-native-asset decision are documented in
+[`native-context-projection-engine.md`](../architecture/native-context-projection-engine.md).
+
 Sources:
 
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks.md)

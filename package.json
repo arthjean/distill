@@ -2,15 +2,20 @@
   "name": "distill",
   "private": true,
   "packageManager": "bun@1.3.4",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
+    "build:native": "cargo build --locked --release --manifest-path native/distill-core/Cargo.toml",
+    "check:migration": "bun scripts/check-us019.mjs",
     "dev": "turbo run dev",
     "dev:mcp": "turbo run dev --filter @distill/mcp-server",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
-    "knip": "knip --reporter compact"
+    "knip": "knip --reporter compact",
+    "package:native": "./scripts/package-native.sh"
   },
   "devDependencies": {
     "distill-mcp": "workspace:*",
