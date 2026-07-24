@@ -1,9 +1,9 @@
 {
   "schema_version": "distill.paired-qualification-ledger/v3",
   "qualification_id": "us018-v3-20260724",
-  "status": "PRE_REGISTERED",
-  "pre_registration_commit": null,
-  "consumed_at": null,
+  "status": "CONSUMED",
+  "pre_registration_commit": "344400895385a894c0c891da027daa38ed20ff20",
+  "consumed_at": "2026-07-24T19:49:43Z",
   "manifest_path": "evaluation/release/paired-tasks-v3.json",
   "manifest_sha256": "5a9576c219eec2f51aa2d110bb7d76d24994fcc8a1ab9021f416b7731c8a2831",
   "authorization": {
