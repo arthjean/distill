@@ -163,3 +163,27 @@ bun evaluation/release/check-us018-v4.mjs
 Pre-registration and consumption remain separate commits. The unchanged macOS
 arm64 workflow must qualify the consumption SHA, and the checker independently
 downloads that run's receipt before the aggregate can become `GO`.
+
+The terminal v4 `NO-GO` evidence remains immutable. It proves that Claude Code
+can report auxiliary Haiku usage asymmetrically even when both answer-producing
+conditions explicitly request and report first-party `claude-fable-5`. That
+host-internal telemetry is not controllable through the subscription CLI.
+
+The separately authorized `us018-v5-20260724` qualification therefore freezes
+the PRD's same-model requirement at the controllable response-model boundary:
+both conditions must request `claude-fable-5` and report the exact first-party
+Fable identity. Missing or divergent primary identity stops execution
+permanently. Complete `modelUsage` lists, including auxiliary Haiku entries, are
+still hashed, attested, and reported for every call, but auxiliary-list
+differences are diagnostic and cannot independently fail or pass the gate.
+
+V5 keeps every other v4 constraint unchanged: 50 task pairs, at most 100
+subscription calls, zero incremental dollars, no API or fallback API, no retry,
+safe mode, no tools, no session persistence, external evidence, a new
+attestation ref, and the same clean candidate SHA for macOS.
+
+```bash
+bun evaluation/release/run-paired-v5.mjs --validate-only
+bun evaluation/release/run-paired-v5.mjs --execute
+bun evaluation/release/check-us018-v5.mjs
+```
