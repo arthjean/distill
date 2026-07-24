@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifestPath = join(root, "evaluation/release/paired-tasks.json");
+const ledgerPath = join(root, "evaluation/release/paired-attempt-ledger.json");
 const corpusPath = join(root, "evaluation/corpus/manifest.jsonl");
 const binary = resolve(
   process.env.DISTILL_BINARY ?? join(root, "native/distill-core/target/release/distill"),
@@ -15,6 +16,7 @@ const output = resolve(
   process.argv[2] ?? join(root, "evaluation/release/evidence/paired-tasks.json"),
 );
 const specification = JSON.parse(await readFile(manifestPath, "utf8"));
+await enforceQualificationCeiling();
 const fixtures = new Map(
   (await readFile(corpusPath, "utf8"))
     .trim()
@@ -33,6 +35,14 @@ const startedAt = new Date().toISOString();
 const codexVersion = commandVersion("codex", ["--version"]);
 const claudeVersion = commandVersion("claude", ["--version"]);
 const gitRevision = commandVersion("git", ["-C", root, "rev-parse", "HEAD"]);
+const sourceWorktreeClean =
+  commandVersion("git", [
+    "-C",
+    root,
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all",
+  ]) === "";
 const binarySha256 = sha256(await readFile(binary));
 const manifestSha256 = sha256(await readFile(manifestPath));
 let saveChain = Promise.resolve();
@@ -76,8 +86,8 @@ async function runProvider(provider, tasks) {
         raw: task.originalTokens,
         projected: task.visibleTokens,
       },
-      raw: score(raw, task.requiredFacts),
-      projected: score(projected, task.requiredFacts),
+      raw: score(raw, task.requiredFacts, task.requiredSourceLines),
+      projected: score(projected, task.requiredFacts, task.requiredSourceLines),
     });
     await saveReport("in_progress");
   }
@@ -100,12 +110,21 @@ function prepareTask(definition) {
   if (projected.visible === raw || projected.visibleTokens >= projected.originalTokens) {
     throw new Error(`${fixture.id} did not produce a reduced paired observation`);
   }
+  const sourceLines = raw.split(/\r?\n/);
+  const requiredSourceLines = requiredFacts.map((fact) => {
+    const matches = sourceLines.filter((line) => line.includes(fact));
+    if (matches.length !== 1) {
+      throw new Error(`${fixture.id} P0 fact does not identify exactly one source line`);
+    }
+    return matches[0];
+  });
   return {
     ...definition,
     fixture,
     raw,
     projected: projected.visible,
     requiredFacts,
+    requiredSourceLines,
     budgetTokens,
     originalTokens: projected.originalTokens,
     visibleTokens: projected.visibleTokens,
@@ -265,7 +284,7 @@ function parseClaude(stdout) {
   };
 }
 
-function score(invocation, requiredFacts) {
+function score(invocation, requiredFacts, requiredSourceLines) {
   let decisiveLines = [];
   let parseError = null;
   try {
@@ -274,7 +293,7 @@ function score(invocation, requiredFacts) {
     parseError = error instanceof Error ? error.message : String(error);
   }
   const missingFacts = requiredFacts.filter(
-    (fact) => !decisiveLines.some((line) => line.includes(fact)),
+    (_fact, index) => !decisiveLines.includes(requiredSourceLines[index]),
   );
   return {
     success: parseError === null && missingFacts.length === 0,
@@ -323,6 +342,7 @@ function buildReport(phase) {
     completed_at: complete ? new Date().toISOString() : null,
     evaluated_inputs: {
       git_revision: gitRevision,
+      source_worktree_clean: sourceWorktreeClean,
       native_binary_sha256: binarySha256,
       paired_task_manifest_sha256: manifestSha256,
     },
@@ -360,7 +380,7 @@ function buildReport(phase) {
       },
     },
     scoring: {
-      rule: "all annotated P0 facts must appear verbatim in parsed decisive_lines",
+      rule: "every parsed decisive line must equal the complete source line containing its P0 fact",
       sample_size: sampleSize,
       confidence_method: "conservative difference of two 95% Wilson intervals",
       raw_successes: rawSuccesses,
@@ -478,6 +498,46 @@ function commandVersion(command, args) {
     throw new Error(`${command} version failed: ${result.stderr.trim()}`);
   }
   return result.stdout.trim();
+}
+
+async function enforceQualificationCeiling() {
+  let ledger;
+  try {
+    ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT" && specification.attempt === 1) {
+      return;
+    }
+    throw new Error("paired attempt ledger is missing or invalid");
+  }
+  let usedInvocations = 0;
+  for (const entry of ledger.attempts ?? []) {
+    const bytes = await readFile(join(root, entry.path));
+    if (sha256(bytes) !== entry.sha256) {
+      throw new Error(`paired attempt ${entry.attempt} digest mismatch`);
+    }
+    const report = JSON.parse(bytes);
+    if (
+      report.phase !== "complete" ||
+      report.status !== entry.status ||
+      report.scoring?.sample_size !== 20 ||
+      entry.invocations !== 40
+    ) {
+      throw new Error(`paired attempt ${entry.attempt} evidence is inconsistent`);
+    }
+    usedInvocations += entry.invocations;
+  }
+  if (
+    specification.maximum_qualification_invocations !==
+      ledger.maximum_qualification_invocations ||
+    usedInvocations !== ledger.total_invocations ||
+    usedInvocations + specification.maximum_invocations_per_attempt >
+      ledger.maximum_qualification_invocations
+  ) {
+    throw new Error(
+      "paired qualification is closed at its approved invocation ceiling; new approval required",
+    );
+  }
 }
 
 function sha256(bytes) {

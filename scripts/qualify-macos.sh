@@ -6,18 +6,57 @@ MANIFEST="$ROOT/native/distill-core/Cargo.toml"
 BINARY="$ROOT/native/distill-core/target/release/distill"
 OUTPUT="${1:-$ROOT/evaluation/release/evidence/macos-arm64.json}"
 RUN_DIRECTORY="$(mktemp -d "${TMPDIR:-/tmp}/distill-macos.XXXXXX")"
+source_worktree_clean=false
 
 cleanup() {
   if [[ -d "$RUN_DIRECTORY" && "$(basename "$RUN_DIRECTORY")" == distill-macos.* ]]; then
     rm -r "$RUN_DIRECTORY"
   fi
 }
-trap cleanup EXIT
+
+finish() {
+  local exit_code="$?"
+  set +e
+  if [[ "$exit_code" -ne 0 ]]; then
+    mkdir -p "$(dirname "$OUTPUT")"
+    binary_sha256=""
+    if [[ -f "$BINARY" ]]; then
+      binary_sha256="$(shasum -a 256 "$BINARY" | awk '{ print $1 }')"
+    fi
+    jq -n \
+      --arg git_revision "${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD)}" \
+      --arg architecture "$(uname -m)" \
+      --arg binary_sha256 "$binary_sha256" \
+      --arg workflow_run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-unknown}/actions/runs/${GITHUB_RUN_ID:-unknown}" \
+      --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson source_worktree_clean "$source_worktree_clean" \
+      --argjson exit_code "$exit_code" \
+      '{
+        schema_version: "distill.macos-qualification/v1",
+        target: "macos-arm64",
+        git_revision: $git_revision,
+        source_worktree_clean: $source_worktree_clean,
+        binary_sha256: (if $binary_sha256 == "" then null else $binary_sha256 end),
+        machine: { architecture: $architecture },
+        failure_exit_code: $exit_code,
+        workflow_run_url: $workflow_run_url,
+        completed_at: $completed_at,
+        status: "NO-GO"
+      }' > "$OUTPUT"
+  fi
+  cleanup
+}
+trap finish EXIT
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
   echo "macOS qualification requires a Darwin arm64 runner" >&2
   exit 1
 fi
+if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
+  echo "macOS qualification requires a clean source worktree" >&2
+  exit 1
+fi
+source_worktree_clean=true
 
 cargo fmt --manifest-path "$MANIFEST" --check
 cargo clippy --manifest-path "$MANIFEST" --all-targets -- -D warnings
@@ -78,7 +117,7 @@ done > "$RUN_DIRECTORY/expected.txt"
   --json < "$RUN_DIRECTORY/expected.txt" > "$RUN_DIRECTORY/project.json"
 jq -e \
   '.ok == true and
-   .result.receipt.fidelity == "reduced" and
+   .result.receipt.fidelity == "extractive" and
    (.result.artifact.id | type == "string")' \
   "$RUN_DIRECTORY/project.json" >/dev/null
 artifact_id="$(jq -er '.result.artifact.id' "$RUN_DIRECTORY/project.json")"
@@ -86,6 +125,7 @@ artifact_id="$(jq -er '.result.artifact.id' "$RUN_DIRECTORY/project.json")"
   --store "$store" \
   artifact get "$artifact_id" > "$RUN_DIRECTORY/restored.txt"
 cmp "$RUN_DIRECTORY/expected.txt" "$RUN_DIRECTORY/restored.txt"
+binary_sha256="$(shasum -a 256 "$BINARY" | awk '{ print $1 }')"
 
 mkdir -p "$(dirname "$OUTPUT")"
 jq -n \
@@ -94,6 +134,8 @@ jq -n \
   --arg kernel "$(uname -r)" \
   --arg architecture "$(uname -m)" \
   --arg rustc "$(rustc --version)" \
+  --arg binary_sha256 "$binary_sha256" \
+  --arg workflow_run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-unknown}/actions/runs/${GITHUB_RUN_ID:-unknown}" \
   --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --slurpfile codex_install "$RUN_DIRECTORY/codex-install.json" \
   --slurpfile codex_repeat "$RUN_DIRECTORY/codex-repeat.json" \
@@ -106,6 +148,8 @@ jq -n \
     schema_version: "distill.macos-qualification/v1",
     target: "macos-arm64",
     git_revision: $git_revision,
+    source_worktree_clean: true,
+    binary_sha256: $binary_sha256,
     machine: {
       os_version: $os_version,
       kernel: $kernel,
@@ -135,6 +179,7 @@ jq -n \
         byte_exact_restore: true
       }
     },
+    workflow_run_url: $workflow_run_url,
     completed_at: $completed_at,
     status: "GO"
   }' > "$OUTPUT"

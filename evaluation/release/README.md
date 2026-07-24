@@ -44,9 +44,17 @@ budget at 24 tokens, the smallest satisfiable value that places the failing-test
 identity directly beside its expected/actual assertion. The approved
 qualification ceiling is three 40-invocation attempts and zero incremental
 dollars; every attempt uses only the existing subscriptions.
+`paired-attempt-ledger.json` hashes all three reports and closes the
+qualification at 120 invocations. The evaluator refuses any replay without a
+new approval.
 
 `.github/workflows/native-macos-qualification.yml` runs the release contract and
 corpus suite on the official `macos-15` arm64 image. It also exercises Codex and
 Claude setup, idempotent repeat, restore/uninstall, projection, and byte-exact
 artifact recovery. The uploaded `macos-arm64.json` artifact is the
 second-platform qualification receipt.
+
+After downloading that receipt,
+`bun evaluation/release/check-us018.mjs` produces the aggregate US-018 verdict.
+It requires paired and macOS `GO` reports from the same clean source revision;
+passing either gate independently cannot unblock migration.

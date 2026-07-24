@@ -1,0 +1,33 @@
+{
+  "schema_version": "distill.paired-attempt-ledger/v1",
+  "billing_mode": "existing ChatGPT Pro and Claude Max subscriptions",
+  "approved_incremental_spend_usd": 0,
+  "maximum_qualification_invocations": 120,
+  "attempts": [
+    {
+      "attempt": 1,
+      "path": "evaluation/release/evidence/paired-tasks-attempt-1.json",
+      "sha256": "4072b7e45be61afdbc0e4b14f6452e8cc391f466466f4ab7f46ea1913b89ab09",
+      "invocations": 40,
+      "status": "NO-GO"
+    },
+    {
+      "attempt": 2,
+      "path": "evaluation/release/evidence/paired-tasks-attempt-2.json",
+      "sha256": "e94cd3fb830cb973de1304c1c24ad50f6a204f6ce0180923c4c23ab53c795fc5",
+      "invocations": 40,
+      "status": "NO-GO"
+    },
+    {
+      "attempt": 3,
+      "path": "evaluation/release/evidence/paired-tasks.json",
+      "sha256": "84a9398237a21d5c8f88c526d2b5888b9dd0af7f56d1df1d651c6bd3feca605f",
+      "invocations": 40,
+      "status": "NO-GO"
+    }
+  ],
+  "total_invocations": 120,
+  "actual_incremental_spend_usd": 0,
+  "reported_api_equivalent_usd": 1.973472,
+  "status": "CLOSED_NO_GO"
+}

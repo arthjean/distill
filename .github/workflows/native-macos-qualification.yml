@@ -26,6 +26,7 @@ jobs:
       - name: Run native qualification
         run: ./scripts/qualify-macos.sh
       - name: Upload qualification evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: distill-macos-arm64-qualification

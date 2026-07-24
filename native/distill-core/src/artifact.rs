@@ -1028,6 +1028,9 @@ mod tests {
         fs::remove_file(&database).expect("remove database symlink");
         store.initialize().expect("initialize real database");
         let sidecar = PathBuf::from(format!("{}-wal", database.display()));
+        if sidecar.exists() {
+            fs::remove_file(&sidecar).expect("remove real sidecar");
+        }
         symlink(private.join("missing-sidecar"), &sidecar).expect("sidecar symlink");
         assert_eq!(
             store.initialize().expect_err("sidecar symlink").code,
