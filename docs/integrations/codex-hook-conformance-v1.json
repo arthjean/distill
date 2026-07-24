@@ -1,0 +1,68 @@
+{
+  "schema_version": "distill.codex-hook-conformance/v1",
+  "source": "https://learn.chatgpt.com/docs/hooks.md",
+  "event": "PostToolUse",
+  "adapter_input_version": "codex.post-tool-use/v1",
+  "host_output_cap": {
+    "documented_approximate_tokens": 2500,
+    "distill_maximum_tokens": 2250,
+    "safety_margin_percent": 10
+  },
+  "surfaces": [
+    {
+      "category": "shell",
+      "matcher": "Bash",
+      "status": "supported",
+      "fixture": "Bash"
+    },
+    {
+      "category": "unified_exec",
+      "matcher": "Bash",
+      "status": "supported",
+      "fixture": "Bash"
+    },
+    {
+      "category": "patch",
+      "matcher": "apply_patch|Edit|Write",
+      "status": "supported",
+      "fixture": "apply_patch"
+    },
+    {
+      "category": "mcp",
+      "matcher": "mcp__.*",
+      "status": "supported",
+      "fixture": "mcp__filesystem__read_file"
+    },
+    {
+      "category": "local_function",
+      "matcher": "*",
+      "status": "supported",
+      "fixture": "update_plan"
+    },
+    {
+      "category": "hosted_tools",
+      "matcher": null,
+      "status": "no_event",
+      "diagnostic": null,
+      "limitation": "Codex does not invoke the local function-tool hook path."
+    },
+    {
+      "category": "specialized_bypass",
+      "matcher": null,
+      "status": "no_event",
+      "diagnostic": null,
+      "limitation": "Specialized tool paths may opt out of the default hook path."
+    },
+    {
+      "category": "unsupported_event_received",
+      "matcher": "*",
+      "status": "diagnostic",
+      "diagnostic": "unsupported_surface"
+    }
+  ],
+  "modes": {
+    "off": "No event decoding, capture, evaluation, or replacement.",
+    "observe": "Capture and evaluate supported events without replacing the original result.",
+    "active": "Replace supported over-budget results with bounded projection feedback; never label a failed projection as success."
+  }
+}
