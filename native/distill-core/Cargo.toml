@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.97"
 publish = false
 
+[[bin]]
+name = "distill"
+path = "src/main.rs"
+
 [features]
 fuzzing = []
 
@@ -28,4 +32,3 @@ todo = "warn"
 unwrap_used = "warn"
 expect_used = "warn"
 unwrap_in_result = "warn"
-
