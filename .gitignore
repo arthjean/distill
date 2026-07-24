@@ -51,6 +51,9 @@ yarn-error.log*
 # Claude
 .claude
 
+# Codex (paneflow-managed local state)
+.codex
+
 # Tasks
 .tasks
 tasks/
