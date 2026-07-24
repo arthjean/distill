@@ -1,0 +1,42 @@
+{
+  "schema_version": "distill.native-prevalidation/v1",
+  "qualification_id": "native-distribution-v1-20260724",
+  "test_commit": "2b2bbcb94ebf0bafe5d9c9d948ce6c4f61363be1",
+  "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+  "branch": {
+    "file": "native/distill-core/src/types.rs",
+    "expression": "if let Some(kind) = probe.source.and_then(|source| source.kind)",
+    "covered_side": "probe.source == None",
+    "test": "types::tests::jsonl_request_without_source_is_invalid"
+  },
+  "commands": [
+    "cargo test --manifest-path native/distill-core/Cargo.toml jsonl_request_without_source_is_invalid",
+    "./scripts/check-native.sh"
+  ],
+  "before": {
+    "lines": {
+      "count": 5857,
+      "covered": 5220,
+      "percent": 89.12412497865802
+    },
+    "branches": {
+      "count": 574,
+      "covered": 430,
+      "percent": 74.91289198606272
+    }
+  },
+  "after": {
+    "lines": {
+      "count": 5861,
+      "covered": 5224,
+      "percent": 89.13154751748849
+    },
+    "branches": {
+      "count": 574,
+      "covered": 431,
+      "percent": 75.08710801393728
+    }
+  },
+  "completed_at": "2026-07-24T21:18:44Z",
+  "status": "PASS"
+}

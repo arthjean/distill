@@ -1,0 +1,66 @@
+{
+  "schema_version": "distill.native-distribution-protocol/v1",
+  "qualification_id": "native-distribution-v1-20260724",
+  "status": "PREREGISTERED",
+  "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+  "candidate_binding": {
+    "source_revision": "clean pushed HEAD at execution",
+    "linux_and_macos_revision": "exact",
+    "post_qualification_revision": "same native tree",
+    "attestation_ref": "refs/distill/qualifications/native-distribution-v1-20260724"
+  },
+  "coverage": {
+    "evidence": "evaluation/release/evidence/native-coverage-v1.json",
+    "sha256": "0c092277108104a984155762ebcd2e0519127be3fe7da032291e367a1d54f281",
+    "required_line_percent": 85,
+    "required_branch_percent": 75,
+    "full_native_check_executions": 1
+  },
+  "linux": {
+    "runner": "./scripts/qualify-native-distribution.sh",
+    "executions": 1,
+    "external_root": "/tmp/distill-native-distribution-v1-20260724",
+    "evidence": {
+      "automated": "evaluation/release/evidence/automated-linux-x86_64-v2.json",
+      "suite": "evaluation/release/evidence/suite-linux-x86_64-v2.json",
+      "fuzz": "evaluation/release/evidence/fuzz-linux-x86_64-v2.json",
+      "package": "evaluation/release/evidence/package-linux-x86_64-v1.json",
+      "execution": "evaluation/release/evidence/native-distribution-execution-v1.json"
+    },
+    "package_repetitions": 2,
+    "package_requirement": "byte-identical archives with independently validated SHA-256 sidecars"
+  },
+  "macos": {
+    "workflow": ".github/workflows/native-macos-qualification.yml",
+    "workflow_sha256": "9840b099d4afd4531143cad3c3255cb8646c7c2d4ed3c03b8cc7867493178c22",
+    "artifact": "distill-macos-arm64-qualification",
+    "artifact_file": "macos-arm64.json",
+    "evidence": "evaluation/release/evidence/macos-arm64-distribution-v1.json",
+    "executions": 1
+  },
+  "aggregate": {
+    "checker": "bun evaluation/release/check-native-distribution-v1.mjs",
+    "evidence": "evaluation/release/evidence/native-distribution-v1.json",
+    "go_requires": [
+      "coverage PASS on the preregistered native tree",
+      "Linux GO on the attested candidate revision",
+      "macOS GO on the same candidate revision",
+      "byte-identical Linux packages and valid SHA-256 sidecars",
+      "unchanged historical PRDs, legacy evidence, and 34 qualification artifacts",
+      "published attestation ref at the candidate revision"
+    ]
+  },
+  "failure_policy": {
+    "retry": false,
+    "verdict": "Record the first defect as NO-GO and stop without weakening criteria"
+  },
+  "forbidden": [
+    "production Rust behavior changes",
+    "coverage threshold or exclusion changes",
+    "dependency changes",
+    "GitHub workflow changes",
+    "historical evidence replacement",
+    "model or API calls",
+    "publication, versioning, pull requests, or legacy deletion"
+  ]
+}
