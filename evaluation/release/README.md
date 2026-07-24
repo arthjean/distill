@@ -104,3 +104,37 @@ candidate SHA as `evidence/macos-arm64-v2.json`, preserving the historical
 receipt. `bun evaluation/release/check-us018-v2.mjs` then verifies historical
 hashes, manifest and execution-ledger hashes, exactly 100 ordered invocations,
 both independent `GO` gates, and the same clean source revision.
+
+The closed v2 qualification and its `NO-GO` evidence remain immutable. The
+separately authorized `us018-v3-20260724` qualification is fully frozen in
+`paired-tasks-v3.json` and `paired-qualification-v3-ledger.json`. It retains 50
+task pairs and the original exact rubrics, caps execution at 100 subscription
+calls with no retry, pins Claude to `claude-fable-5`, disables prompt
+suggestions, requires Claude to report only the exact first-party pinned model,
+and compares the exact reported model identity list within every raw/projected
+pair. The runner permanently stops after both observations of the first pair
+that diverges or reports an unexpected model. Its one-shot external directory
+and Git attestation ref make that early stop non-replayable.
+
+Before any subscription call, run:
+
+```bash
+bun evaluation/release/run-paired-v3.mjs --validate-only
+```
+
+Commit the complete pre-registration, then consume it in a sole child commit
+that changes only `paired-qualification-v3-ledger.json`. Push that clean
+candidate so the unchanged macOS arm64 workflow and the paired evaluation bind
+the same SHA. Execute once:
+
+```bash
+bun evaluation/release/run-paired-v3.mjs --execute
+```
+
+Execution writes only under `/tmp/distill-us018-v3-20260724`. Publish
+`refs/distill/qualifications/us018-v3-20260724`, then copy the completed paired
+report, execution ledger, and matching macOS receipt to their distinct v3
+evidence paths. `bun evaluation/release/check-us018-v3.mjs` is `GO` only when
+the paired gate and the successfully downloaded macOS workflow artifact are
+independently `GO` on that clean candidate. Criteria are frozen before
+execution and are not relaxed after a result.
