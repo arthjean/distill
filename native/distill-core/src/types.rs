@@ -5,6 +5,10 @@ use std::{collections::BTreeMap, fmt, path::PathBuf};
 pub const CONTRACT_VERSION: &str = "distill.context/v1";
 pub const ARTIFACT_SCHEMA_VERSION: &str = "distill.artifact/v1";
 pub const RECEIPT_SCHEMA_VERSION: &str = "distill.receipt/v1";
+pub const RESTORE_SCHEMA_VERSION: &str = "distill.restore/v1";
+pub const TRACE_SCHEMA_VERSION: &str = "distill.trace/v1";
+pub const STATUS_SCHEMA_VERSION: &str = "distill.status/v1";
+pub const GC_SCHEMA_VERSION: &str = "distill.gc/v1";
 pub const PROJECTION_VERSION: &str = "distill.extractive/v1";
 pub const POLICY_VERSION: &str = "distill.preservation/v1";
 pub const CL100K_PROFILE: &str = "cl100k_base@js-tiktoken-1.0.15";
@@ -201,6 +205,46 @@ pub struct ArtifactRef {
     pub source_bytes: u64,
     pub created_at: u64,
     pub expires_at: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RestoredArtifact {
+    pub schema_version: String,
+    pub artifact: ArtifactRef,
+    pub bytes: ByteString,
+    pub acquisition: AcquisitionReceipt,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactTrace {
+    pub schema_version: String,
+    pub artifact: ArtifactRef,
+    pub acquisition: AcquisitionReceipt,
+    pub receipts: Vec<Receipt>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EngineStatus {
+    pub schema_version: String,
+    pub store_bytes: u64,
+    pub store_records: u64,
+    pub expired_records: u64,
+    pub max_store_bytes: u64,
+    pub default_ttl_seconds: u64,
+    pub max_source_bytes: u64,
+    pub max_concurrent_writers: u64,
+    pub root_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GarbageCollection {
+    pub schema_version: String,
+    pub reclaimed_bytes: u64,
+    pub reclaimed_records: u64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

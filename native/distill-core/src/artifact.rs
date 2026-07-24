@@ -1,5 +1,5 @@
 use crate::types::{
-    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode,
+    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode, Receipt,
 };
 use rusqlite::{
     Connection, ErrorCode, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const STORE_SCHEMA_VERSION: i64 = 1;
+const STORE_SCHEMA_VERSION: i64 = 2;
 const TOMBSTONE_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 #[derive(Clone, Debug)]
@@ -25,6 +25,19 @@ pub(crate) struct ArtifactStore {
 pub(crate) struct StoredArtifact {
     pub bytes: Vec<u8>,
     pub acquisition: AcquisitionReceipt,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct StoredTrace {
+    pub acquisition: AcquisitionReceipt,
+    pub receipts: Vec<Receipt>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct StoreReport {
+    pub bytes: u64,
+    pub records: u64,
+    pub expired_records: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -295,6 +308,174 @@ impl ArtifactStore {
         Ok(StoredArtifact { bytes, acquisition })
     }
 
+    pub(crate) fn reference_by_id(&self, id: &str, now: u64) -> Result<ArtifactRef, Failure> {
+        if id.len() != 32
+            || !id
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(Failure::new(
+                FailureCode::InvalidRequest,
+                "artifact ID must be 32 lowercase hexadecimal characters",
+            ));
+        }
+        let connection = self.open(false)?;
+        let record = connection
+            .query_row(
+                "SELECT schema_version, sha256, source_bytes, created_at, expires_at
+                 FROM artifacts WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(map_read_error)?;
+        let Some((schema_version, source_sha256, source_bytes, created_at, expires_at)) = record
+        else {
+            let tombstone = connection
+                .query_row(
+                    "SELECT purge_at FROM tombstones WHERE id = ?1",
+                    [id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(map_read_error)?;
+            return Err(
+                if tombstone.is_some_and(|purge_at| purge_at >= 0 && now < purge_at as u64) {
+                    Failure::new(FailureCode::ArtifactExpired, "artifact retention expired")
+                } else {
+                    Failure::new(FailureCode::ArtifactUnknown, "artifact does not exist")
+                },
+            );
+        };
+        if schema_version != ARTIFACT_SCHEMA_VERSION {
+            return Err(Failure::new(
+                FailureCode::ArtifactSchemaUnsupported,
+                "stored artifact schema is unsupported",
+            ));
+        }
+        let reference = ArtifactRef {
+            schema_version,
+            id: id.to_owned(),
+            source_sha256,
+            source_bytes: nonnegative_u64(source_bytes, "source byte count")?,
+            created_at: nonnegative_u64(created_at, "creation time")?,
+            expires_at: nonnegative_u64(expires_at, "expiration time")?,
+        };
+        if now >= reference.expires_at {
+            drop(connection);
+            let _report = self.collect_garbage(now)?;
+            return Err(
+                Failure::new(FailureCode::ArtifactExpired, "artifact retention expired")
+                    .with_artifact(reference),
+            );
+        }
+        Ok(reference)
+    }
+
+    pub(crate) fn record_receipt(
+        &self,
+        reference: &ArtifactRef,
+        receipt: &Receipt,
+    ) -> Result<(), Failure> {
+        let receipt_json = serde_json::to_vec(receipt).map_err(|_| {
+            Failure::new(
+                FailureCode::InvariantBreach,
+                "projection receipt cannot be serialized",
+            )
+        })?;
+        let connection = self.open(false)?;
+        let changed = connection
+            .execute(
+                "INSERT INTO artifact_receipts
+                    (artifact_id, request_id, receipt_metadata)
+                 SELECT id, ?1, ?2 FROM artifacts
+                 WHERE id = ?3 AND sha256 = ?4 AND state = 'committed'",
+                params![
+                    receipt.request_id,
+                    receipt_json,
+                    reference.id,
+                    reference.source_sha256
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(Failure::new(
+                FailureCode::ArtifactCorrupt,
+                "artifact receipt target failed integrity validation",
+            )
+            .with_artifact(reference.clone()));
+        }
+        enforce_store_modes(&self.path)?;
+        Ok(())
+    }
+
+    pub(crate) fn trace(&self, reference: &ArtifactRef, now: u64) -> Result<StoredTrace, Failure> {
+        let stored = self.retrieve(reference, now)?;
+        let connection = self.open(false)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT receipt_metadata FROM artifact_receipts
+                 WHERE artifact_id = ?1 ORDER BY sequence",
+            )
+            .map_err(map_read_error)?;
+        let mut rows = statement.query([&reference.id]).map_err(map_read_error)?;
+        let mut receipts = Vec::new();
+        while let Some(row) = rows.next().map_err(map_read_error)? {
+            let receipt_json = row.get::<_, Vec<u8>>(0).map_err(map_read_error)?;
+            let receipt: Receipt = serde_json::from_slice(&receipt_json).map_err(|_| {
+                Failure::new(
+                    FailureCode::ArtifactCorrupt,
+                    "artifact projection receipt is corrupt",
+                )
+                .with_artifact(reference.clone())
+            })?;
+            if receipt.artifact != *reference || receipt.source_sha256 != reference.source_sha256 {
+                return Err(Failure::new(
+                    FailureCode::ArtifactCorrupt,
+                    "artifact projection receipt lineage is inconsistent",
+                )
+                .with_artifact(reference.clone()));
+            }
+            receipts.push(receipt);
+        }
+        Ok(StoredTrace {
+            acquisition: stored.acquisition,
+            receipts,
+        })
+    }
+
+    pub(crate) fn status(&self, now: u64) -> Result<StoreReport, Failure> {
+        let connection = self.open(false)?;
+        let now_sql = i64::try_from(now).map_err(|_| {
+            Failure::new(
+                FailureCode::InvalidRequest,
+                "status time exceeds SQLite limits",
+            )
+        })?;
+        let (records, bytes, expired): (i64, i64, i64) = connection
+            .query_row(
+                "SELECT COUNT(*), COALESCE(SUM(source_bytes), 0),
+                        COALESCE(SUM(CASE WHEN expires_at <= ?1 THEN 1 ELSE 0 END), 0)
+                 FROM artifacts",
+                [now_sql],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(map_read_error)?;
+        Ok(StoreReport {
+            bytes: nonnegative_u64(bytes, "store usage")?,
+            records: nonnegative_u64(records, "store record count")?,
+            expired_records: nonnegative_u64(expired, "expired record count")?,
+        })
+    }
+
     pub(crate) fn collect_garbage(&self, now: u64) -> Result<GcReport, Failure> {
         let mut connection = self.open(false)?;
         let transaction = connection
@@ -376,9 +557,11 @@ impl ArtifactStore {
                 "artifact database schema is newer than this engine",
             ));
         }
-        connection
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS artifacts (
+        if schema_version == 0 {
+            connection
+                .execute_batch(
+                    "BEGIN IMMEDIATE;
+                    CREATE TABLE artifacts (
                     id TEXT PRIMARY KEY,
                     schema_version TEXT NOT NULL,
                     state TEXT NOT NULL,
@@ -389,20 +572,44 @@ impl ArtifactStore {
                     created_at INTEGER NOT NULL,
                     expires_at INTEGER NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS artifacts_expiry
+                CREATE INDEX artifacts_expiry
                     ON artifacts(expires_at);
-                CREATE TABLE IF NOT EXISTS tombstones (
+                CREATE TABLE tombstones (
                     id TEXT PRIMARY KEY,
                     schema_version TEXT NOT NULL,
                     expired_at INTEGER NOT NULL,
                     purge_at INTEGER NOT NULL,
                     failure_code TEXT NOT NULL
-                );",
-            )
-            .map_err(map_open_error)?;
-        if schema_version == 0 {
+                );
+                CREATE TABLE artifact_receipts (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    artifact_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    receipt_metadata BLOB NOT NULL,
+                    FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+                );
+                CREATE INDEX artifact_receipts_lineage
+                    ON artifact_receipts(artifact_id, sequence);
+                PRAGMA user_version = 2;
+                COMMIT;",
+                )
+                .map_err(map_open_error)?;
+        } else if schema_version == 1 {
             connection
-                .pragma_update(None, "user_version", STORE_SCHEMA_VERSION)
+                .execute_batch(
+                    "BEGIN IMMEDIATE;
+                    CREATE TABLE artifact_receipts (
+                        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                        artifact_id TEXT NOT NULL,
+                        request_id TEXT NOT NULL,
+                        receipt_metadata BLOB NOT NULL,
+                        FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+                    );
+                    CREATE INDEX artifact_receipts_lineage
+                        ON artifact_receipts(artifact_id, sequence);
+                    PRAGMA user_version = 2;
+                    COMMIT;",
+                )
                 .map_err(map_open_error)?;
         }
         if check_integrity {

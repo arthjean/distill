@@ -9,11 +9,12 @@ mod runtime;
 mod types;
 
 pub use types::{
-    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, BinaryPolicy, Budget, ByteSpan,
-    ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, EngineConfig, Failure, FailureCode,
-    Fidelity, Outcome, POLICY_VERSION, PROJECTION_VERSION, PreservationResult, ProcessReceipt,
-    ProcessStream, RECEIPT_SCHEMA_VERSION, Receipt, Request, Retention, ScalarValue, Source,
-    SourceVariant, StreamEvent, VisiblePayload,
+    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ArtifactTrace, BinaryPolicy, Budget,
+    ByteSpan, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, EngineConfig, EngineStatus,
+    Failure, FailureCode, Fidelity, GC_SCHEMA_VERSION, GarbageCollection, Outcome, POLICY_VERSION,
+    PROJECTION_VERSION, PreservationResult, ProcessReceipt, ProcessStream, RECEIPT_SCHEMA_VERSION,
+    RESTORE_SCHEMA_VERSION, Receipt, Request, RestoredArtifact, Retention, STATUS_SCHEMA_VERSION,
+    ScalarValue, Source, SourceVariant, StreamEvent, TRACE_SCHEMA_VERSION, VisiblePayload,
 };
 
 use artifact::ArtifactStore;
@@ -47,7 +48,64 @@ impl Engine {
     }
 
     pub fn handle(&self, request: Request) -> Result<Outcome, Failure> {
-        self.handle_inner(request)
+        let outcome = self.handle_inner(request)?;
+        self.store
+            .record_receipt(&outcome.artifact, &outcome.receipt)
+            .map_err(|failure| failure.with_artifact(outcome.artifact.clone()))?;
+        Ok(outcome)
+    }
+
+    pub fn resolve_artifact(&self, id: &str) -> Result<ArtifactRef, Failure> {
+        let now = self.runtime.now()?;
+        self.store.reference_by_id(id, now)
+    }
+
+    pub fn restore(&self, artifact: &ArtifactRef) -> Result<RestoredArtifact, Failure> {
+        let now = self.runtime.now()?;
+        let stored = self.store.retrieve(artifact, now)?;
+        Ok(RestoredArtifact {
+            schema_version: RESTORE_SCHEMA_VERSION.to_owned(),
+            artifact: artifact.clone(),
+            bytes: stored.bytes.into(),
+            acquisition: stored.acquisition,
+        })
+    }
+
+    pub fn trace(&self, artifact: &ArtifactRef) -> Result<ArtifactTrace, Failure> {
+        let now = self.runtime.now()?;
+        let trace = self.store.trace(artifact, now)?;
+        Ok(ArtifactTrace {
+            schema_version: TRACE_SCHEMA_VERSION.to_owned(),
+            artifact: artifact.clone(),
+            acquisition: trace.acquisition,
+            receipts: trace.receipts,
+        })
+    }
+
+    pub fn status(&self) -> Result<EngineStatus, Failure> {
+        let now = self.runtime.now()?;
+        let status = self.store.status(now)?;
+        Ok(EngineStatus {
+            schema_version: STATUS_SCHEMA_VERSION.to_owned(),
+            store_bytes: status.bytes,
+            store_records: status.records,
+            expired_records: status.expired_records,
+            max_store_bytes: self.config.max_store_bytes,
+            default_ttl_seconds: self.config.default_ttl_seconds,
+            max_source_bytes: runtime::MAX_SOURCE_BYTES as u64,
+            max_concurrent_writers: 8,
+            root_ids: self.config.roots.keys().cloned().collect(),
+        })
+    }
+
+    pub fn collect_garbage(&self) -> Result<GarbageCollection, Failure> {
+        let now = self.runtime.now()?;
+        let report = self.store.collect_garbage(now)?;
+        Ok(GarbageCollection {
+            schema_version: GC_SCHEMA_VERSION.to_owned(),
+            reclaimed_bytes: report.reclaimed_bytes,
+            reclaimed_records: report.reclaimed_records,
+        })
     }
 
     fn handle_inner(&self, request: Request) -> Result<Outcome, Failure> {
@@ -456,6 +514,15 @@ mod tests {
         assert_eq!(second.visible.bytes, "exact content");
         assert_eq!(second.receipt.acquisition.variant, SourceVariant::Artifact);
         assert_eq!(second.artifact, first.artifact);
+        let trace = engine.trace(&first.artifact).expect("artifact trace");
+        assert_eq!(
+            trace
+                .receipts
+                .iter()
+                .map(|receipt| receipt.request_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["request-1", "request-2"]
+        );
     }
 
     #[test]
