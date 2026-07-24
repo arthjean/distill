@@ -29,6 +29,10 @@ coverage
 out/
 build
 dist
+/spikes/rust/target/
+/spikes/zig/.zig-cache/
+/spikes/zig/zig-out/
+/spikes/evidence/.tmp-*/
 
 # Debug
 npm-debug.log*

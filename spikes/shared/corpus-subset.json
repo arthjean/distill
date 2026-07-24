@@ -1,0 +1,14 @@
+{
+  "schema_version": "distill.spike-corpus-subset/v1",
+  "fixture_ids": [
+    "build-output-02",
+    "logs-02",
+    "diff-02",
+    "unicode-02",
+    "malformed-bytes-01",
+    "boundary-zero-bytes",
+    "boundary-exact-payload-budget",
+    "boundary-one-over-payload-budget",
+    "boundary-one-mib"
+  ]
+}

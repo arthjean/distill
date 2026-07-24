@@ -1,0 +1,25 @@
+{
+  "schema_version": "distill.spike-fuzz/v1",
+  "candidate": "zig",
+  "binary": "/home/arthur/dev/distill/spikes/zig/zig-out/bin/distill-spike-zig",
+  "started_at": "2026-07-24T11:55:19.256Z",
+  "completed_at": "2026-07-24T12:10:52.944Z",
+  "machine": {
+    "hostname": "dune",
+    "platform": "linux",
+    "release": "7.1.4-204.fc44.x86_64",
+    "architecture": "x64",
+    "logical_cpus": 16,
+    "node": "v24.3.0",
+    "sqlite": "3.51.2 2026-01-09 17:27:48 b270f8339eb13b504d0b2ba154ebca966b7dde08e40c3ed7d559749818cbalt1 (64-bit)"
+  },
+  "seed": "distill-ep002-v1",
+  "workers": 8,
+  "target_cpu_seconds": 3600,
+  "measured_cpu_seconds": 3602.88,
+  "wall_seconds": 933.687639876,
+  "cases": 123036,
+  "responses": 123036,
+  "crashes": 0,
+  "pass": true
+}

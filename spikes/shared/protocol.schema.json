@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://distill-mcp.com/schemas/spike-protocol-v1.json",
+  "title": "Distill EP-002 spike protocol",
+  "type": "object",
+  "required": ["schema_version", "request_id", "operation", "store_path"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "distill.spike/v1" },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "operation": { "enum": ["project", "recover", "run", "health"] },
+    "store_path": { "type": "string", "minLength": 1 },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "bytes_base64"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "inline" },
+            "bytes_base64": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "executable",
+            "argv",
+            "cwd",
+            "timeout_ms",
+            "output_limit"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "process" },
+            "executable": { "type": "string", "minLength": 1 },
+            "argv": {
+              "type": "array",
+              "maxItems": 64,
+              "items": { "type": "string", "maxLength": 4096 }
+            },
+            "cwd": { "type": "string", "minLength": 1 },
+            "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+            "output_limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10485760
+            }
+          }
+        }
+      ]
+    },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "budget": {
+      "type": "object",
+      "required": ["unit", "total_visible_limit", "reserved_envelope"],
+      "additionalProperties": false,
+      "properties": {
+        "unit": { "enum": ["bytes", "tokens"] },
+        "total_visible_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10485760
+        },
+        "reserved_envelope": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10485760
+        },
+        "token_profile": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "required": ["ttl_seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "ttl_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2592000
+        }
+      }
+    },
+    "preservation": {
+      "type": "object",
+      "required": ["profile", "p0", "p1"],
+      "additionalProperties": false,
+      "properties": {
+        "profile": { "const": "fixture-facts/v1" },
+        "p0": { "$ref": "#/$defs/facts" },
+        "p1": { "$ref": "#/$defs/facts" }
+      }
+    },
+    "max_store_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 536870912
+    },
+    "busy_timeout_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5000
+    },
+    "fault_point": {
+      "description": "Evidence-only crash injection; ignored unless DISTILL_SPIKE_ENABLE_FAULTS=1",
+      "enum": [
+        "before_insert",
+        "before_commit",
+        "after_commit",
+        "before_readback"
+      ]
+    }
+  },
+  "$defs": {
+    "facts": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["id", "needle_base64"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "needle_base64": { "type": "string" }
+        }
+      }
+    }
+  }
+}
