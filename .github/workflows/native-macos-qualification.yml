@@ -1,0 +1,30 @@
+name: Native macOS arm64 qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/ep005-macos-qualification
+    paths-ignore:
+      - evaluation/release/evidence/**
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - name: Run native qualification
+        run: ./scripts/qualify-macos.sh
+      - name: Upload qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: distill-macos-arm64-qualification
+          path: evaluation/release/evidence/macos-arm64.json
+          if-no-files-found: error

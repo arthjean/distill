@@ -1,0 +1,55 @@
+{
+  "schema_version": "distill.paired-tasks/v1",
+  "subscription_only": true,
+  "maximum_invocations_per_attempt": 40,
+  "maximum_qualification_invocations": 120,
+  "attempt": 3,
+  "prior_attempt_evidence": [
+    "evidence/paired-tasks-attempt-1.json",
+    "evidence/paired-tasks-attempt-2.json"
+  ],
+  "providers": {
+    "codex": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "low",
+      "tool_state": "ephemeral, read-only sandbox, no repository"
+    },
+    "claude": {
+      "model": "fable",
+      "reasoning_effort": "low",
+      "tool_state": "safe mode, no tools, no session persistence"
+    }
+  },
+  "tasks": [
+    {"id": "paired-01", "fixture_id": "build-output-01", "provider": "codex"},
+    {"id": "paired-02", "fixture_id": "build-output-02", "provider": "claude"},
+    {
+      "id": "paired-03",
+      "fixture_id": "test-output-01",
+      "provider": "codex",
+      "budget_tokens": 24
+    },
+    {
+      "id": "paired-04",
+      "fixture_id": "test-output-02",
+      "provider": "claude",
+      "budget_tokens": 24
+    },
+    {"id": "paired-05", "fixture_id": "logs-01", "provider": "codex"},
+    {"id": "paired-06", "fixture_id": "logs-02", "provider": "claude"},
+    {"id": "paired-07", "fixture_id": "diff-01", "provider": "codex"},
+    {"id": "paired-08", "fixture_id": "diff-02", "provider": "claude"},
+    {"id": "paired-09", "fixture_id": "diagnostics-01", "provider": "codex"},
+    {"id": "paired-10", "fixture_id": "diagnostics-02", "provider": "claude"},
+    {"id": "paired-11", "fixture_id": "stack-trace-01", "provider": "codex"},
+    {"id": "paired-12", "fixture_id": "stack-trace-02", "provider": "claude"},
+    {"id": "paired-13", "fixture_id": "source-code-01", "provider": "codex"},
+    {"id": "paired-14", "fixture_id": "source-code-02", "provider": "claude"},
+    {"id": "paired-15", "fixture_id": "json-01", "provider": "codex"},
+    {"id": "paired-16", "fixture_id": "json-02", "provider": "claude"},
+    {"id": "paired-17", "fixture_id": "unicode-01", "provider": "codex"},
+    {"id": "paired-18", "fixture_id": "unicode-02", "provider": "claude"},
+    {"id": "paired-19", "fixture_id": "prompt-injection-01", "provider": "codex"},
+    {"id": "paired-20", "fixture_id": "prompt-injection-02", "provider": "claude"}
+  ]
+}
