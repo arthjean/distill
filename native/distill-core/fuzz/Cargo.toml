@@ -1,0 +1,19 @@
+[package]
+name = "distill-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+distill-core = { path = "..", features = ["fuzzing"] }
+
+[[bin]]
+name = "fuzz_engine"
+path = "fuzz_targets/fuzz_engine.rs"
+test = false
+doc = false
+bench = false
