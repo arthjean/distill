@@ -15,8 +15,10 @@ jobs:
   qualify:
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      TMPDIR: /private/tmp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
@@ -24,7 +26,7 @@ jobs:
       - name: Run native qualification
         run: ./scripts/qualify-macos.sh
       - name: Upload qualification evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: distill-macos-arm64-qualification
           path: evaluation/release/evidence/macos-arm64.json
