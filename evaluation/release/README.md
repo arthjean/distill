@@ -138,3 +138,28 @@ evidence paths. `bun evaluation/release/check-us018-v3.mjs` is `GO` only when
 the paired gate and the successfully downloaded macOS workflow artifact are
 independently `GO` on that clean candidate. Criteria are frozen before
 execution and are not relaxed after a result.
+
+The terminal v3 `NO-GO` evidence remains immutable. It established that Claude
+Code can report an auxiliary Haiku model symmetrically even when the requested
+model is pinned to `claude-fable-5` and prompt suggestions are disabled. The
+separately authorized `us018-v4-20260724` qualification therefore distinguishes
+the required primary model from auxiliary telemetry without weakening pair
+identity: every Claude condition must report the exact first-party Fable
+identity, and the complete canonical model lists must be byte-for-byte equal
+between raw and projected. Additional models pass only when they are reported
+symmetrically.
+
+V4 otherwise preserves the v3 protocol: 50 frozen task pairs, at most 100
+subscription calls, zero incremental dollars, no API or fallback API, no retry,
+external one-shot evidence, a new Git attestation ref, and permanent early stop
+on the first complete-list divergence or missing required Fable identity.
+
+```bash
+bun evaluation/release/run-paired-v4.mjs --validate-only
+bun evaluation/release/run-paired-v4.mjs --execute
+bun evaluation/release/check-us018-v4.mjs
+```
+
+Pre-registration and consumption remain separate commits. The unchanged macOS
+arm64 workflow must qualify the consumption SHA, and the checker independently
+downloads that run's receipt before the aggregate can become `GO`.
