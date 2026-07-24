@@ -33,6 +33,7 @@ dist
 /spikes/zig/.zig-cache/
 /spikes/zig/zig-out/
 /spikes/evidence/.tmp-*/
+/native/distill-core/target/
 
 # Debug
 npm-debug.log*
