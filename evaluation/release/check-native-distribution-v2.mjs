@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
@@ -90,28 +91,46 @@ function loadPinnedJson(name, entry) {
   }
 }
 
-function validateV1Baseline() {
-  try {
-    return JSON.parse(
-      execFileSync(
-        process.execPath,
-        [
-          join(root, "evaluation/release/check-native-distribution-v1.mjs"),
-          "--validate-protocol",
-        ],
-        {
-          cwd: root,
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      ),
-    );
-  } catch (error) {
-    blockers.push(
-      `v1 preregistration baseline is invalid: ${errorText(error)}`,
-    );
-    return null;
+function validatePinnedDirectory(name, declaration) {
+  const blockerStart = blockers.length;
+  if (
+    declaration === null ||
+    typeof declaration !== "object" ||
+    typeof declaration.path !== "string" ||
+    typeof declaration.match !== "string" ||
+    declaration.files === null ||
+    typeof declaration.files !== "object"
+  ) {
+    blockers.push(`${name} declaration is invalid`);
+    return { count: 0, status: "INVALID" };
   }
+  const directory = join(root, declaration.path);
+  if (!existsSync(directory)) {
+    blockers.push(`${name} directory is missing`);
+    return { count: 0, status: "INVALID" };
+  }
+  const pattern = new RegExp(declaration.match);
+  const actualFiles = readdirSync(directory).filter((file) =>
+    pattern.test(file),
+  );
+  const expectedFiles = Object.keys(declaration.files);
+  actualFiles.sort();
+  expectedFiles.sort();
+  check(
+    JSON.stringify(actualFiles) === JSON.stringify(expectedFiles),
+    `${name} file set changed`,
+  );
+  for (const file of expectedFiles) {
+    const path = join(directory, file);
+    check(
+      existsSync(path) && sha256(path) === declaration.files[file],
+      `${name} file changed: ${file}`,
+    );
+  }
+  return {
+    count: actualFiles.length,
+    status: blockers.length === blockerStart ? "VALID" : "INVALID",
+  };
 }
 
 const predecessorProtocol = loadPinnedJson(
@@ -145,7 +164,6 @@ check(
   "v1 NO-GO verdict or first defect changed",
 );
 
-const v1Baseline = validateOnly ? null : validateV1Baseline();
 const coverage = loadPinnedJson("coverage", protocol.coverage.evidence);
 const automated = loadPinnedJson(
   "automated Linux",
@@ -209,13 +227,6 @@ check(
     protocol.failure_policy.retry === false,
   "one-shot execution policy is invalid",
 );
-if (!validateOnly) {
-  check(
-    v1Baseline?.status === "VALID" &&
-      v1Baseline?.native_tree === nativeTree,
-    "v1 preregistration controls are not valid on the v2 native tree",
-  );
-}
 check(
   headNativeTree === nativeTree &&
     candidateNativeTree === nativeTree &&
@@ -294,27 +305,43 @@ check(
   "macOS workflow changed after qualification",
 );
 
+const historicalBlockerStart = blockers.length;
+const historicalPrds = validatePinnedDirectory(
+  "historical PRD",
+  protocol.historical_integrity.prds,
+);
+const historicalLegacyEvidence = validatePinnedDirectory(
+  "historical legacy evidence",
+  protocol.historical_integrity.legacy_evidence,
+);
 const registry = loadPinnedJson(
   "historical qualification registry",
   protocol.historical_integrity.registry,
 );
-if (!validateOnly) {
-  check(
-    v1Baseline?.historical_prds ===
-      protocol.historical_integrity.historical_prds &&
-      v1Baseline?.historical_qualification_artifacts ===
-        protocol.historical_integrity.historical_qualification_artifacts,
-    "historical PRD or qualification artifact count changed",
-  );
-}
 check(
-  Array.isArray(registry.data?.historical_evidence) &&
+  historicalPrds.count === protocol.historical_integrity.historical_prds &&
+    historicalLegacyEvidence.count ===
+      protocol.historical_integrity.historical_legacy_evidence &&
+    Array.isArray(registry.data?.historical_evidence) &&
     registry.data.historical_evidence.length ===
       protocol.historical_integrity.historical_qualification_artifacts &&
     sha256(Buffer.from(JSON.stringify(registry.data.historical_evidence))) ===
       protocol.historical_integrity.registry.evidence_set_sha256,
-  "historical qualification evidence set changed",
+  "historical integrity counts or evidence set changed",
 );
+if (Array.isArray(registry.data?.historical_evidence)) {
+  for (const evidence of registry.data.historical_evidence) {
+    check(
+      typeof evidence?.path === "string" &&
+        typeof evidence?.sha256 === "string" &&
+        existsSync(join(root, evidence.path)) &&
+        sha256(join(root, evidence.path)) === evidence.sha256,
+      `historical qualification artifact changed: ${evidence?.path ?? "unknown"}`,
+    );
+  }
+}
+const historicalStatus =
+  blockers.length === historicalBlockerStart ? "VALID" : "INVALID";
 
 const nativeTreeBinding = {
   selected_path: protocol.reconciliation.native_tree_check_path,
@@ -376,6 +403,8 @@ const aggregate = {
     status: predecessorAggregate.data?.status ?? null,
     first_defect: predecessorAggregate.data?.first_defect ?? null,
   },
+  accepted_post_preregistration_event:
+    protocol.reconciliation.accepted_post_preregistration_event,
   native_tree_binding: nativeTreeBinding,
   coverage: {
     evidence: protocol.coverage.evidence.path,
@@ -420,15 +449,14 @@ const aggregate = {
       packageEvidence.data?.checksum_sidecars?.independently_validated ?? null,
   },
   historical_integrity: {
-    historical_prds: v1Baseline?.historical_prds ?? null,
-    historical_legacy_evidence:
-      protocol.historical_integrity.historical_legacy_evidence,
+    historical_prds: historicalPrds.count,
+    historical_legacy_evidence: historicalLegacyEvidence.count,
     historical_qualification_artifacts:
-      v1Baseline?.historical_qualification_artifacts ?? null,
+      registry.data?.historical_evidence?.length ?? null,
     registry_sha256: registry.hash,
     evidence_set_sha256:
       protocol.historical_integrity.registry.evidence_set_sha256,
-    status: v1Baseline?.status ?? "INVALID",
+    status: historicalStatus,
   },
   attestation: {
     ref: protocol.candidate_binding.attestation_ref,

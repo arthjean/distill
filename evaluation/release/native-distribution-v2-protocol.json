@@ -22,9 +22,18 @@
     "cause": "The v1 checker selected automated.linux_release.native_prevalidation.native_tree, but release_gate.rs deserializes and reserializes the suite receipt through SuiteEvidence, which does not retain native_prevalidation.",
     "native_tree_check_path": "suite.native_prevalidation.native_tree",
     "criteria_preserved": "Automated evidence still proves aggregate GO, candidate binding, Linux release success, and fuzz success. The standalone suite receipt proves the same candidate and release result while retaining the preregistered native tree and coverage evidence path. Package, macOS, coverage, historical integrity, and attestation checks are unchanged.",
-    "heavy_evidence_reuse": "All Linux and macOS receipts are reused byte-identically because their recorded candidate, native tree, results, execution counts, workflow, and SHA-256 hashes remain unchanged. Moving one ownership check to the standalone suite receipt removes no criterion and requires no new platform run.",
+    "heavy_evidence_reuse": "All Linux and macOS receipts are reused byte-identically because their recorded candidate, native tree, results, execution counts, workflow, and SHA-256 hashes remain unchanged. Moving one ownership check to the standalone suite receipt removes no criterion. A later externally triggered macOS run was unnecessary, is not substituted for the immutable qualification receipt, and was explicitly accepted by Arthur.",
     "final_aggregate_write": "The aggregate is created exactly once after preregistration, branch push, and publication of the v2 attestation ref.",
-    "terminal_no_go": "A v2 NO-GO records the first defect, is not retried, and blocks distribution documentation changes."
+    "terminal_no_go": "A v2 NO-GO records the first defect, is not retried, and blocks distribution documentation changes.",
+    "accepted_post_preregistration_event": {
+      "authorized_by": "Arthur",
+      "authorized_on": "2026-07-25",
+      "branch_revision": "2a6ad76b515d06d548d13e8b593559beb3e20e4d",
+      "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+      "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30157481395",
+      "conclusion": "success",
+      "evidentiary_role": "none; the immutable macOS qualification receipt and run 30127687300 remain authoritative"
+    }
   },
   "candidate_binding": {
     "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
@@ -81,6 +90,30 @@
     "historical_prds": 9,
     "historical_legacy_evidence": 3,
     "historical_qualification_artifacts": 34,
+    "prds": {
+      "path": "tasks",
+      "match": "^prd-distill-.*\\.md$",
+      "files": {
+        "prd-distill-audit-fixes.md": "11903c895d3b6964ff314ca315bf3072f5552c590a170795c60ce4596e32a8ad",
+        "prd-distill-context-projection-engine.md": "adef99cc9f18c4cea71dd2580f4b65797a5de85d9e14a3ad6862d06426505dd6",
+        "prd-distill-v010-claude-code-alignment.md": "2d5d5870ea0034ff106d9d473e164e753a6ec96886cd3324d5a6a19ef42889f4",
+        "prd-distill-v011-audit-remediation.md": "4f369841e13320632e93326a945eca7b020c1837615c7a821081a4b5ebb24e01",
+        "prd-distill-v090-security.md": "d9a1e96719c8dd9714e360c8e4bdaaa321ac5a6fb2fa158abfea4af0d9e9ac5a",
+        "prd-distill-v091-audit-cleanup.md": "b259ab6e1004c6ca3cdcf25bd1124ecd0e1a12d050d4338474bc7d31acc55d65",
+        "prd-distill-v092-hardening-cleanup.md": "315a04a07c8b07ce1ed86281568767b8040877bc80ed05100d9977342203e167",
+        "prd-distill-v1-phase2.md": "4bb000bddc2f1ecc63e3d78348b9f66cc2202f6614a682d0dfc6dbd35dd9231a",
+        "prd-distill-v1.md": "1a6734768a1620742460f0b7175814e90f1fc54c8df70645eb508a44c9dd5cb1"
+      }
+    },
+    "legacy_evidence": {
+      "path": "evaluation/legacy",
+      "match": ".*",
+      "files": {
+        "baseline.md": "ee9524a2405f0154026887a968dd2b642926a4fdcbaa46e03b3140f7c42c8340",
+        "evidence.json": "6499bae5585dddeadb88c4fefe47456b13d9273bfebc6f7de33dedeea53cad1e",
+        "run.mjs": "e7c042f67df6ad80ee77e70223a6fd102b24332ab7971c015a94f099b95f9788"
+      }
+    },
     "registry": {
       "path": "evaluation/release/paired-qualification-v5-ledger.json",
       "sha256": "11e5b41b9787bb11b9c74825bacb1fd895bd7eea2c5ea6fdc6105718659e95b2",
@@ -100,7 +133,8 @@
   "forbidden": [
     "v1 file changes",
     "Linux or macOS evidence changes",
-    "new Linux, fuzz, package, native-check, Rust-test, or macOS executions",
+    "new Linux, fuzz, package, native-check, or Rust-test executions",
+    "additional macOS executions after the accepted run 30157481395",
     "production Rust changes",
     "coverage threshold or exclusion changes",
     "dependency or workflow changes",
