@@ -40,7 +40,6 @@ scripts require Bun `1.3+`; they do not require a package installation.
   `cargo build --locked --release --manifest-path native/distill-core/Cargo.toml`
 - Full native CI gate: `./scripts/check-native.sh`
 - Corpus verification: `bun evaluation/corpus/check.mjs --verify`
-- Legacy evaluation verification: `bun evaluation/legacy/run.mjs --verify`
 - Unpublished native package: `./scripts/package-native.sh`
 
 Use the focused test while iterating. The full native gate runs formatting

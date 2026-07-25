@@ -8,10 +8,11 @@ replacement:
 - `corpus/budget-profiles.json`: named byte and token budgets;
 - `corpus/check.mjs`: deterministic generation, semantic validation, oracle
   self-tests, and secret scanning;
-- `legacy/evidence.json`: raw measurements against the current TypeScript
+- `legacy/evidence.json`: raw measurements against the retired TypeScript
   implementation;
 - `legacy/baseline.md`: human-readable baseline and salvage matrix; and
-- `legacy/run.mjs`: reproducible measurement and evidence verification.
+- `legacy/run.mjs`: archival measurement recipe retained with the closed
+  evidence.
 
 Historical PRDs and current production files are inputs only. EP-001 does not
 modify them.
@@ -87,11 +88,8 @@ From the repository root:
 ```bash
 bun evaluation/corpus/check.mjs --write
 bun evaluation/corpus/check.mjs --verify
-bun evaluation/legacy/run.mjs --write
-bun evaluation/legacy/run.mjs --verify
 ```
 
-`--write` is deterministic for corpus artifacts. Legacy timing evidence is
-environment-specific, so its verifier checks provenance, raw run counts,
-derived statistics, report consistency, and stable output digests rather than
-requiring identical latency samples.
+`--write` is deterministic for corpus artifacts. The legacy runner imports the
+retired TypeScript source and is intentionally non-executable after its
+deletion. Its committed evidence remains immutable.
