@@ -1,227 +1,147 @@
-# Distill
+# distill-mcp (legacy)
 
-> Extract the essence. Compress the context. Save tokens.
+`distill-mcp` is the frozen MCP-first version of Distill. It exposes three tools
+for explicit context compression, structured file reading, and sandboxed
+TypeScript execution.
 
-**Distill** is an open-source MCP server that optimizes LLM token usage through intelligent context compression. Works with Claude Code, Cursor, and Windsurf.
+This README documents the published `distill-mcp` package only. The active
+product direction is the native Rust context projection engine described in the
+[repository README](../../README.md). The native replacement has not been
+published, and this package remains available until its separately approved
+retirement.
 
-[![npm version](https://img.shields.io/npm/v/distill-mcp.svg)](https://www.npmjs.com/package/distill-mcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## What this package does
 
-## Why Distill?
+The server registers exactly three always-loaded MCP tools:
 
-| Problem | Distill Solution | Savings |
-|---------|------------------|---------|
-| Large build outputs | Auto-compress errors | 80-95% |
-| Reading entire files | AST-based extraction | 50-70% |
-| Multiple tool calls | TypeScript SDK execution | **98%** |
-| Verbose logs | Smart summarization | 80-90% |
+| Tool | Behavior |
+| --- | --- |
+| `auto_optimize` | Compress explicitly supplied build output, logs, diffs, errors, or text with a content-aware strategy |
+| `smart_file_read` | Read files through exact, line-range, search, skeleton, structure, or symbol-extraction modes |
+| `code_execute` | Run TypeScript against the `ctx.*` SDK inside the pinned QuickJS sandbox |
 
-## Quick Start
+`smart_file_read` supports TypeScript, JavaScript, Python, Go, Rust, PHP, and
+Swift. TypeScript and JavaScript use the TypeScript Compiler API; the other
+languages use Tree-sitter WASM.
+
+There is no lazy tool catalog, `discover_tools`, or set of on-demand MCP tools
+in the current package.
+
+## Architectural limits
+
+An MCP server does not own the host's agent loop or context aggregation.
+Consequently:
+
+- native host tool output reaches the conversation before `auto_optimize` can
+  process it;
+- the legacy Claude hooks suggest Distill tools but do not replace native
+  `Read` or `Bash` results;
+- original-result recovery is process-scoped and does not survive restart;
+- Cursor, Windsurf, Antigravity, and generic MCP configuration paths are legacy
+  integrations, not qualified vNext support surfaces.
+
+These limits motivated the native projection engine.
+
+## Install and run the legacy package
+
+Requirements: Node.js 20 or later.
+
+Run without a global installation:
 
 ```bash
-# Run directly with npx
-npx distill-mcp
+bunx distill-mcp --help
+bunx distill-mcp setup
+```
 
-# Or install globally
-npm install -g distill-mcp
+Or install the CLI:
 
-# Configure your IDE
+```bash
+bun add --global distill-mcp
 distill-mcp setup
+distill-mcp doctor
 ```
 
-### Add to Claude Code
+Start the stdio MCP server directly:
 
 ```bash
-claude mcp add distill -- npx distill-mcp
+distill-mcp serve
 ```
 
-## Features
-
-- **Smart File Reading** - Extract functions, classes, or signatures without loading entire files
-- **Auto Compression** - Detects content type and applies optimal compression
-- **Code Execution SDK** - Write TypeScript instead of chaining tool calls
-- **Lazy Loading** - Only loads tools when needed (85% token overhead reduction)
-- **7 Languages** - TypeScript, JavaScript, Python, Go, Rust, PHP, Swift
-
-## MCP Tools
-
-### Core Tools (Always Loaded)
-
-| Tool | Purpose | Savings |
-|------|---------|---------|
-| `auto_optimize` | Auto-detect and compress content | 40-95% |
-| `smart_file_read` | Read code with AST extraction | 50-70% |
-| `code_execute` | Execute TypeScript with SDK | **98%** |
-| `discover_tools` | Browse/load additional tools | - |
-
-### On-Demand Tools
-
-| Tool | Purpose | Savings |
-|------|---------|---------|
-| `semantic_compress` | TF-IDF based compression | 40-60% |
-| `summarize_logs` | Summarize server/test/build logs | 80-90% |
-| `analyze_build_output` | Parse build errors | 95%+ |
-| `deduplicate_errors` | Group repeated errors | 80-95% |
-| `diff_compress` | Compress git diffs | 50-80% |
-| `context_budget` | Pre-flight token estimation | - |
-| `session_stats` | Usage analytics | - |
-
-## Usage Examples
-
-### Smart File Reading
-
-```bash
-# Get file structure overview
-mcp__distill__smart_file_read filePath="src/server.ts"
-
-# Extract specific function
-mcp__distill__smart_file_read filePath="src/server.ts" target={"type":"function","name":"createServer"}
-
-# Get skeleton (signatures only)
-mcp__distill__smart_file_read filePath="src/server.ts" skeleton=true
-```
-
-### Compress Build Output
-
-```bash
-# After a failed build, compress the output
-mcp__distill__auto_optimize content="<paste npm/tsc/webpack output>"
-```
-
-### Code Execution SDK
-
-The `code_execute` tool provides **98% token savings** by letting LLMs write TypeScript:
-
-```bash
-mcp__distill__code_execute code="return ctx.compress.auto(ctx.files.read('logs.txt'))"
-```
-
-**SDK API:**
-
-```typescript
-// File operations
-ctx.files.read(path)
-ctx.files.glob(pattern)
-ctx.files.exists(path)
-
-// Code analysis
-ctx.code.skeleton(content, lang)
-ctx.code.extract(content, lang, {type, name})
-ctx.code.parse(content, lang)
-
-// Compression
-ctx.compress.auto(content, hint?)
-ctx.compress.logs(logs)
-ctx.compress.diff(diff)
-ctx.compress.semantic(content, ratio?)
-
-// Git operations
-ctx.git.diff(ref?)
-ctx.git.log(limit?)
-ctx.git.blame(file, line?)
-
-// Search
-ctx.search.grep(pattern, glob?)
-ctx.search.symbols(query)
-
-// Analysis
-ctx.analyze.dependencies(file)
-ctx.analyze.callGraph(fn)
-```
-
-### Discover Tools
-
-```bash
-# Browse available tools (metadata only)
-mcp__distill__discover_tools category="compress"
-
-# Load tools when needed
-mcp__distill__discover_tools category="compress" load=true
-
-# TOON format for compact output
-mcp__distill__discover_tools format="toon"
-```
-
-## CLI Commands
-
-```bash
-distill-mcp setup          # Auto-configure detected IDEs
-distill-mcp setup --claude # Configure Claude Code only
-distill-mcp setup --cursor # Configure Cursor only
-distill-mcp doctor         # Verify installation
-distill-mcp serve          # Start MCP server
-distill-mcp analyze        # Analyze codebase token usage
-distill-mcp --help         # Show help
-```
-
-## IDE Configuration
-
-### Claude Code
-
-After running `distill-mcp setup`, your config will include:
+Example MCP configuration:
 
 ```json
 {
   "mcpServers": {
     "distill": {
-      "command": "npx",
+      "command": "bunx",
       "args": ["distill-mcp", "serve"]
     }
   }
 }
 ```
 
-### Cursor / Windsurf
+## CLI
 
-Configuration is automatically added to the appropriate settings file.
+| Command | Purpose |
+| --- | --- |
+| `distill-mcp serve` | Start the stdio MCP server |
+| `distill-mcp setup` | Configure a detected legacy MCP client |
+| `distill-mcp doctor` | Diagnose installation and configuration |
+| `distill-mcp analyze` | Report file and token-size hotspots |
 
-## Token Overhead
+Run `distill-mcp --help` for setup targets, hook options, analysis flags, and
+verbose server diagnostics.
 
-Distill uses **lazy loading** to minimize overhead:
+## Migration to native Distill
 
-| Mode | Tokens | Description |
-|------|--------|-------------|
-| Core only | 264 | Default (4 tools) |
-| All tools | 1,108 | Full suite (21 tools) |
-| **Savings** | **76%** | Lazy vs eager loading |
+The native `distill` binary changes the product contract from post-hoc MCP
+compression to bounded, recoverable context projection:
 
-## Security
+| Legacy use case | Native disposition |
+| --- | --- |
+| `auto_optimize` on supported Codex local-tool output | Automatic projection through the versioned `PostToolUse` adapter |
+| `auto_optimize` on manually supplied bytes | `distill project --budget N` |
+| Claude file or process acquisition | Explicit `distill_read` and `distill_run` MCP tools |
+| Full-file bounded reading | `distill read` or `distill_read` |
+| AST skeleton, search, and symbol extraction | Deferred from native v1 |
+| `code_execute` operation batching | Use the host agent's native tools |
+| Fixed local command execution | `distill run` or `distill_run` |
+| Process-scoped original recovery | Durable `artifact get`, `artifact trace`, and `status` commands |
 
-Code execution runs in a sandboxed environment:
-- Blocked: `eval`, `require`, `import()`, `process`, `global`
-- File access restricted to working directory
-- Sensitive files blocked (`.env`, credentials, keys)
-- Memory limit: 128MB, Timeout: 30s
+Native Distill commits source bytes before returning an omitting projection,
+applies an explicit byte or token budget, and returns an artifact reference plus
+a receipt describing retained and omitted spans.
+
+The complete compatibility and retirement decisions are recorded in the
+[migration guide](../../docs/migration/mcp-first-to-native.md).
+
+## Current migration status
+
+The native engine, CLI, Codex adapter, and Claude adapter are implemented.
+macOS arm64 is qualified on the current native tree. Linux x86_64 packaging is
+prepared but still requires same-tree qualification. No native asset has been
+published.
+
+The TypeScript MCP package remains frozen as migration evidence. Its deletion,
+any version change, and any publication remain separate maintainer-approved
+actions.
 
 ## Development
 
+From the repository root:
+
 ```bash
-# Install dependencies
 bun install
-
-# Run tests
+bun run check-types
+bun run lint
+cd packages/mcp-server
 bun run test
-
-# Build
-bun run build
-
-# Start dev server
-bun run dev
 ```
 
-## Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](https://github.com/arthjean/distill/blob/main/CONTRIBUTING.md) for guidelines.
-
-**Priority areas:**
-- New language parsers (Java, C#, Kotlin)
-- SDK extensions
-- Documentation
+The package is ESM-only. Local TypeScript imports use `.js` extensions, and
+server diagnostics must go to stderr because stdout is the MCP protocol
+channel.
 
 ## License
 
-MIT
-
----
-
-**[npm](https://www.npmjs.com/package/distill-mcp)** · **[GitHub](https://github.com/arthjean/distill)** · **[Documentation](https://github.com/arthjean/distill/tree/main/docs)**
+[MIT](../../LICENSE)
