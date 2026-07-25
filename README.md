@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/distill-logo.png" alt="Distill" width="130" />
+  <img src="assets/distill-logo.svg" alt="Distill" width="130" />
 </p>
 
 <h1 align="center">Distill</h1>
