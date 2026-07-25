@@ -4,8 +4,9 @@
 
 This is the US-019 plan for a future US-020. It performs no deletion.
 
-Linux distribution remains `prepared_pending_same_tree_qualification`; this
-plan cannot promote it or reuse the older-tree Linux `GO`.
+Linux x86_64 and macOS arm64 distribution are same-tree qualified by
+`evaluation/release/evidence/native-distribution-v2.json`. This plan records
+that gate but performs no publication or deletion.
 
 The frozen inventory is anchored at commit
 `704d50d6c1beb82abe442458a5e90eeac0611287`, immediately after US-018 v5
@@ -27,8 +28,8 @@ Before US-020 changes the first file, record:
 
 1. explicit maintainer approval for legacy deletion after US-017 and US-018
    remain `GO`;
-2. a Linux x86_64 `GO` whose recorded native tree exactly matches the
-   pre-deletion candidate; the current older-tree Linux report is insufficient;
+2. a native distribution v2 `GO` whose recorded native tree exactly matches the
+   pre-deletion candidate;
 3. separate approval for removing the pinned `web-tree-sitter@0.22.6` and
    `@sebastianwessel/quickjs@3.0.0` dependency entries;
 4. separate approval for any `.github/workflows/**` edit;
@@ -138,7 +139,8 @@ state.
 ## Ordered execution
 
 1. Verify the inventory count, path-list hash, historical PRD hashes, clean
-   worktree, US-017 `GO`, US-018 v5 `GO`, and a current-tree Linux x86_64 `GO`.
+   worktree, US-017 `GO`, US-018 v5 `GO`, and native-distribution-v2 `GO` on
+   the real current native tree.
 2. Record the pre-deletion commit and create a recovery branch or tag without
    deleting any existing branch.
 3. Obtain any still-missing pinned-dependency and workflow approvals.

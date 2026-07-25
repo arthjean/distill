@@ -13,11 +13,10 @@ raw bytes, and returns a deterministic model-visible projection within an
 explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
-The vNext release candidate is qualified on macOS arm64. Linux x86_64 packaging
-is prepared, but the committed Linux `GO` predates the current native tree, so a
-same-tree Linux qualification remains a release prerequisite. Nothing has been
-published. The existing `distill-mcp` npm package remains the frozen legacy
-product until its separately approved retirement.
+The vNext release candidate is qualified on Linux x86_64 and macOS arm64 on the
+same native tree. Nothing has been published. The existing `distill-mcp` npm
+package remains the frozen legacy product until its separately approved
+retirement.
 
 ## Product contract
 
@@ -142,7 +141,7 @@ tools bypasses projection. MCP stdout contains JSON-RPC only.
 
 | Surface                                           | V1 status          | Contract                                                       |
 | ------------------------------------------------- | ------------------ | -------------------------------------------------------------- |
-| Linux x86_64 GNU                                  | Packaging prepared | Same-tree release qualification pending                        |
+| Linux x86_64 GNU                                  | Qualified          | Native archive                                                 |
 | macOS arm64                                       | Qualified          | Native archive                                                 |
 | Codex supported local `PostToolUse` events        | Qualified          | Automatic off, observe, or active mode                         |
 | Claude `distill_read` and `distill_run`           | Qualified          | Explicit MCP acquisition                                       |
@@ -165,12 +164,12 @@ The complete host and platform matrix is in
 - [Native distribution manifest](docs/distribution/native-assets.json)
 - [Release qualification](evaluation/release/README.md)
 
-The earlier Linux release gate covers 102 corpus fixtures, recovery,
-concurrency, latency, memory, fuzzing, and zero-network behavior, but its native
-tree is recorded separately from the current tree. The US-018 v5 paired gate
-scored 50/50 for raw and 50/50 for projected conditions with a 0 point delta.
-The matching current-tree macOS arm64 candidate passed the contract, corpus,
-setup, restore, and uninstall suite.
+The native distribution v2 aggregate binds the Linux and macOS receipts to
+native tree `77c75f741cd69a9b229dd73c1be435181db73cf1`. The Linux release gate
+covers 102 corpus fixtures, recovery, concurrency, latency, memory, fuzzing,
+and zero-network behavior. The US-018 v5 paired gate scored 50/50 for raw and
+50/50 for projected conditions with a 0 point delta. No qualification action
+published an asset, tag, or version.
 
 ## Development
 

@@ -10,6 +10,14 @@ explicit deletion approval.
 US-019 prepares the migration only. It does not delete legacy code, publish an
 asset, change a version, or edit a release workflow.
 
+The same-tree Linux and macOS qualification is `GO` in
+`evaluation/release/evidence/native-distribution-v2.json` for candidate
+`69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba` and native tree
+`77c75f741cd69a9b229dd73c1be435181db73cf1`. The historical v1 aggregate remains
+`NO-GO`: it looked for native prevalidation in the automated receipt after that
+field had been intentionally dropped during typed reserialization. V2 retains
+every gate and reads the binding from the standalone suite receipt that owns it.
+
 ## Legacy tool mapping
 
 | Legacy use case                                                                        | VNext disposition                      | Surface                | Migration                                                                                                                               |
@@ -49,8 +57,10 @@ silent compatibility promise.
 The authoritative evidence is:
 
 - `evaluation/legacy/baseline.md`;
-- `evaluation/release/evidence/automated-linux-x86_64.json`;
-- `evaluation/release/evidence/macos-arm64-v5.json`;
+- `evaluation/release/evidence/automated-linux-x86_64-v2.json`;
+- `evaluation/release/evidence/suite-linux-x86_64-v2.json`;
+- `evaluation/release/evidence/macos-arm64-distribution-v1.json`;
+- `evaluation/release/evidence/native-distribution-v2.json`;
 - `evaluation/release/evidence/us018-qualification-v5.json`.
 
 The sole US-004 `preserve` row has a passing replacement test and does not block
@@ -79,10 +89,10 @@ Distill. There is no universal Claude interception claim.
 
 The selected v1 strategy is two direct native assets:
 
-| Target           | Archive                       | Qualification                                           |
-| ---------------- | ----------------------------- | ------------------------------------------------------- |
-| Linux x86_64 GNU | `distill-linux-x86_64.tar.gz` | Prepared; same-tree Linux release qualification pending |
-| macOS arm64      | `distill-macos-arm64.tar.gz`  | Current-tree US-018 v5 macOS gate `GO`                  |
+| Target           | Archive                       | Qualification                            |
+| ---------------- | ----------------------------- | ---------------------------------------- |
+| Linux x86_64 GNU | `distill-linux-x86_64.tar.gz` | Same-tree native distribution v2 `GO`    |
+| macOS arm64      | `distill-macos-arm64.tar.gz`  | Same-tree native distribution v2 `GO`    |
 
 `bun run package:native` builds with the locked Rust dependency graph, packages
 the binary, license, and install guide, and writes an adjacent SHA-256 file. It
@@ -99,11 +109,11 @@ The machine-readable contract is
 release tag, version bump, changelog entry, or workflow change is part of
 US-019.
 
-The existing Linux `GO` targets native tree
-`4db3f396d0bcb2c1e7b1931a851399e8ea17eb26`; the current tree is
-`393725a17d8f8445f8c27677ae811d4015a9a835`. The Linux asset is therefore
-prepared but not qualified for publication. Reusing the older result as
-same-tree evidence is forbidden.
+The v2 aggregate reuses the immutable Linux and macOS receipts and binds both
+platforms to native tree `77c75f741cd69a9b229dd73c1be435181db73cf1`.
+The remote attestation
+`refs/distill/qualifications/native-distribution-v2-20260725` points to the
+qualified candidate. Qualification does not publish either asset.
 
 The npm launcher decision is reversible. Reconsider it only if measured
 installation or update friction justifies Node and platform-resolution
@@ -113,7 +123,7 @@ complexity.
 
 | Platform or host surface                  | Status      | Reason and user-visible behavior                                     |
 | ----------------------------------------- | ----------- | -------------------------------------------------------------------- |
-| Linux x86_64 GNU                          | Pending     | Packaging prepared; same-tree release qualification required         |
+| Linux x86_64 GNU                          | Supported   | Same-tree native asset qualified                                      |
 | macOS arm64                               | Supported   | Qualified native asset                                               |
 | Windows x86_64 and arm64                  | Unsupported | No build, permission, setup, recovery, or release execution evidence |
 | macOS x86_64                              | Unsupported | Outside v1 gate and not executed                                     |
@@ -134,8 +144,8 @@ US-020 may begin only after explicit maintainer approval. Before deleting the
 first file it must verify:
 
 1. US-017 and US-018 remain `GO`.
-2. Linux x86_64 has a `GO` report whose native tree equals the deletion
-   candidate's native tree. The older Linux `GO` does not satisfy this check.
+2. Native distribution v2 remains `GO`, and the real HEAD/worktree native tree
+   still equals its recorded native tree.
 3. The exact deletion inventory in `legacy-deletion-plan.md` still matches the
    repository.
 4. No production import outside `packages/mcp-server` resolves through the

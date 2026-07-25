@@ -1,10 +1,16 @@
 {
   "schema_version": "distill.native-distribution/v1",
   "strategy": "direct-native-release-assets",
-  "current_native_tree": "393725a17d8f8445f8c27677ae811d4015a9a835",
+  "current_native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
   "release_performed": false,
   "version_changed": false,
   "checksum_scope": "integrity only; publication must use an authenticated release channel and a separately approved provenance or signature policy",
+  "qualification": {
+    "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
+    "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+    "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+    "status": "GO"
+  },
   "npm_launcher": {
     "selected": false,
     "decision": "not selected for v1",
@@ -24,12 +30,15 @@
       ],
       "packaging_command": "bun run package:native",
       "qualification": {
-        "evidence": "evaluation/release/evidence/automated-linux-x86_64.json",
-        "git_revision": "d2292ec6a8321e7c2261f9a88021fb4c899ec4c4",
-        "native_tree": "4db3f396d0bcb2c1e7b1931a851399e8ea17eb26",
-        "same_as_current_native_tree": false
+        "evidence": "evaluation/release/evidence/automated-linux-x86_64-v2.json",
+        "suite_evidence": "evaluation/release/evidence/suite-linux-x86_64-v2.json",
+        "package_evidence": "evaluation/release/evidence/package-linux-x86_64-v1.json",
+        "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
+        "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+        "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+        "same_as_current_native_tree": true
       },
-      "status": "prepared_pending_same_tree_qualification"
+      "status": "qualified"
     },
     {
       "platform": "macos-arm64",
@@ -39,9 +48,11 @@
       "runtime_dependencies": ["macOS system runtime", "system libsqlite3"],
       "packaging_command": "bun run package:native",
       "qualification": {
-        "evidence": "evaluation/release/evidence/macos-arm64-v5.json",
-        "git_revision": "ba6e47faabdbc8c2578419f5ad72ad452774d2f3",
-        "native_tree": "393725a17d8f8445f8c27677ae811d4015a9a835",
+        "evidence": "evaluation/release/evidence/macos-arm64-distribution-v1.json",
+        "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
+        "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30127687300",
+        "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+        "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
         "same_as_current_native_tree": true
       },
       "status": "qualified"

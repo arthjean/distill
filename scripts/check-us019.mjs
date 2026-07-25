@@ -15,6 +15,8 @@ const v5LedgerHash =
   "11e5b41b9787bb11b9c74825bacb1fd895bd7eea2c5ea6fdc6105718659e95b2";
 const historicalEvidenceSetHash =
   "cac91ac888363739288cac392198669c7744efded6686cfedbff5d56e5ffbfbf";
+const approvedLegacyReadmeHash =
+  "6ef32d769db804171af388106d9a05c8dfe931018553691c833270acc381ab63";
 
 const historicalPrds = {
   "prd-distill-audit-fixes.md":
@@ -89,7 +91,23 @@ if (recordedTree !== baselineTree) {
   fail(`legacy tree is ${recordedTree}, expected ${baselineTree}`);
 }
 
-assertGitUnchanged("packages/mcp-server");
+const legacyChanges = git([
+  "diff",
+  "--name-only",
+  baselineCommit,
+  "--",
+  "packages/mcp-server",
+])
+  .trim()
+  .split("\n")
+  .filter(Boolean);
+if (
+  JSON.stringify(legacyChanges) !==
+    JSON.stringify(["packages/mcp-server/README.md"]) ||
+  sha256(read("packages/mcp-server/README.md")) !== approvedLegacyReadmeHash
+) {
+  fail("legacy package changed outside the approved README migration update");
+}
 assertGitUnchanged(".github/workflows");
 if (
   git([
@@ -227,11 +245,17 @@ const macosAsset = distribution.assets?.find(
   (asset) => asset.platform === "macos-arm64",
 );
 const nativeQualification = json(
-  "evaluation/release/evidence/native-distribution-v1.json",
+  "evaluation/release/evidence/native-distribution-v2.json",
 );
 if (
   distribution.strategy !== "direct-native-release-assets" ||
   distribution.current_native_tree !== currentNativeTree ||
+  distribution.qualification?.aggregate !==
+    "evaluation/release/evidence/native-distribution-v2.json" ||
+  distribution.qualification?.candidate_revision !==
+    nativeQualification.candidate_revision ||
+  distribution.qualification?.native_tree !== currentNativeTree ||
+  distribution.qualification?.status !== "GO" ||
   !distribution.checksum_scope?.startsWith("integrity only") ||
   distribution.release_performed !== false ||
   distribution.version_changed !== false ||
@@ -241,19 +265,32 @@ if (
   linuxAsset?.status !== "qualified" ||
   linuxAsset.qualification?.evidence !==
     "evaluation/release/evidence/automated-linux-x86_64-v2.json" ||
+  linuxAsset.qualification?.suite_evidence !==
+    "evaluation/release/evidence/suite-linux-x86_64-v2.json" ||
+  linuxAsset.qualification?.package_evidence !==
+    "evaluation/release/evidence/package-linux-x86_64-v1.json" ||
   linuxAsset.qualification?.aggregate !==
-    "evaluation/release/evidence/native-distribution-v1.json" ||
+    "evaluation/release/evidence/native-distribution-v2.json" ||
   linuxAsset.qualification?.native_tree !== currentNativeTree ||
   linuxAsset.qualification?.same_as_current_native_tree !== true ||
   macosAsset?.status !== "qualified" ||
   macosAsset.qualification?.evidence !==
     "evaluation/release/evidence/macos-arm64-distribution-v1.json" ||
   macosAsset.qualification?.aggregate !==
-    "evaluation/release/evidence/native-distribution-v1.json" ||
+    "evaluation/release/evidence/native-distribution-v2.json" ||
   macosAsset.qualification?.native_tree !== currentNativeTree ||
   macosAsset.qualification?.same_as_current_native_tree !== true ||
   nativeQualification.status !== "GO" ||
-  nativeQualification.native_tree !== currentNativeTree
+  nativeQualification.first_defect !== null ||
+  nativeQualification.native_tree !== currentNativeTree ||
+  nativeQualification.native_tree_binding?.selected_path !==
+    "suite.native_prevalidation.native_tree" ||
+  nativeQualification.coverage?.evidence !==
+    "evaluation/release/evidence/native-coverage-v1.json" ||
+  nativeQualification.attestation?.ref !==
+    "refs/distill/qualifications/native-distribution-v2-20260725" ||
+  nativeQualification.attestation?.head !==
+    nativeQualification.candidate_revision
 ) {
   fail("native distribution decision is incomplete or expanded");
 }
@@ -274,6 +311,17 @@ if (
     macosAsset.qualification.git_revision
 ) {
   fail("native asset qualification provenance is invalid");
+}
+
+const remoteAttestation = git([
+  "ls-remote",
+  "origin",
+  nativeQualification.attestation.ref,
+])
+  .trim()
+  .split(/\s+/)[0];
+if (remoteAttestation !== nativeQualification.candidate_revision) {
+  fail("remote native distribution v2 attestation changed");
 }
 
 const rootPackage = json("package.json");
@@ -319,15 +367,27 @@ const deletionPlan = read("docs/migration/legacy-deletion-plan.md").toString(
   "utf8",
 );
 for (const requiredText of [
-  "native-distribution-v1",
+  "native-distribution-v2",
   "`evaluation/legacy/run.mjs`",
   "explicitly ignore that archival",
   "`distill-mcp`, `expect-type`, `turbo`, and `typescript`",
-  "current-tree Linux x86_64 `GO`",
+  "native-distribution-v2 `GO`",
 ]) {
   if (!deletionPlan.includes(requiredText)) {
     fail(`deletion plan is missing ${requiredText}`);
   }
+}
+
+const status = json("tasks/prd-distill-context-projection-engine-status.json");
+const us020 = status.stories?.find((story) => story.id === "US-020");
+if (
+  status.prd?.status !== "IN_PROGRESS" ||
+  status.epics?.find((epic) => epic.id === "EP-005")?.status !==
+    "IN_PROGRESS" ||
+  us020?.status !== "TODO" ||
+  us020?.started_at !== null
+) {
+  fail("US-020 is not blocked on separate human authorization");
 }
 
 process.stdout.write(
