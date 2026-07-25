@@ -12,7 +12,7 @@ assignees: []
 
 ## Proposed solution
 
-<!-- What would Distill do differently? Keep it concrete. Which of the 3 tools does it touch? -->
+<!-- What would Distill do differently? Keep it concrete. Which native surface does it touch? -->
 
 ## Alternatives considered
 
@@ -20,9 +20,10 @@ assignees: []
 
 ## Scope
 
-- [ ] New language parser for `smart_file_read` (e.g. Java, C#, Kotlin)
-- [ ] New compressor / summarizer for `auto_optimize`
-- [ ] Sandbox SDK extension for `code_execute`
+- [ ] Context projection profiles or policy
+- [ ] Artifact storage or exact recovery
+- [ ] Native `distill read` or `distill run`
+- [ ] Codex or Claude adapter
 - [ ] CLI / setup / docs
 - [ ] Other
 

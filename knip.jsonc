@@ -1,90 +1,22 @@
 {
-  // knip v6 — strict JSON file, comments tolerated only via .jsonc extension.
-  // Scope per PRD US-012: gate on packages/mcp-server/**.
-  // The web app moved to the external arthjean/distill-web repo; the
-  // eslint-config / typescript-config workspaces are out of scope.
+  // The retained eslint-config and typescript-config workspaces are historical
+  // shared presets and remain outside the native product gate.
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreWorkspaces": [
-    "packages/eslint-config",
-    "packages/typescript-config"
-  ],
-  // Suppress same-file type/interface re-exports — common TS pattern, not dead code.
+  "ignoreWorkspaces": ["packages/eslint-config", "packages/typescript-config"],
   "ignoreExportsUsedInFile": {
     "interface": true,
-    "type": true
+    "type": true,
   },
-  // Root-level dev deps consumed at workspace level (knip can't see across workspaces).
-  "ignoreDependencies": [
-    "distill-mcp",
-    "expect-type"
-  ],
-  // `shellcheck` is an optional, CI-provided binary (pre-installed on GitHub's
-  // ubuntu-latest runners) invoked by the precompact-hook integration test via
-  // execFileSync; it is skipped locally when absent. It is not an npm dependency,
-  // so knip's unlisted-binary detection must ignore it.
-  "ignoreBinaries": [
-    "shellcheck"
-  ],
+  // These exports are the retained API consumed by archived qualification
+  // protocols, which stay outside the native product graph below.
+  "ignoreIssues": {
+    "evaluation/corpus/lib.mjs": ["exports"],
+  },
   "workspaces": {
     ".": {
-      "entry": [
-        "evaluation/corpus/check.mjs",
-        "evaluation/legacy/run.mjs"
-      ],
-      "project": [
-        "evaluation/**/*.mjs"
-      ]
+      "entry": ["evaluation/corpus/check.mjs"],
+      "project": ["evaluation/**/*.mjs"],
+      "ignore": ["evaluation/legacy/run.mjs", "evaluation/release/**"],
     },
-    "packages/mcp-server": {
-      "entry": [
-        // Public package surface
-        "src/server.ts",
-        "src/index.ts",
-        // CLI commands (loaded by bin/cli.js via dist; knip can't follow ../dist/* imports)
-        "src/cli/setup.ts",
-        "src/cli/doctor.ts",
-        "src/cli/analyze.ts",
-        "src/cli/utils.ts",
-        // Vitest test files
-        "src/**/*.test.ts",
-        // Per-subpackage barrel files (intentional public API surface)
-        "src/**/index.ts",
-        // AST per-language public API: query constants + helper utils + parser entry
-        "src/ast/*/queries.ts",
-        "src/ast/*/utils.ts",
-        "src/ast/*/parser.ts",
-        // Backward-compat shim for typescript parser (see CLAUDE.md "Files NOT to Modify")
-        "src/ast/typescript.ts",
-        // Quick-scan regex fast path — public API per CLAUDE.md "AST Parsing"
-        "src/ast/quick-scan.ts"
-      ],
-      "project": [
-        "src/**/*.ts"
-      ],
-      "vitest": {},
-      "ignore": [
-        "dist/**",
-        // Type-level test assertions executed during `bun run check-types` (not runtime).
-        "src/sandbox/type-tests.ts",
-        // Follow-up cleanup tracked separately (out of US-012 scope which only adds the gate):
-        // - cli/index.ts and shared/* are unreferenced barrel modules
-        // - branded-types keeps `unwrapBrandedString` as intentional API surface for
-        //   external-API interop. `brandAsSanitizedCode` is now wired into executor.ts
-        //   (v0.9.2 US-007); the 4 mis-designed runtime guards were removed in US-014.
-        // - result-utils, segment-scorer, semantic compressor exports are intentional API
-        //   surface used via direct import, not via barrel; documented in CLAUDE.md.
-        "src/cli/index.ts",
-        "src/shared/**",
-        "src/sandbox/branded-types.ts",
-        "src/sandbox/result-utils.ts",
-        "src/sandbox/sdk/pipeline-builder.types.ts",
-        "src/sandbox/security/path-validator.ts",
-        "src/compressors/conversation.ts",
-        "src/compressors/diff.ts",
-        "src/compressors/semantic.ts",
-        "src/utils/segment-scorer.ts",
-        "src/tools/smart-file-read.ts"
-      ]
-    }
-  }
+  },
 }

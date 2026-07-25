@@ -3,6 +3,6 @@ contact_links:
   - name: Questions and ideas
     url: https://github.com/arthjean/distill/discussions
     about: Use Discussions for support questions, roadmap ideas, and early feature proposals.
-  - name: Latest release
-    url: https://www.npmjs.com/package/distill-mcp
-    about: Check the newest release on npm before filing a bug.
+  - name: Native installation
+    url: https://github.com/arthjean/distill/blob/dev/docs/distribution/native-install.md
+    about: Check the supported native targets and installation contract before filing a bug.

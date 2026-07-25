@@ -1,6 +1,0 @@
-{
-  "//": "Lint-only project: extends the build tsconfig but INCLUDES test files so typescript-eslint's type-aware parser can resolve every linted source file (US-008). Not used by `tsc` build/check-types.",
-  "extends": "./tsconfig.json",
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
-}

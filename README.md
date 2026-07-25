@@ -13,10 +13,10 @@ raw bytes, and returns a deterministic model-visible projection within an
 explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
-The vNext release candidate is qualified on Linux x86_64 and macOS arm64 on the
-same native tree. Nothing has been published. The existing `distill-mcp` npm
-package remains the frozen legacy product until its separately approved
-retirement.
+The native engine is qualified on Linux x86_64 and macOS arm64 on the same
+native tree. Nothing has been published. The retired TypeScript MCP-first
+implementation remains recoverable through the recorded pre-US-020 ref, while
+its historical evidence stays in the repository.
 
 ## Product contract
 
@@ -177,20 +177,17 @@ Native verification:
 
 ```bash
 ./scripts/check-native.sh
-bun run check:migration
+bun run knip
 ```
 
-The repository still contains the frozen TypeScript MCP package as migration
-evidence. Its validation remains:
+Build an unpublished native archive and verify its adjacent checksum:
 
 ```bash
-bun run check-types
-bun run lint
-cd packages/mcp-server && bun run test
+bun run package:native
 ```
 
-No TypeScript legacy deletion begins without explicit maintainer approval after
-the migration plan is reviewed.
+The approved deletion and rollback record is
+[`docs/migration/legacy-deletion-plan.md`](docs/migration/legacy-deletion-plan.md).
 
 ## License
 

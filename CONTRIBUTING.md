@@ -1,161 +1,80 @@
 # Contributing to Distill
 
-Thank you for your interest in contributing to Distill! This document provides guidelines for contributing to the project.
+Distill is a native Rust context projection engine. Contributions should keep
+projections bounded, recoverable, deterministic, and independent of host
+protocols.
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
-
-- Node.js 20+
+- Rust 1.97.1
 - Bun 1.3+
+- SQLite development libraries
+- `cargo-llvm-cov` and `cargo-fuzz` for the complete native gate
 
-### Development Setup
+## Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/arthjean/distill.git
 cd distill
-
-# Install dependencies
 bun install
-
-# Start development servers
-bun run dev
-```
-
-### Project Structure
-
-```
-distill/
-├── packages/mcp-server/        # MCP server (npm: distill-mcp)
-├── packages/eslint-config/     # Shared ESLint v9 flat configs
-└── packages/typescript-config/ # Shared TS presets
-```
-
-> The landing page & docs site lives in a separate private repo
-> (`arthjean/distill-web`), deployed to distill-mcp.com.
-
-## Development Workflow
-
-### Running Tests
-
-```bash
-# Run all tests
-bun run test
-
-# Run tests in watch mode (mcp-server)
-cd packages/mcp-server && bun run test:watch
-
-# Run with coverage
-cd packages/mcp-server && bun run test:coverage
-```
-
-### Code Quality
-
-```bash
-# Type checking
-bun run check-types
-
-# Linting
-bun run lint
-
-# Formatting
-bun run format
-```
-
-### Building
-
-```bash
-# Build all packages
 bun run build
 ```
 
-## Branch Strategy
+The production crate is `native/distill-core`. The evaluation corpus lives in
+`evaluation/corpus`, and release protocols and evidence live in
+`evaluation/release`.
 
-We use a three-branch workflow:
+## Validation
 
-```
-main          ← Production releases (protected)
-  ↑
-dev           ← Integration branch (protected)
-  ↑
-feature/*     ← Your contributions
-fix/*
-docs/*
+Run the complete native gate for runtime changes:
+
+```bash
+bun run check:native
 ```
 
-| Branch | Purpose | Who can push |
-|--------|---------|--------------|
-| `main` | Stable releases | Maintainers only |
-| `dev` | Integration & testing | Maintainers only |
-| `feature/*`, `fix/*`, `docs/*` | Contributions | Everyone (via PR) |
+Run one focused test while iterating:
 
-## Making Changes
-
-### For External Contributors
-
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally
-3. **Create a feature branch** from `dev`:
-   ```bash
-   git checkout dev
-   git pull origin dev
-   git checkout -b feature/your-feature-name
-   ```
-4. **Make your changes** with clear, focused commits
-5. **Add tests** for new functionality
-6. **Ensure all tests pass** (`bun run test`)
-7. **Run type checks** (`bun run check-types`)
-8. **Push to your fork** and submit a PR **targeting `dev`**
-
-### Branch Naming Convention
-
-- `feature/` - New features (e.g., `feature/java-parser`)
-- `fix/` - Bug fixes (e.g., `fix/cache-invalidation`)
-- `docs/` - Documentation (e.g., `docs/api-reference`)
-- `refactor/` - Code refactoring
-- `test/` - Test improvements
-
-## Pull Request Guidelines
-
-- **Target branch**: Always target `dev`, not `main`
-- Keep PRs focused on a single feature or fix
-- Update documentation if needed
-- Add tests for new features
-- Follow existing code style
-- Use [Conventional Commits](https://www.conventionalcommits.org/) format:
-  - `feat:` new feature
-  - `fix:` bug fix
-  - `docs:` documentation
-  - `refactor:` code refactoring
-  - `test:` test improvements
-  - `chore:` maintenance
-
-### PR Flow
-
-```
-Your fork → PR to dev → Review → Merge to dev → Release to main
+```bash
+cargo test --manifest-path native/distill-core/Cargo.toml <test-name>
 ```
 
-## Priority Areas
+For root JavaScript manifests or evaluation tooling:
 
-We especially welcome contributions in:
+```bash
+bun run knip
+```
 
-- **New language parsers** (Java, C#, Kotlin, Ruby)
-- **SDK extensions** (new ctx.* functions)
-- **Documentation improvements**
-- **Bug fixes**
+For distribution changes, build an unpublished package and verify its adjacent
+checksum:
 
-## Reporting Issues
+```bash
+bun run package:native
+```
 
-- Use GitHub Issues for bug reports and feature requests
-- Include reproduction steps for bugs
-- Check existing issues before creating new ones
+Packaging writes ignored files under `dist/native`. It does not publish or
+create a release.
 
-## Code of Conduct
+## Pull requests
 
-Be respectful and constructive in all interactions.
+Create branches from `dev` and target every pull request to `dev`, never
+`main`. Keep each change focused, add tests for changed behavior, update the
+relevant contract documentation, and use Conventional Commits.
+
+The main invariants are:
+
+- commit source bytes before omission;
+- keep host types and policy out of adapters;
+- preserve configured-root, permission, integrity, resource, and zero-network
+  guarantees;
+- write machine protocol only to stdout and diagnostics to stderr;
+- use executable plus argv without implicit shell parsing.
+
+Historical PRDs, legacy evidence, qualification receipts, release notes, and
+the release changelog are immutable outside their explicit workflows.
+
+Publishing, version changes, release notes, tags, GitHub releases, and changes
+to release automation require separate maintainer approval.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Contributions are licensed under the MIT License.

@@ -8,21 +8,22 @@
 
 ## Validation
 
-<!-- Check every command you ran. Tests run from packages/mcp-server/. -->
+<!-- Check every command that applies to the changed surface. -->
 
-- [ ] `bun run lint`
-- [ ] `bun run check-types`
-- [ ] `bun run test` (from `packages/mcp-server/`)
+- [ ] `bun run check:native`
+- [ ] `bun run knip`
 - [ ] `bun run build`
-- [ ] Coverage stays at or above the thresholds in `vitest.config.ts`
+- [ ] `bun run package:native` and checksum verification, if distribution changed
 
 ## Compatibility
 
-- [ ] No breaking change to the 3 tools' input/output contracts, **or** the
-      change is documented and the version is bumped accordingly
-- [ ] `node >= 20` preserved; no new runtime dependency added without rationale
-- [ ] Pinned deps (`@sebastianwessel/quickjs`, `web-tree-sitter`) untouched, or
-      the pin move is justified in the description
+- [ ] Source bytes still commit before any omitting projection
+- [ ] Host adapters contain no projection, persistence, tokenization, or
+      preservation policy
+- [ ] Configured-root, artifact-integrity, resource-limit, and zero-network
+      guarantees are preserved
+- [ ] No new runtime dependency is added without a current requirement and
+      explicit rationale
 
 ## Notes for reviewers
 
