@@ -15,7 +15,7 @@
     "selected": false,
     "decision": "not selected for v1",
     "reason": "The product boundary is one native executable using the system runtime libraries present on the supported packaging hosts. An npm launcher would add a second runtime, platform resolution, and another failure surface without a current requirement.",
-    "legacy_package": "distill-mcp@0.11.2 remains frozen until the separately authorized US-020 migration"
+    "legacy_package": "distill-mcp@0.11.2 was retired by the separately authorized US-020 migration; no npm launcher replaces it"
   },
   "assets": [
     {

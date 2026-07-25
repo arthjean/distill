@@ -4,11 +4,14 @@
 
 The validated replacement is the native Rust `distill` binary. Distribution
 uses direct Linux x86_64 and macOS arm64 assets. No npm launcher is selected for
-v1. The existing `distill-mcp` package remains frozen until US-020 receives
-explicit deletion approval.
+v1. US-020 removed the approved TypeScript MCP-first package after the native
+qualification and migration gates passed. The pre-deletion commit and recovery
+ref are recorded in `legacy-deletion-plan.md`.
 
-US-019 prepares the migration only. It does not delete legacy code, publish an
-asset, change a version, or edit a release workflow.
+US-019 prepared the migration without deleting code or performing a release.
+US-020 removed the legacy runtime and disabled its npm publication workflow.
+Neither story published an asset, changed a version, created a release, or
+created a tag.
 
 The same-tree Linux and macOS qualification is `GO` in
 `evaluation/release/evidence/native-distribution-v2.json` for candidate
@@ -89,10 +92,10 @@ Distill. There is no universal Claude interception claim.
 
 The selected v1 strategy is two direct native assets:
 
-| Target           | Archive                       | Qualification                            |
-| ---------------- | ----------------------------- | ---------------------------------------- |
-| Linux x86_64 GNU | `distill-linux-x86_64.tar.gz` | Same-tree native distribution v2 `GO`    |
-| macOS arm64      | `distill-macos-arm64.tar.gz`  | Same-tree native distribution v2 `GO`    |
+| Target           | Archive                       | Qualification                         |
+| ---------------- | ----------------------------- | ------------------------------------- |
+| Linux x86_64 GNU | `distill-linux-x86_64.tar.gz` | Same-tree native distribution v2 `GO` |
+| macOS arm64      | `distill-macos-arm64.tar.gz`  | Same-tree native distribution v2 `GO` |
 
 `bun run package:native` builds with the locked Rust dependency graph, packages
 the binary, license, and install guide, and writes an adjacent SHA-256 file. It
@@ -123,7 +126,7 @@ complexity.
 
 | Platform or host surface                  | Status      | Reason and user-visible behavior                                     |
 | ----------------------------------------- | ----------- | -------------------------------------------------------------------- |
-| Linux x86_64 GNU                          | Supported   | Same-tree native asset qualified                                      |
+| Linux x86_64 GNU                          | Supported   | Same-tree native asset qualified                                     |
 | macOS arm64                               | Supported   | Qualified native asset                                               |
 | Windows x86_64 and arm64                  | Unsupported | No build, permission, setup, recovery, or release execution evidence |
 | macOS x86_64                              | Unsupported | Outside v1 gate and not executed                                     |
@@ -138,10 +141,9 @@ complexity.
 | Generic MCP client                        | Unqualified | Protocol compatibility is not a v1 support claim                     |
 | Interactive shell, PTY, remote process    | Unsupported | `run` is bounded local executable plus argv only                     |
 
-## Pre-deletion gates
+## Deletion gate record
 
-US-020 may begin only after explicit maintainer approval. Before deleting the
-first file it must verify:
+Before deleting the first file, US-020 verified:
 
 1. US-017 and US-018 remain `GO`.
 2. Native distribution v2 remains `GO`, and the real HEAD/worktree native tree
@@ -151,10 +153,8 @@ first file it must verify:
 4. No production import outside `packages/mcp-server` resolves through the
    legacy package.
 5. Corpus, legacy baseline, release evidence, and historical PRDs are retained.
-6. Required CI and release workflow edits have separate human authorization.
-   Current workflows still name the legacy package and must not be changed under
-   the existing no-workflow-change instruction.
+6. CI and release workflow edits have separate human authorization.
 7. Publishing and version changes remain separately authorized release actions.
 
-Any failed precondition stops deletion. There is no partial compatibility layer
-or opportunistic cleanup.
+All preconditions passed. The deletion remained one controlled slice with no
+partial compatibility layer or opportunistic cleanup.

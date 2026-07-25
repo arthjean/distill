@@ -38,6 +38,26 @@ Before US-020 changes the first file, record:
 Publishing, version bumps, changelog release entries, and workflow edits are not
 implied by deletion approval.
 
+## US-020 execution record
+
+Arthur explicitly authorized the legacy deletion, removal of the pinned
+dependencies, and required workflow edits on 2026-07-25 after the native
+distribution v2 aggregate remained `GO`.
+
+The clean pre-deletion commit is
+`19f079fce7248a7d2c33891ebf7a027c1decbd72`. The durable remote recovery ref is
+`refs/heads/recovery/pre-us020-20260725` at that exact commit.
+
+The final pre-deletion `bun run check:migration` completed with `VALID` before
+the first deletion. It confirmed:
+
+- 208 tracked legacy files;
+- sorted path-list SHA-256
+  `10fb9d098c96c656dedce9750c84083677837ac4ff8f49bdccb89c39f05cc288`;
+- native distribution v2 `GO`;
+- qualified Linux x86_64 and macOS arm64 evidence;
+- native tree `77c75f741cd69a9b229dd73c1be435181db73cf1`.
+
 ## Obsolete tracked package
 
 Every path in `legacy-deletion-files.txt` is obsolete at runtime after the

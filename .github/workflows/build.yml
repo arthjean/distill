@@ -5,89 +5,32 @@ on:
     branches: [main, dev]
   pull_request:
 
-# Collapse in-flight runs for the same PR ref so a new push cancels the old run.
-# Pushes to main/dev are never cancelled (cancel-in-progress only on PRs), so a
-# real post-merge run always completes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Least-privilege default: every job here only reads the repo (checkout + bun +
-# test). A future job that needs write must elevate explicitly at the job level,
-# keeping the escalation visible in review.
 permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint
+  native:
+    name: Native checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Lint
-        run: bun run lint
-
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Typecheck
-        run: bun run check-types
-
-  test:
-    name: Test (mcp-server)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Test with coverage (with Tree-sitter WASM init retry)
-        working-directory: packages/mcp-server
-        shell: bash
+      - name: Install Rust toolchains
         run: |
-          set +e
-          bun run test:coverage
-          first=$?
-          if [ $first -ne 0 ]; then
-            echo "::warning::First test run failed (likely Tree-sitter WASM init flake); retrying once"
-            bun run test:coverage
-          fi
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.97.1
+          rustup toolchain install nightly-2026-07-19 --profile minimal --component llvm-tools-preview
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Install native quality tools
+        run: |
+          cargo install --locked cargo-llvm-cov --version 0.8.4
+          cargo install --locked cargo-fuzz --version 0.12.0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
@@ -97,8 +40,35 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      - name: Check native engine
+        run: bun run check:native
+
+  package:
+    name: Package smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Build native package
+        run: bun run package:native
+
+      - name: Verify archive and checksum
+        run: |
+          cd dist/native
+          sha256sum -c distill-linux-x86_64.tar.gz.sha256
+          tar -tzf distill-linux-x86_64.tar.gz
 
   knip:
     name: Knip (dead code)
@@ -118,35 +88,9 @@ jobs:
       - name: Knip
         run: bun run knip
 
-  shellcheck:
-    name: Shellcheck (shell scripts)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # shellcheck is pre-installed on GitHub's ubuntu-latest runners. The
-      # v0.10 PreCompact hook (US-009) is declared /bin/sh and must stay
-      # POSIX-clean. Other scripts under packages/mcp-server/scripts/ have
-      # their own shells — they can be added to this gate when they are
-      # explicitly reviewed for POSIX compliance.
-      - name: Shellcheck (POSIX sh) — precompact hook
-        run: shellcheck -s sh packages/mcp-server/scripts/precompact-hook.sh
-
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
-    # Advisory / non-blocking (US-016). `bun audit` runs on every push + PR to
-    # surface known advisories across the dependency tree (FR-10). It does NOT
-    # gate merges: every current advisory is transitive or dev-only and
-    # unfixable without moving pinned deps (web-tree-sitter 0.22.6 /
-    # @sebastianwessel/quickjs 3.0.0 are pinned by contract) or out-of-scope
-    # upstream bumps — the lone "critical" is the Vitest UI dev-server
-    # (GHSA-5xrq-8626-4rwp, never started in CI/prod), and the "high"
-    # path-to-regexp / picomatch advisories arrive via @modelcontextprotocol/sdk,
-    # fumadocs, vitest, knip, and eslint plugins. A maintainer reviews the audit
-    # output; tighten to `bun audit --audit-level=high` gating once the
-    # transitive tree is clean.
     continue-on-error: true
     steps:
       - name: Checkout

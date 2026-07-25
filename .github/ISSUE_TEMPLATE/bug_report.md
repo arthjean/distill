@@ -8,12 +8,12 @@ assignees: []
 
 ## Environment
 
-- **Distill version** (`npx distill-mcp --version`):
-- **Node.js version** (`node --version`):
+- **Source commit or native archive SHA-256**:
+- **Rust version** (`rustc --version`):
 - **OS + version**:
-- **MCP client**: Claude Code / Cursor / Windsurf / other:
-- **Install method**: `npx` / global install / Smithery / from source:
-- **Affected tool**: `auto_optimize` / `smart_file_read` / `code_execute` / CLI / other:
+- **Surface**: CLI / Codex hook / Claude `distill_read` / Claude `distill_run`:
+- **Install method**: native archive / from source:
+- **Source kind**: inline / file / process / artifact:
 
 ## Steps to reproduce
 
@@ -31,11 +31,8 @@ assignees: []
 
 ## Logs
 
-Run the server with verbose logging and paste the relevant stderr output:
-
-```bash
-npx distill-mcp serve --verbose
-```
+Paste the exact command, bounded machine-readable result, and relevant stderr
+output. Redact source bodies, artifact contents, configured roots, and secrets.
 
 <details>
 <summary>Distill log output</summary>
@@ -48,4 +45,4 @@ paste logs here
 
 ## Additional context
 
-<!-- For smart_file_read: which language and mode? For code_execute: the sandbox snippet (redact secrets). Does it reproduce on a minimal input? -->
+<!-- Include the budget, preservation profile, adapter mode, and whether a minimal synthetic input reproduces the issue. -->
