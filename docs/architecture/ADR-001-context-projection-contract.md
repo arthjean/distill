@@ -293,14 +293,18 @@ P0 or budget guarantee.
 
 For every result that can omit source bytes:
 
-```text
-acquire bounded source
-  -> validate storage root and permissions
-  -> atomically commit source bytes and metadata
-  -> verify committed artifact identity
-  -> derive projection
-  -> validate preservation and budget
-  -> release Outcome or post-commit Failure
+```mermaid
+flowchart TD
+    acquire["Acquire bounded source"]
+    validateRoot["Validate storage root and permissions"]
+    commit["Atomically commit source bytes and metadata"]
+    verifyArtifact["Verify committed artifact identity"]
+    project["Derive projection"]
+    validateResult["Validate preservation and budget"]
+    release["Release Outcome or post-commit Failure"]
+
+    acquire --> validateRoot --> commit --> verifyArtifact
+    verifyArtifact --> project --> validateResult --> release
 ```
 
 No projection, receipt, or artifact reference crosses the central boundary

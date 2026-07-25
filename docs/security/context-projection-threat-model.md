@@ -66,16 +66,20 @@ network requests.
 
 ## Data flow and commit boundary
 
-```text
-untrusted request
-  -> schema and resource validation
-  -> bounded acquisition
-  -> private temporary artifact
-  -> atomic source and metadata transaction
-  -> permission and integrity verification
-  -> deterministic projection
-  -> budget and preservation verification
-  -> adapter
+```mermaid
+flowchart TD
+    request["Untrusted request"]
+    validate["Schema and resource validation"]
+    acquire["Bounded acquisition"]
+    temporary["Private temporary artifact"]
+    commit["Atomic source and metadata transaction"]
+    verify["Permission and integrity verification"]
+    project["Deterministic projection"]
+    validateProjection["Budget and preservation verification"]
+    adapter["Adapter"]
+
+    request --> validate --> acquire --> temporary --> commit
+    commit --> verify --> project --> validateProjection --> adapter
 ```
 
 Temporary files are created inside the validated private store. They are never

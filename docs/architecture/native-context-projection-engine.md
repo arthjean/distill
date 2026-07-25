@@ -4,18 +4,25 @@
 
 Distill vNext is one Rust binary, `distill`, around one central engine boundary:
 
-```text
-CLI / Codex hook / Claude MCP
-            |
-            v
-      Request translation
-            |
-            v
-       Engine::handle
-       /           \
-artifact store   projector
-       \           /
-        Outcome or Failure
+```mermaid
+flowchart TD
+    cli["CLI"]
+    codex["Codex hook"]
+    claude["Claude MCP"]
+    translation["Request translation"]
+    engine["Engine::handle"]
+    store[("Artifact store")]
+    projector["Projector"]
+    result["Outcome or Failure"]
+
+    cli --> translation
+    codex --> translation
+    claude --> translation
+    translation --> engine
+    engine --> store
+    engine --> projector
+    store --> result
+    projector --> result
 ```
 
 The versioned CLI and JSONL protocol are the product contract. Rust types remain

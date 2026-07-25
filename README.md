@@ -20,11 +20,11 @@ its historical evidence stays in the repository.
 
 ## Product contract
 
-```text
-observation
-    |
-    v
-commit raw bytes -> project to budget -> visible output + artifact ref + receipt
+```mermaid
+flowchart LR
+    observation["Observation"] --> commit["Commit raw bytes"]
+    commit --> project["Project to budget"]
+    project --> result["Visible output<br/>Artifact reference<br/>Receipt"]
 ```
 
 The engine:
