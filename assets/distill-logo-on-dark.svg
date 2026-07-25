@@ -1,0 +1,52 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="105 246 814 532"
+  role="img"
+  aria-labelledby="distill-logo-title distill-logo-description"
+>
+  <title id="distill-logo-title">Distill</title>
+  <desc id="distill-logo-description">
+    Two opposing boundaries compress context around a retained core.
+  </desc>
+
+  <style>
+    .distill-boundaries {
+      fill: #eaae5c;
+      fill: var(--distill-frame, oklch(0.791 0.121 73.016));
+    }
+
+    .distill-core {
+      fill: #da7446;
+      fill: var(--distill-core, oklch(0.667 0.141 43.884));
+    }
+  </style>
+
+  <defs>
+    <path
+      id="distill-boundary"
+      d="
+        M 337 266
+        H 454
+        V 322
+        L 353 423
+        C 304 472 304 552 353 601
+        L 454 702
+        V 758
+        H 337
+        L 167 588
+        C 125 546 125 478 167 436
+        Z
+      "
+    />
+  </defs>
+
+  <g class="distill-boundaries">
+    <use href="#distill-boundary" />
+    <use href="#distill-boundary" transform="translate(1024 0) scale(-1 1)" />
+  </g>
+
+  <path
+    class="distill-core"
+    d="M 512 434 L 590 512 L 512 590 L 434 512 Z"
+  />
+</svg>
