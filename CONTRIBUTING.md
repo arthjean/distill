@@ -7,7 +7,7 @@ protocols.
 ## Prerequisites
 
 - Rust 1.97.1
-- Bun 1.3+
+- Bun 1.3+ for evaluation tooling
 - SQLite development libraries
 - `cargo-llvm-cov` and `cargo-fuzz` for the complete native gate
 
@@ -16,8 +16,7 @@ protocols.
 ```bash
 git clone https://github.com/arthjean/distill.git
 cd distill
-bun install
-bun run build
+cargo build --locked --release --manifest-path native/distill-core/Cargo.toml
 ```
 
 The production crate is `native/distill-core`. The evaluation corpus lives in
@@ -29,7 +28,7 @@ The production crate is `native/distill-core`. The evaluation corpus lives in
 Run the complete native gate for runtime changes:
 
 ```bash
-bun run check:native
+./scripts/check-native.sh
 ```
 
 Run one focused test while iterating:
@@ -38,17 +37,17 @@ Run one focused test while iterating:
 cargo test --manifest-path native/distill-core/Cargo.toml <test-name>
 ```
 
-For root JavaScript manifests or evaluation tooling:
+Verify the evaluation corpus without rewriting its artifacts:
 
 ```bash
-bun run knip
+bun evaluation/corpus/check.mjs --verify
 ```
 
 For distribution changes, build an unpublished package and verify its adjacent
 checksum:
 
 ```bash
-bun run package:native
+./scripts/package-native.sh
 ```
 
 Packaging writes ignored files under `dist/native`. It does not publish or

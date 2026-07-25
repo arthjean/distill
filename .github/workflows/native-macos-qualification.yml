@@ -2,11 +2,6 @@ name: Native macOS arm64 qualification
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - agent/ep005-macos-qualification
-    paths-ignore:
-      - evaluation/release/evidence/**
 
 permissions:
   contents: read

@@ -41,18 +41,20 @@ adapters translate protocols and acquisition only.
 
 ## Build from source
 
-Requirements: Rust 1.97.1 and Bun 1.3+.
+Requirements: Rust 1.97.1 and the platform SQLite development libraries.
 
 ```bash
-bun install
-bun run build:native
+cargo build --locked --release --manifest-path native/distill-core/Cargo.toml
 ./native/distill-core/target/release/distill --help
 ```
+
+Evaluation and qualification tooling additionally requires Bun 1.3+. It does
+not require a package installation.
 
 Create an unpublished archive for the current supported packaging host:
 
 ```bash
-bun run package:native
+./scripts/package-native.sh
 ```
 
 This produces `dist/native/distill-<platform>.tar.gz` and its SHA-256 file. It
@@ -177,13 +179,13 @@ Native verification:
 
 ```bash
 ./scripts/check-native.sh
-bun run knip
+bun evaluation/corpus/check.mjs --verify
 ```
 
 Build an unpublished native archive and verify its adjacent checksum:
 
 ```bash
-bun run package:native
+./scripts/package-native.sh
 ```
 
 The approved deletion and rollback record is

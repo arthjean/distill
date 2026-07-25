@@ -117,7 +117,7 @@ by its packaging host; the assets are not static or musl builds. An adjacent
 SHA-256 file checks transfer integrity but does not authenticate the publisher.
 Release publication must use an authenticated channel and a separately approved
 signature or provenance policy. Assets are built on their supported packaging
-host with `bun run package:native`.
+host with `./scripts/package-native.sh`.
 
 No npm launcher is selected for v1. One native executable is the product
 boundary, and a launcher would add Node, platform resolution, and another

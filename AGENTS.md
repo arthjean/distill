@@ -3,8 +3,9 @@
 This is the canonical repository guidance for coding agents. Claude Code imports
 it through the colocated `CLAUDE.md`.
 
-Distill ships the Rust `distill` binary from `native/distill-core`. The root Bun
-project orchestrates builds, checks, packaging, and evaluation tooling.
+Distill ships the Rust `distill` binary from `native/distill-core`. Cargo and
+the scripts under `scripts/` orchestrate native builds, checks, and packaging.
+Bun is used only for evaluation tooling.
 
 ## Protect contracts, user state, and evidence
 
@@ -30,23 +31,22 @@ project orchestrates builds, checks, packaging, and evaluation tooling.
 
 ## Use the narrowest validation
 
-Use Bun for root package operations and preserve `bun.lock`. Rust `1.97.1` is
-pinned by `native/distill-core/rust-toolchain.toml`.
+Rust `1.97.1` is pinned by `native/distill-core/rust-toolchain.toml`. Evaluation
+scripts require Bun `1.3+`; they do not require a package installation.
 
 - Focused Rust test:
   `cargo test --manifest-path native/distill-core/Cargo.toml <test-name>`
-- Release build: `bun run build`
-- Full native CI gate: `bun run check:native`
-- Root or evaluation JavaScript check: `bun run knip`
+- Release build:
+  `cargo build --locked --release --manifest-path native/distill-core/Cargo.toml`
+- Full native CI gate: `./scripts/check-native.sh`
 - Corpus verification: `bun evaluation/corpus/check.mjs --verify`
 - Legacy evaluation verification: `bun evaluation/legacy/run.mjs --verify`
-- Unpublished native package: `bun run package:native`
+- Unpublished native package: `./scripts/package-native.sh`
 
 Use the focused test while iterating. The full native gate runs formatting
 checks, Clippy, coverage floors, all targets, and a fuzz-target build, so reserve
 it for an explicitly requested consolidated validation or delivery pass.
-`bun run format` is not a check: it rewrites every matching Markdown, TypeScript,
-and TSX file. Format only files in the requested scope.
+Format only files in the requested scope.
 
 ## Preserve the engine boundary
 

@@ -28,7 +28,7 @@
         "libgcc_s",
         "system libsqlite3.so.0"
       ],
-      "packaging_command": "bun run package:native",
+      "packaging_command": "./scripts/package-native.sh",
       "qualification": {
         "evidence": "evaluation/release/evidence/automated-linux-x86_64-v2.json",
         "suite_evidence": "evaluation/release/evidence/suite-linux-x86_64-v2.json",
@@ -46,7 +46,7 @@
       "archive": "distill-macos-arm64.tar.gz",
       "checksum": "distill-macos-arm64.tar.gz.sha256",
       "runtime_dependencies": ["macOS system runtime", "system libsqlite3"],
-      "packaging_command": "bun run package:native",
+      "packaging_command": "./scripts/package-native.sh",
       "qualification": {
         "evidence": "evaluation/release/evidence/macos-arm64-distribution-v1.json",
         "aggregate": "evaluation/release/evidence/native-distribution-v2.json",

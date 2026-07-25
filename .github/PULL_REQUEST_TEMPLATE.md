@@ -10,10 +10,10 @@
 
 <!-- Check every command that applies to the changed surface. -->
 
-- [ ] `bun run check:native`
-- [ ] `bun run knip`
-- [ ] `bun run build`
-- [ ] `bun run package:native` and checksum verification, if distribution changed
+- [ ] `./scripts/check-native.sh`
+- [ ] `bun evaluation/corpus/check.mjs --verify`
+- [ ] `cargo build --locked --release --manifest-path native/distill-core/Cargo.toml`
+- [ ] `./scripts/package-native.sh` and checksum verification, if distribution changed
 
 ## Compatibility
 

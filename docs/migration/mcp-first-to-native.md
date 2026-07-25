@@ -97,10 +97,11 @@ The selected v1 strategy is two direct native assets:
 | Linux x86_64 GNU | `distill-linux-x86_64.tar.gz` | Same-tree native distribution v2 `GO` |
 | macOS arm64      | `distill-macos-arm64.tar.gz`  | Same-tree native distribution v2 `GO` |
 
-`bun run package:native` builds with the locked Rust dependency graph, packages
-the binary, license, and install guide, and writes an adjacent SHA-256 file. It
-rejects every unsupported packaging host. Generated archives stay under ignored
-`dist/native/`. Packaging does not promote a target's qualification status.
+`./scripts/package-native.sh` builds with the locked Rust dependency graph,
+packages the binary, license, and install guide, and writes an adjacent SHA-256
+file. It rejects every unsupported packaging host. Generated archives stay
+under ignored `dist/native/`. Packaging does not promote a target's
+qualification status.
 
 The packaged executables use the system runtime and SQLite libraries on their
 host. Linux targets GNU libc with `libgcc_s` and `libsqlite3.so.0`; macOS uses
