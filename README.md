@@ -13,10 +13,11 @@ raw bytes, and returns a deterministic model-visible projection within an
 explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
-The native engine is qualified on Linux x86_64 and macOS arm64 on the same
-native tree. Nothing has been published. The retired TypeScript MCP-first
-implementation remains recoverable through the recorded pre-US-020 ref, while
-its historical evidence stays in the repository.
+The closed native-distribution v2 evidence qualifies Linux x86_64 and macOS
+arm64 on the pre-root-layout source tree. The current root Cargo crate requires
+a new qualification before publication. Nothing has been published. The
+retired TypeScript MCP-first implementation remains recoverable through the
+recorded pre-US-020 ref, while its historical evidence stays in the repository.
 
 ## Product contract
 
@@ -44,8 +45,8 @@ adapters translate protocols and acquisition only.
 Requirements: Rust 1.97.1 and the platform SQLite development libraries.
 
 ```bash
-cargo build --locked --release --manifest-path native/distill-core/Cargo.toml
-./native/distill-core/target/release/distill --help
+cargo build --locked --release
+./target/release/distill --help
 ```
 
 Evaluation and qualification tooling additionally requires Bun 1.3+. It does
@@ -143,10 +144,10 @@ tools bypasses projection. MCP stdout contains JSON-RPC only.
 
 | Surface                                           | V1 status          | Contract                                                       |
 | ------------------------------------------------- | ------------------ | -------------------------------------------------------------- |
-| Linux x86_64 GNU                                  | Qualified          | Native archive                                                 |
-| macOS arm64                                       | Qualified          | Native archive                                                 |
-| Codex supported local `PostToolUse` events        | Qualified          | Automatic off, observe, or active mode                         |
-| Claude `distill_read` and `distill_run`           | Qualified          | Explicit MCP acquisition                                       |
+| Linux x86_64 GNU                                  | Requalification required | Native archive                                            |
+| macOS arm64                                       | Requalification required | Native archive                                            |
+| Codex supported local `PostToolUse` events        | Requalification required | Automatic off, observe, or active mode                    |
+| Claude `distill_read` and `distill_run`           | Requalification required | Explicit MCP acquisition                                  |
 | Codex hosted tools without a supported hook event | Unsupported        | No interception and no Distill diagnostic                      |
 | Claude native `Read` and `Bash`                   | Unsupported        | Bypass Distill                                                 |
 | Windows, macOS x86_64, Linux arm64, Linux musl    | Unsupported        | No release claim                                               |
@@ -166,11 +167,13 @@ The complete host and platform matrix is in
 - [Native distribution manifest](docs/distribution/native-assets.json)
 - [Release qualification](evaluation/release/README.md)
 
-The native distribution v2 aggregate binds the Linux and macOS receipts to
-native tree `77c75f741cd69a9b229dd73c1be435181db73cf1`. The Linux release gate
-covers 102 corpus fixtures, recovery, concurrency, latency, memory, fuzzing,
-and zero-network behavior. The US-018 v5 paired gate scored 50/50 for raw and
-50/50 for projected conditions with a 0 point delta. No qualification action
+The closed native distribution v2 aggregate binds the Linux and macOS receipts
+to the pre-root-layout native tree
+`77c75f741cd69a9b229dd73c1be435181db73cf1`. The Linux release gate covers 102
+corpus fixtures, recovery, concurrency, latency, memory, fuzzing, and
+zero-network behavior. The US-018 v5 paired gate scored 50/50 for raw and 50/50
+for projected conditions with a 0 point delta. Those receipts remain historical
+evidence and do not qualify the current source tree. No qualification action
 published an asset, tag, or version.
 
 ## Development

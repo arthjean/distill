@@ -34,7 +34,7 @@ selection in [ADR-002](ADR-002-language-and-persistence.md).
 
 ## Central engine
 
-`native/distill-core/src/lib.rs` owns the capture transaction and coordinates:
+`src/lib.rs` owns the capture transaction and coordinates:
 
 - source acquisition from inline bytes, allowlisted files, argv-only
   subprocesses, and artifact references;
@@ -42,13 +42,13 @@ selection in [ADR-002](ADR-002-language-and-persistence.md).
 - deterministic projection against an explicit byte or named-token budget;
 - receipts, accounting, retention, recovery, tracing, and typed failures.
 
-`native/distill-core/src/types.rs` defines the versioned request, outcome,
+`src/types.rs` defines the versioned request, outcome,
 artifact, receipt, and failure shapes. No host-specific type crosses this
 boundary.
 
 ## Persistence and recovery
 
-`native/distill-core/src/artifact.rs` uses SQLite WAL for both source bytes and
+`src/artifact.rs` uses SQLite WAL for both source bytes and
 metadata. The store:
 
 - creates directories with mode `0700` and data with mode `0600` where POSIX
@@ -64,7 +64,7 @@ at most 10 MiB per observation and eight concurrent writers.
 
 ## Projection policy
 
-`native/distill-core/src/projection.rs` provides deterministic extractive
+`src/projection.rs` provides deterministic extractive
 profiles. It preserves mandatory spans, selects optional spans within the
 remaining budget, and emits a receipt that maps visible and omitted spans to the
 source digest.
@@ -78,7 +78,7 @@ parsers, or executable user projection code.
 
 ## Acquisition
 
-`native/distill-core/src/runtime.rs` owns bounded local acquisition:
+`src/runtime.rs` owns bounded local acquisition:
 
 - file reads require an explicit root and resist traversal and symlink
   replacement;
@@ -91,19 +91,19 @@ parsers, or executable user projection code.
 
 ## Adapters
 
-`native/distill-core/src/cli.rs` exposes `project`, `artifact get`, `artifact
+`src/cli.rs` exposes `project`, `artifact get`, `artifact
 trace`, `status`, `gc`, `read`, and `run`.
 
-`native/distill-core/src/codex.rs` translates supported Codex `PostToolUse`
+`src/codex.rs` translates supported Codex `PostToolUse`
 events. It supports off, observe, and active modes and keeps blocking feedback
 within the versioned model-visible limit. It cannot observe hosted or specialized
 tools that emit no supported event.
 
-`native/distill-core/src/mcp.rs` exposes only `distill_read` and `distill_run`.
+`src/mcp.rs` exposes only `distill_read` and `distill_run`.
 They own acquisition and therefore can project before bytes enter Claude's
 context. Native Claude `Read` and `Bash` remain outside Distill.
 
-`native/distill-core/src/setup.rs` performs explicit, idempotent configuration
+`src/setup.rs` performs explicit, idempotent configuration
 installation with dry-run, byte-exact backup, and restore.
 
 Adapters may translate envelopes and enforce host limits. They may not own
@@ -144,11 +144,11 @@ The release gate must remain inspectable through committed evidence:
 - an aggregate qualification that is `GO` only when paired and macOS gates are
   both `GO`.
 
-The current aggregate is
+The closed aggregate is
 [`evaluation/release/evidence/us018-qualification-v5.json`](../../evaluation/release/evidence/us018-qualification-v5.json).
-It qualifies the current native tree on macOS arm64. The committed Linux report
-targets an earlier native tree; Linux packaging is prepared but is not
-publishable until the current tree passes the same release qualification.
+It qualifies the pre-root-layout source tree on macOS arm64. The root Cargo
+crate changes the candidate identity and remains unqualified on both supported
+platforms until a new versioned release gate is preregistered and executed.
 
 ## Deliberate boundaries
 

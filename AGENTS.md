@@ -3,9 +3,9 @@
 This is the canonical repository guidance for coding agents. Claude Code imports
 it through the colocated `CLAUDE.md`.
 
-Distill ships the Rust `distill` binary from `native/distill-core`. Cargo and
-the scripts under `scripts/` orchestrate native builds, checks, and packaging.
-Bun is used only for evaluation tooling.
+Distill ships the Rust `distill` binary from the root Cargo crate. Cargo and the
+scripts under `scripts/` orchestrate native builds, checks, and packaging. Bun
+is used only for evaluation tooling.
 
 ## Protect contracts, user state, and evidence
 
@@ -31,13 +31,12 @@ Bun is used only for evaluation tooling.
 
 ## Use the narrowest validation
 
-Rust `1.97.1` is pinned by `native/distill-core/rust-toolchain.toml`. Evaluation
-scripts require Bun `1.3+`; they do not require a package installation.
+Rust `1.97.1` is pinned by `rust-toolchain.toml`. Evaluation scripts require Bun
+`1.3+`; they do not require a package installation.
 
 - Focused Rust test:
-  `cargo test --manifest-path native/distill-core/Cargo.toml <test-name>`
-- Release build:
-  `cargo build --locked --release --manifest-path native/distill-core/Cargo.toml`
+  `cargo test <test-name>`
+- Release build: `cargo build --locked --release`
 - Full native CI gate: `./scripts/check-native.sh`
 - Corpus verification: `bun evaluation/corpus/check.mjs --verify`
 - Unpublished native package: `./scripts/package-native.sh`

@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use distill_core::{
+use distill::{
     ArtifactRef, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
     EngineConfig, Request, Retention, ScalarValue, Source,
 };
@@ -93,6 +93,7 @@ struct SuiteEvidence {
     profile: String,
     result: String,
     git_revision: String,
+    source_tree: String,
     binary_sha256: String,
     commands: Vec<String>,
     completed_at: String,
@@ -218,17 +219,22 @@ fn run() -> Result<bool, Box<dyn Error>> {
         && fuzz.cpu_seconds >= 3_600.0
         && fuzz.timeout_seconds <= 5;
     let linux_release: SuiteEvidence = serde_json::from_slice(&fs::read(&options.suite_evidence)?)?;
-    let linux_release_pass = linux_release.schema_version == "distill.release-suite/v1"
+    let linux_release_pass = linux_release.schema_version == "distill.release-suite/v2"
         && linux_release.target == "linux-x86_64"
         && linux_release.profile == "release"
         && linux_release.result == "passed"
         && linux_release.git_revision == git_revision
+        && linux_release.source_tree.len() == 40
+        && linux_release
+            .source_tree
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
         && linux_release.binary_sha256 == binary_sha256
         && linux_release.commands
             == [
                 "./scripts/check-native.sh",
-                "cargo build --release --manifest-path native/distill-core/Cargo.toml",
-                "cargo test --release --manifest-path native/distill-core/Cargo.toml",
+                "cargo build --release",
+                "cargo test --release",
             ]
         && cfg!(all(target_os = "linux", target_arch = "x86_64"));
     let critical_failures = CriticalFailures {
@@ -254,7 +260,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
         "NO-GO"
     };
     let report = Report {
-        schema_version: "distill.release-gate/v1",
+        schema_version: "distill.release-gate/v2",
         generated_at: timestamp(SystemTime::now())?,
         git_revision,
         reference_machine: machine()?,

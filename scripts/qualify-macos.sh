@@ -2,11 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MANIFEST="$ROOT/native/distill-core/Cargo.toml"
-BINARY="$ROOT/native/distill-core/target/release/distill"
-OUTPUT="${1:-$ROOT/evaluation/release/evidence/macos-arm64.json}"
+MANIFEST="$ROOT/Cargo.toml"
+BINARY="$ROOT/target/release/distill"
+OUTPUT="${1:-${TMPDIR:-/tmp}/distill-macos-root-layout-v1.json}"
 RUN_DIRECTORY="$(mktemp -d "${TMPDIR:-/tmp}/distill-macos.XXXXXX")"
 source_worktree_clean=false
+source_tree=""
 
 cleanup() {
   if [[ -d "$RUN_DIRECTORY" && "$(basename "$RUN_DIRECTORY")" == distill-macos.* ]]; then
@@ -26,15 +27,17 @@ finish() {
     jq -n \
       --arg git_revision "${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD)}" \
       --arg architecture "$(uname -m)" \
+      --arg source_tree "$source_tree" \
       --arg binary_sha256 "$binary_sha256" \
       --arg workflow_run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-unknown}/actions/runs/${GITHUB_RUN_ID:-unknown}" \
       --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --argjson source_worktree_clean "$source_worktree_clean" \
       --argjson exit_code "$exit_code" \
       '{
-        schema_version: "distill.macos-qualification/v1",
+        schema_version: "distill.macos-qualification/v2",
         target: "macos-arm64",
         git_revision: $git_revision,
+        source_tree: (if $source_tree == "" then null else $source_tree end),
         source_worktree_clean: $source_worktree_clean,
         binary_sha256: (if $binary_sha256 == "" then null else $binary_sha256 end),
         machine: { architecture: $architecture },
@@ -57,6 +60,7 @@ if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
   exit 1
 fi
 source_worktree_clean=true
+source_tree="$("$ROOT/scripts/source-tree.sh")"
 
 cargo fmt --manifest-path "$MANIFEST" --check
 cargo clippy --manifest-path "$MANIFEST" --all-targets -- -D warnings
@@ -134,6 +138,7 @@ jq -n \
   --arg kernel "$(uname -r)" \
   --arg architecture "$(uname -m)" \
   --arg rustc "$(rustc --version)" \
+  --arg source_tree "$source_tree" \
   --arg binary_sha256 "$binary_sha256" \
   --arg workflow_run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-unknown}/actions/runs/${GITHUB_RUN_ID:-unknown}" \
   --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -145,9 +150,10 @@ jq -n \
   --slurpfile claude_uninstall "$RUN_DIRECTORY/claude-uninstall.json" \
   --slurpfile project "$RUN_DIRECTORY/project.json" \
   '{
-    schema_version: "distill.macos-qualification/v1",
+    schema_version: "distill.macos-qualification/v2",
     target: "macos-arm64",
     git_revision: $git_revision,
+    source_tree: $source_tree,
     source_worktree_clean: true,
     binary_sha256: $binary_sha256,
     machine: {

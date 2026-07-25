@@ -1,5 +1,5 @@
 use crate::{codex, mcp, setup};
-use distill_core::{
+use distill::{
     ArtifactRef, BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit,
     Engine, EngineConfig, Failure, FailureCode, Outcome, Request, Retention, ScalarValue, Source,
 };

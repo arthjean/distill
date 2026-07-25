@@ -16,10 +16,10 @@ protocols.
 ```bash
 git clone https://github.com/arthjean/distill.git
 cd distill
-cargo build --locked --release --manifest-path native/distill-core/Cargo.toml
+cargo build --locked --release
 ```
 
-The production crate is `native/distill-core`. The evaluation corpus lives in
+The production crate is rooted at `Cargo.toml`. The evaluation corpus lives in
 `evaluation/corpus`, and release protocols and evidence live in
 `evaluation/release`.
 
@@ -34,7 +34,7 @@ Run the complete native gate for runtime changes:
 Run one focused test while iterating:
 
 ```bash
-cargo test --manifest-path native/distill-core/Cargo.toml <test-name>
+cargo test <test-name>
 ```
 
 Verify the evaluation corpus without rewriting its artifacts:

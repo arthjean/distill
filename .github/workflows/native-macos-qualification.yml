@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 30
     env:
       TMPDIR: /private/tmp
+      DISTILL_MACOS_EVIDENCE: ${{ runner.temp }}/distill-macos-root-layout-v1.json
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -19,11 +20,11 @@ jobs:
           toolchain: "1.97.1"
           components: rustfmt, clippy
       - name: Run native qualification
-        run: ./scripts/qualify-macos.sh
+        run: ./scripts/qualify-macos.sh "$DISTILL_MACOS_EVIDENCE"
       - name: Upload qualification evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: distill-macos-arm64-qualification
-          path: evaluation/release/evidence/macos-arm64.json
+          name: distill-macos-arm64-root-layout-v1
+          path: ${{ env.DISTILL_MACOS_EVIDENCE }}
           if-no-files-found: error

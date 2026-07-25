@@ -1,5 +1,5 @@
 use crate::cli::{SurfaceError, write_json_line};
-use distill_core::{
+use distill::{
     Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Failure,
     FailureCode, Fidelity, Outcome, Request, Retention, ScalarValue, Source,
 };
@@ -322,7 +322,7 @@ fn failure_feedback(failure: &Failure) -> String {
 fn compact_feedback(
     code: FailureCode,
     message: &str,
-    artifact: Option<&distill_core::ArtifactRef>,
+    artifact: Option<&distill::ArtifactRef>,
 ) -> String {
     serde_json::to_string(&json!({
         "schema_version": PROJECTION_SCHEMA_VERSION,

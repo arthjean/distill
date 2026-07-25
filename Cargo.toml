@@ -1,13 +1,9 @@
 [package]
-name = "distill-core"
+name = "distill"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.97"
 publish = false
-
-[[bin]]
-name = "distill"
-path = "src/main.rs"
 
 [features]
 fuzzing = []

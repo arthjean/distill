@@ -12,7 +12,7 @@
 
 - [ ] `./scripts/check-native.sh`
 - [ ] `bun evaluation/corpus/check.mjs --verify`
-- [ ] `cargo build --locked --release --manifest-path native/distill-core/Cargo.toml`
+- [ ] `cargo build --locked --release`
 - [ ] `./scripts/package-native.sh` and checksum verification, if distribution changed
 
 ## Compatibility

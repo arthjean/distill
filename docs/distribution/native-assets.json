@@ -1,15 +1,19 @@
 {
-  "schema_version": "distill.native-distribution/v1",
+  "schema_version": "distill.native-distribution/v2",
   "strategy": "direct-native-release-assets",
-  "current_native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+  "source_layout": "root-cargo-crate/v1",
+  "current_source_tree": "3769cb4e0400f9edd5bd40d8ab4b7c9ffc30b7d8",
+  "current_status": "qualification-required",
   "release_performed": false,
   "version_changed": false,
   "checksum_scope": "integrity only; publication must use an authenticated release channel and a separately approved provenance or signature policy",
   "qualification": {
     "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
     "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+    "source_layout": "native/distill-core",
     "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
-    "status": "GO"
+    "same_as_current_source_tree": false,
+    "status": "historical-go"
   },
   "npm_launcher": {
     "selected": false,
@@ -36,9 +40,9 @@
         "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
         "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
         "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
-        "same_as_current_native_tree": true
+        "same_as_current_source_tree": false
       },
-      "status": "qualified"
+      "status": "qualification-required"
     },
     {
       "platform": "macos-arm64",
@@ -53,9 +57,9 @@
         "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30127687300",
         "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
         "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
-        "same_as_current_native_tree": true
+        "same_as_current_source_tree": false
       },
-      "status": "qualified"
+      "status": "qualification-required"
     }
   ],
   "unsupported_platforms": [

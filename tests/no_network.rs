@@ -1,7 +1,7 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::expect_used)]
 
-use distill_core::{
+use distill::{
     Budget, ByteString, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Request, Retention,
     Source,
 };

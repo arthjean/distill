@@ -16,11 +16,11 @@ dist
 /spikes/zig/.zig-cache/
 /spikes/zig/zig-out/
 /spikes/evidence/.tmp-*/
-/native/distill-core/target/
-/native/distill-core/fuzz/target/
-/native/distill-core/fuzz/artifacts/
-/native/distill-core/fuzz/corpus/
-/native/distill-core/fuzz-*.log
+/target/
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz-*.log
 
 # Misc
 .DS_Store

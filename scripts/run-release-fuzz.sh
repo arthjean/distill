@@ -2,13 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MANIFEST="$ROOT/native/distill-core/fuzz/Cargo.toml"
 OUTPUT="${1:-$ROOT/evaluation/release/evidence/fuzz-linux-x86_64.json}"
 TOOLCHAIN="${DISTILL_COVERAGE_TOOLCHAIN:-nightly-2026-07-19}"
 WORKERS="${DISTILL_FUZZ_WORKERS:-16}"
 WALL_SECONDS="${DISTILL_FUZZ_WALL_SECONDS:-300}"
 TARGET="$(rustc "+$TOOLCHAIN" -vV | awk '/^host:/ { print $2 }')"
-FUZZ_BINARY="$ROOT/native/distill-core/fuzz/target/$TARGET/release/fuzz_engine"
+FUZZ_BINARY="$ROOT/fuzz/target/$TARGET/release/fuzz_engine"
 RUN_DIRECTORY="$(mktemp -d)"
 TIMING="$RUN_DIRECTORY/timing.txt"
 LOG="$RUN_DIRECTORY/fuzzer.log"
@@ -24,7 +23,7 @@ trap cleanup EXIT
 mkdir -p "$(dirname "$OUTPUT")"
 mkdir -p "$CORPUS"
 (
-  cd "$ROOT/native/distill-core"
+  cd "$ROOT"
   cargo "+$TOOLCHAIN" fuzz build fuzz_engine
 )
 if [[ ! -x "$FUZZ_BINARY" ]]; then

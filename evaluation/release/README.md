@@ -1,10 +1,29 @@
 # Release qualification
 
+## Current root-crate gate
+
+The root Cargo layout introduces `distill.release-suite/v2` and
+`distill.release-gate/v2`. It identifies the production source through
+`source_tree`, the Git object ID of the canonical `git ls-tree` listing for
+`Cargo.toml`, `Cargo.lock`, `clippy.toml`, `rust-toolchain.toml`, `src/`,
+`tests/`, `examples/`, and `fuzz/`.
+
+The versioned native-distribution and US-018 files under `evaluation/release/`,
+their ledgers and evidence, and `scripts/qualify-native-distribution.sh` remain
+closed and byte-identical. They qualify only the previous `native/distill-core`
+tree. The root-layout source requires a separately preregistered qualification
+before any current distribution claim or publication.
+
 `scripts/qualify-release.sh` is the non-interactive Linux x86_64 automated
 release gate. It runs the complete native release suite, an additional
 release-mode fuzz campaign with at least one CPU-hour of aggregate execution,
-and the evaluator that writes
-`evidence/automated-linux-x86_64.json`.
+and the evaluator that writes outside the closed evidence tree by default under
+`/tmp/distill-root-layout-release/`.
+
+The macOS workflow emits `distill.macos-qualification/v2` evidence bound to the
+same `source_tree` and uploads it as
+`distill-macos-arm64-root-layout-v1`. Neither output is current qualification
+evidence until a new protocol preregisters its exact destination and hashes.
 
 The report is `GO` only when all of these conditions hold:
 
@@ -48,11 +67,13 @@ dollars; every attempt uses only the existing subscriptions.
 qualification at 120 invocations. The evaluator refuses any replay without a
 new approval.
 
-`.github/workflows/native-macos-qualification.yml` runs the release contract and
-corpus suite on the official `macos-15` arm64 image. It also exercises Codex and
-Claude setup, idempotent repeat, restore/uninstall, projection, and byte-exact
-artifact recovery. The uploaded `macos-arm64.json` artifact is the
-second-platform qualification receipt.
+For the closed v1 qualification,
+`.github/workflows/native-macos-qualification.yml` ran the release contract and
+corpus suite on the official `macos-15` arm64 image. It also exercised Codex
+and Claude setup, idempotent repeat, restore/uninstall, projection, and
+byte-exact artifact recovery. The historical `macos-arm64.json` artifact
+remains that qualification's second-platform receipt. The current workflow's
+root-layout artifact cannot be substituted into the frozen v1 checker.
 
 After downloading that receipt,
 `bun evaluation/release/check-us018.mjs` produces the aggregate US-018 verdict.

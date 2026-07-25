@@ -1,5 +1,5 @@
 use crate::cli::SurfaceError;
-use distill_core::{
+use distill::{
     BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
     EngineConfig, Failure, FailureCode, Outcome, Request, Retention, ScalarValue, Source,
 };
@@ -307,7 +307,7 @@ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failur
 fn adapter_failure(
     code: FailureCode,
     message: &str,
-    artifact: Option<distill_core::ArtifactRef>,
+    artifact: Option<distill::ArtifactRef>,
 ) -> Failure {
     Failure {
         code,
@@ -326,7 +326,7 @@ fn count(text: &str, budget: &McpBudget) -> u64 {
     }
 }
 
-fn tool_error(code: &str, message: &str, artifact: Option<&distill_core::ArtifactRef>) -> Value {
+fn tool_error(code: &str, message: &str, artifact: Option<&distill::ArtifactRef>) -> Value {
     let text = serde_json::to_string(&json!({
         "schema_version": MCP_ADAPTER_VERSION,
         "error": {

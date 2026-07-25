@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use distill_core::{
+use distill::{
     Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig,
     Fidelity, Request, Retention, ScalarValue, Source,
 };
@@ -47,7 +47,7 @@ struct BudgetProfile {
 
 #[test]
 fn full_annotated_corpus_preserves_p0_and_measures_p1_under_budget() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let manifest =
         fs::read_to_string(root.join("evaluation/corpus/manifest.jsonl")).expect("corpus manifest");
     let profiles: BudgetFile = serde_json::from_slice(
@@ -230,8 +230,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 fn assert_spans_cover_source(
     source_bytes: u64,
-    retained: &[distill_core::ByteSpan],
-    omitted: &[distill_core::ByteSpan],
+    retained: &[distill::ByteSpan],
+    omitted: &[distill::ByteSpan],
 ) {
     let mut spans = retained
         .iter()

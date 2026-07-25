@@ -2,8 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MANIFEST="$ROOT/native/distill-core/Cargo.toml"
-BINARY="$ROOT/native/distill-core/target/release/distill"
+BINARY="$ROOT/target/release/distill"
 OUTPUT_DIRECTORY="${DISTILL_PACKAGE_OUTPUT:-$ROOT/dist/native}"
 HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { print $2 }')"
 
@@ -21,7 +20,10 @@ case "$HOST_TRIPLE" in
     ;;
 esac
 
-cargo build --locked --release --manifest-path "$MANIFEST"
+(
+  cd "$ROOT"
+  cargo build --locked --release
+)
 
 if [[ ! -x "$BINARY" ]]; then
   echo "native release binary was not produced at $BINARY" >&2

@@ -49,6 +49,6 @@ Both commands support `--dry-run` and `--restore`. Codex coverage is limited to
 supported local-tool `PostToolUse` events. Claude native `Read` and `Bash` are
 not intercepted; use `distill_read` and `distill_run`.
 
-Packaging is limited to Linux x86_64 GNU and macOS arm64. The Linux asset still
-requires a same-tree release qualification; the macOS asset is qualified for
-the current native tree. No other platform is implied by the archive format.
+Packaging is limited to Linux x86_64 GNU and macOS arm64. Both assets require a
+new same-source-tree qualification for the root Cargo layout. No other platform
+is implied by the archive format.
