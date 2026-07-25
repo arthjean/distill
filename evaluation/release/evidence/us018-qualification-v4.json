@@ -1,0 +1,74 @@
+{
+  "schema_version": "distill.us018-qualification/v4",
+  "qualification_id": "us018-v4-20260724",
+  "generated_at": "2026-07-24T20:05:44.363Z",
+  "paired": {
+    "status": "NO-GO",
+    "git_revision": "f912331e12bf32ed5e2b01ed2db9c05c797d83e4",
+    "report_sha256": "703edb4ce8949676796e1324035aa1abd0289442f44c0539107d31045e99b970",
+    "execution_ledger_sha256": "39a24f16cdf2ea5f98b88ceabb8bd8e39fae504769d66c6f575b749ca0a1fb4f",
+    "sample_size": 2,
+    "raw_successes": 2,
+    "projected_successes": 2,
+    "delta_percentage_points": 0,
+    "invocations": 4,
+    "actual_incremental_spend_usd": 0
+  },
+  "macos": {
+    "status": "GO",
+    "git_revision": "f912331e12bf32ed5e2b01ed2db9c05c797d83e4",
+    "binary_sha256": "11963684cd1c716e6f407d66f8be9a02f138626a61598666f1a05cb5c48d2a7d",
+    "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30122631269",
+    "workflow_verification": {
+      "valid": true,
+      "run_id": "30122631269",
+      "conclusion": "success",
+      "event": "push",
+      "head_sha": "f912331e12bf32ed5e2b01ed2db9c05c797d83e4",
+      "workflow_name": "Native macOS arm64 qualification",
+      "downloaded_receipt_sha256": "31c4f9b9c4e794969bdef666d964449a71204ac5dc3ebadc9be218d8862da237",
+      "local_receipt_sha256": "31c4f9b9c4e794969bdef666d964449a71204ac5dc3ebadc9be218d8862da237"
+    }
+  },
+  "same_clean_source_revision": true,
+  "authorization_consumption_valid": true,
+  "paired_evidence_valid": true,
+  "reported_tasks_valid": true,
+  "aggregate_evidence_valid": true,
+  "execution_ledger_valid": true,
+  "invocation_outcomes_valid": true,
+  "early_stop_mechanically_valid": true,
+  "paired_gate_go": false,
+  "attestation_chain_valid": true,
+  "remote_attestation_valid": true,
+  "macos_evidence_valid": true,
+  "first_defect": {
+    "reason": "REPORTED_MODEL_IDENTITY_DIVERGENCE",
+    "task_id": "v4-02",
+    "provider": "claude",
+    "raw_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "canonical_model": "claude-haiku-4-5",
+        "provider": "firstParty"
+      }
+    ],
+    "projected_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      }
+    ],
+    "invocations_consumed": 4
+  },
+  "blockers": [
+    "v4 stopped at v4-02: REPORTED_MODEL_IDENTITY_DIVERGENCE"
+  ],
+  "status": "NO-GO"
+}

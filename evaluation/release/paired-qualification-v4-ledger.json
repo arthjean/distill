@@ -1,0 +1,140 @@
+{
+  "schema_version": "distill.paired-qualification-ledger/v4",
+  "qualification_id": "us018-v4-20260724",
+  "status": "CONSUMED",
+  "pre_registration_commit": "7015d6aff65a918d6d2fe19723ac1add7e0a4c7d",
+  "consumed_at": "2026-07-24T20:03:39Z",
+  "manifest_path": "evaluation/release/paired-tasks-v4.json",
+  "manifest_sha256": "a0f7540d4e97a002973b0ad17ee1fd73f445f399c953aaa32458783844877d1a",
+  "authorization": {
+    "recorded_at": "2026-07-24",
+    "maximum_subscription_invocations": 100,
+    "approved_incremental_spend_usd": 0,
+    "codex_access": "Codex CLI through ChatGPT Pro",
+    "claude_access": "Claude Code through Claude Max",
+    "claude_model": "claude-fable-5",
+    "claude_prompt_suggestions": false,
+    "api_or_api_key_use_permitted": false,
+    "fallback_api_permitted": false
+  },
+  "historical_evidence": [
+    {
+      "path": "evaluation/release/run-paired.mjs",
+      "sha256": "1dd4ed92528013af649eb58a42ac645feb1757fb78085f87c31da34c7b116dd6"
+    },
+    {
+      "path": "evaluation/release/check-us018.mjs",
+      "sha256": "7c16f76561208793ca9d9d0f875beffec4f17f232a201be50018609c50cddd62"
+    },
+    {
+      "path": "evaluation/release/paired-tasks.json",
+      "sha256": "f9a5ca1548fe2253612e7f6eac08acc5e358189b2f78080104cea0cb3bf9567f"
+    },
+    {
+      "path": "evaluation/release/paired-attempt-ledger.json",
+      "sha256": "51bb56564b446481246cfa8f5d9e57b16a5c7d828d331b66204e4106523dbfb2"
+    },
+    {
+      "path": "evaluation/release/evidence/automated-linux-x86_64.json",
+      "sha256": "a8b64dc2e87543a5309c1771bf02d1fee4cd4a963cc9f595908920cec0cbf733"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-attempt-1.json",
+      "sha256": "4072b7e45be61afdbc0e4b14f6452e8cc391f466466f4ab7f46ea1913b89ab09"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-attempt-2.json",
+      "sha256": "e94cd3fb830cb973de1304c1c24ad50f6a204f6ce0180923c4c23ab53c795fc5"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks.json",
+      "sha256": "84a9398237a21d5c8f88c526d2b5888b9dd0af7f56d1df1d651c6bd3feca605f"
+    },
+    {
+      "path": "evaluation/release/evidence/macos-arm64.json",
+      "sha256": "2f750bff87684bcfa30edd93d30d66f88aa24d090e0b87472252bf8755aea324"
+    },
+    {
+      "path": "evaluation/release/evidence/us018-qualification.json",
+      "sha256": "4fd897789e04f82b1c852b187a3a289b6df695bd6676e2871ce02d5867a32c25"
+    },
+    {
+      "path": "evaluation/release/run-paired-v2.mjs",
+      "sha256": "b6c88048198a98e7351e1ad236810f2cb9176b492c1580bc10cb0ddcec0b8983"
+    },
+    {
+      "path": "evaluation/release/check-us018-v2.mjs",
+      "sha256": "036fcf9db7ab83c0ab1469388075ca21cb9ddea643afa6810ed3fd6debbcf8d6"
+    },
+    {
+      "path": "evaluation/release/paired-tasks-v2.json",
+      "sha256": "08273e7155beaf48c1ce5bb0f7fdfde2bb38fcdd08fbb3f8030ceb2ce938c514"
+    },
+    {
+      "path": "evaluation/release/paired-qualification-v2-ledger.json",
+      "sha256": "536fda0e3b88e537eeec26fccc5ad1142d7610e569a8545b5b0680020326490d"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-v2.json",
+      "sha256": "deb7d898143308095529602a4ad218faaec699a94cc1559767c45c113aab8ad8"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-v2-execution-ledger.json",
+      "sha256": "dde6e3127c3fba43710d06113c1c6192b92064e0fd0efc1b1075649bb202441a"
+    },
+    {
+      "path": "evaluation/release/evidence/macos-arm64-v2.json",
+      "sha256": "cb4b2d38992787cb7d55e9c409140d18929e6972a4efcc6eec2b49a4245bd581"
+    },
+    {
+      "path": "evaluation/release/evidence/us018-qualification-v2.json",
+      "sha256": "3ce251fc2954378624d849b24efbe5d6446c35bdbafc68045bbb47a380505e5e"
+    },
+    {
+      "path": "evaluation/release/run-paired-v3.mjs",
+      "sha256": "1109cf2e925b2e014b662f314bfc22ad8306e892ae0dda69a7390bde0fe6ee35"
+    },
+    {
+      "path": "evaluation/release/check-us018-v3.mjs",
+      "sha256": "74068411e449258cf188d2dda52ed16b5de04cdaa674223fd8f1100d8424d497"
+    },
+    {
+      "path": "evaluation/release/paired-tasks-v3.json",
+      "sha256": "5a9576c219eec2f51aa2d110bb7d76d24994fcc8a1ab9021f416b7731c8a2831"
+    },
+    {
+      "path": "evaluation/release/paired-qualification-v3-ledger.json",
+      "sha256": "04bebedc53fa9de7bc166edd8bc75098ce44807e2e7d5807c6b36ad6a0cfab1e"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-v3.json",
+      "sha256": "ce7df1af1d7d8fef22afc236013d4c2a19870b6795f77317144d6ca6d9fbc953"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-v3-execution-ledger.json",
+      "sha256": "760ef90d034d35c25c6f65732778a8605737c15834c83134471a1ee7f1e8495a"
+    },
+    {
+      "path": "evaluation/release/evidence/macos-arm64-v3.json",
+      "sha256": "3acca96de70f8f5791bb6ea83ad74d9b02c67772d721eab09d16c8a99ad90768"
+    },
+    {
+      "path": "evaluation/release/evidence/us018-qualification-v3.json",
+      "sha256": "e546ed602e447ca2cd7faba3786f08e686c7546b405e1a59be5ddebc18f3ed87"
+    }
+  ],
+  "execution": {
+    "required_source_worktree_clean": true,
+    "external_state_directory": "/tmp/distill-us018-v4-20260724",
+    "one_shot": true,
+    "resume_or_replay_permitted": false,
+    "no_retry": true,
+    "stop_on_first_model_identity_divergence": true,
+    "stop_on_first_required_primary_model_absence": true,
+    "attestation_ref": "refs/distill/qualifications/us018-v4-20260724",
+    "paired_report_name": "paired-tasks-v4.json",
+    "execution_ledger_name": "paired-tasks-v4-execution-ledger.json",
+    "macos_receipt_name": "macos-arm64-v4.json",
+    "aggregate_report_name": "us018-qualification-v4.json"
+  }
+}

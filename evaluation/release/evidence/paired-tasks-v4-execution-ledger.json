@@ -1,0 +1,118 @@
+{
+  "schema_version": "distill.paired-execution-ledger/v4",
+  "qualification_id": "us018-v4-20260724",
+  "status": "EARLY_STOPPED",
+  "git_revision": "f912331e12bf32ed5e2b01ed2db9c05c797d83e4",
+  "source_worktree_clean": true,
+  "maximum_invocations": 100,
+  "started_at": "2026-07-24T20:04:29.854Z",
+  "completed_at": "2026-07-24T20:04:48.564Z",
+  "terminal": {
+    "reason": "REPORTED_MODEL_IDENTITY_DIVERGENCE",
+    "task_id": "v4-02",
+    "provider": "claude",
+    "invocations_consumed": 4,
+    "raw_requested_model": "claude-fable-5",
+    "projected_requested_model": "claude-fable-5",
+    "raw_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "canonical_model": "claude-haiku-4-5",
+        "provider": "firstParty"
+      }
+    ],
+    "projected_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      }
+    ],
+    "stopped_at": "2026-07-24T20:04:48.560Z",
+    "retry_permitted": false
+  },
+  "attestation": {
+    "ref": "refs/distill/qualifications/us018-v4-20260724",
+    "start_commit": "f01d10c300fc5ea1675d33cc52b47fdfe2673847",
+    "head_commit": "04897155e537149115b469705e9923e471ff6830"
+  },
+  "invocations": [
+    {
+      "sequence": 1,
+      "task_id": "v4-01",
+      "condition": "raw",
+      "provider": "codex",
+      "requested_model": "gpt-5.6-sol",
+      "prompt_sha256": "0f828c08f4d28b70c0a013c7b5d138445fa8099fa193610beddc3e9370fb42dd",
+      "observation_sha256": "489d0169bf1cfc8753335c55f96ffa90f4b8951faa78bcf06e6446c92b3c28c7",
+      "previous_attestation_commit": "f01d10c300fc5ea1675d33cc52b47fdfe2673847",
+      "started_at": "2026-07-24T20:04:29.857Z",
+      "completed_at": "2026-07-24T20:04:35.970Z",
+      "outcome": "COMPLETED",
+      "raw_stdout_sha256": "818b3972011e413209c3fe93a2ec3cbe0843b608c90accc6646bf1e4707a3913",
+      "raw_stderr_sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721",
+      "response_sha256": "4adf7c0805e164c4ba976b62838ad22daaf96295586830e9e2c75228f658fc9c",
+      "reported_models_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "attestation_commit": "990ff95e1064bc2c4a255bb49792527dfc84416b"
+    },
+    {
+      "sequence": 2,
+      "task_id": "v4-01",
+      "condition": "projected",
+      "provider": "codex",
+      "requested_model": "gpt-5.6-sol",
+      "prompt_sha256": "a1fe027f469a4fae1c0454aa7ea9105ed5c5565875946cd38699260eddc02dcf",
+      "observation_sha256": "f85eb65c9b72365bb9cc6ee3cafaf54582757c75fd119452c14fa97c4be2c821",
+      "previous_attestation_commit": "990ff95e1064bc2c4a255bb49792527dfc84416b",
+      "started_at": "2026-07-24T20:04:35.973Z",
+      "completed_at": "2026-07-24T20:04:40.156Z",
+      "outcome": "COMPLETED",
+      "raw_stdout_sha256": "0fc1d957827c67e6fcb21d4e52957b159cecf36398dd90f43e6f5a71afc331a1",
+      "raw_stderr_sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721",
+      "response_sha256": "4adf7c0805e164c4ba976b62838ad22daaf96295586830e9e2c75228f658fc9c",
+      "reported_models_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "attestation_commit": "aeffe3a76cedb91eec09e5c820696e4ba69c3626"
+    },
+    {
+      "sequence": 3,
+      "task_id": "v4-02",
+      "condition": "projected",
+      "provider": "claude",
+      "requested_model": "claude-fable-5",
+      "prompt_sha256": "44fc56e4b4853954f7e9cc1f4e09a5dd20346b7a27ee10791d5e7a42cb3bb659",
+      "observation_sha256": "42edec7b2759aa3df0d3d000f61b33cd018a0c1a267dc09d23aeb7973873c51a",
+      "previous_attestation_commit": "aeffe3a76cedb91eec09e5c820696e4ba69c3626",
+      "started_at": "2026-07-24T20:04:40.161Z",
+      "completed_at": "2026-07-24T20:04:44.154Z",
+      "outcome": "COMPLETED",
+      "raw_stdout_sha256": "2fd8ccc3e084887750aa8596411dbcb9a58be542216a984047d243c10433a3cf",
+      "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "response_sha256": "c0eb3801bacda5c3b9949f4840ba266c39b5afeea732fccfdc6ef10fc8d348bd",
+      "reported_models_sha256": "7fce7c9164dc4c2fa4e8ea0f5601da8634ff21513915cbd1db98d48122ffb157",
+      "attestation_commit": "bc39da5de282da814b9e0a41d1f4407db42d73cc"
+    },
+    {
+      "sequence": 4,
+      "task_id": "v4-02",
+      "condition": "raw",
+      "provider": "claude",
+      "requested_model": "claude-fable-5",
+      "prompt_sha256": "e37b731755665ccf4c89b2a5c97ad3d37d90f6156dbb9fee4de0b4f1074f6fac",
+      "observation_sha256": "59fe871dae7b91822b0709bc0ea0bfdd9edf169c08fc91a0a6567c210135a1d9",
+      "previous_attestation_commit": "bc39da5de282da814b9e0a41d1f4407db42d73cc",
+      "started_at": "2026-07-24T20:04:44.158Z",
+      "completed_at": "2026-07-24T20:04:48.556Z",
+      "outcome": "COMPLETED",
+      "raw_stdout_sha256": "9c044d73eaff444773a2d7a6c16bacac4d8f1d3260b9597030e521ea2810aa80",
+      "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "response_sha256": "c0eb3801bacda5c3b9949f4840ba266c39b5afeea732fccfdc6ef10fc8d348bd",
+      "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+      "attestation_commit": "04897155e537149115b469705e9923e471ff6830"
+    }
+  ]
+}

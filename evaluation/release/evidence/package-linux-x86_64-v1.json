@@ -1,0 +1,17 @@
+{
+  "schema_version": "distill.native-package-qualification/v1",
+  "target": "linux-x86_64",
+  "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+  "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+  "repetitions": 2,
+  "archive": "distill-linux-x86_64.tar.gz",
+  "archive_sha256": "abf87b794edc12cb8b973b94dd231af8c4885ae3b9457ae67c2b789ddc49f028",
+  "checksum_sidecars": {
+    "first_sha256": "c5c024c0fd6010cb3dadb3077f50875961eb48715fc53e39f0c0f2f3912e9471",
+    "second_sha256": "c5c024c0fd6010cb3dadb3077f50875961eb48715fc53e39f0c0f2f3912e9471",
+    "independently_validated": true
+  },
+  "byte_identical": true,
+  "completed_at": "2026-07-24T21:31:27Z",
+  "status": "GO"
+}

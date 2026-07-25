@@ -242,7 +242,6 @@ impl ProductionRuntime {
         })?;
         let cwd =
             open_beneath(root, &cwd_relative_path.0, true).map_err(AcquisitionError::clean)?;
-        let cwd_path = descriptor_path(cwd.as_raw_fd());
 
         let executable = os_string(&executable.0).map_err(AcquisitionError::clean)?;
         let arguments = argv
@@ -264,12 +263,24 @@ impl ProductionRuntime {
         let mut command = Command::new(executable);
         command
             .args(arguments)
-            .current_dir(cwd_path)
             .env_clear()
             .envs(environment)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        let cwd_descriptor = cwd.as_raw_fd();
+        // SAFETY: fchdir is async-signal-safe, the descriptor remains live
+        // through spawn, and it names the directory opened beneath the
+        // configured root without following symlinks.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fchdir(cwd_descriptor) == 0 {
+                    Ok(())
+                } else {
+                    Err(io::Error::last_os_error())
+                }
+            });
+        }
         command.process_group(0);
         let mut child = command.spawn().map_err(|_| {
             AcquisitionError::clean(Failure::new(
@@ -749,14 +760,6 @@ fn open_at(directory: i32, component: &OsStr, require_directory: bool) -> Result
     }
     // SAFETY: openat returned a new nonnegative descriptor owned by this call.
     Ok(unsafe { OwnedFd::from_raw_fd(descriptor) })
-}
-
-fn descriptor_path(descriptor: i32) -> PathBuf {
-    if cfg!(target_os = "linux") {
-        PathBuf::from(format!("/proc/self/fd/{descriptor}"))
-    } else {
-        PathBuf::from(format!("/dev/fd/{descriptor}"))
-    }
 }
 
 fn os_string(bytes: &[u8]) -> Result<OsString, Failure> {

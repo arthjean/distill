@@ -1,0 +1,56 @@
+{
+  "schema_version": "distill.paired-qualification-ledger/v2",
+  "qualification_id": "us018-v2-20260724",
+  "status": "CONSUMED",
+  "pre_registration_commit": "dc31d3aae67c1a11df3e609cbbb5f2143680101c",
+  "consumed_at": "2026-07-24T18:10:59Z",
+  "manifest_path": "evaluation/release/paired-tasks-v2.json",
+  "manifest_sha256": "08273e7155beaf48c1ce5bb0f7fdfde2bb38fcdd08fbb3f8030ceb2ce938c514",
+  "authorization": {
+    "recorded_at": "2026-07-24",
+    "maximum_subscription_invocations": 100,
+    "approved_incremental_spend_usd": 0,
+    "codex_access": "Codex CLI through ChatGPT Pro",
+    "claude_access": "Claude Code through Claude Max",
+    "api_or_api_key_use_permitted": false
+  },
+  "historical_evidence": [
+    {
+      "path": "evaluation/release/evidence/automated-linux-x86_64.json",
+      "sha256": "a8b64dc2e87543a5309c1771bf02d1fee4cd4a963cc9f595908920cec0cbf733"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-attempt-1.json",
+      "sha256": "4072b7e45be61afdbc0e4b14f6452e8cc391f466466f4ab7f46ea1913b89ab09"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-attempt-2.json",
+      "sha256": "e94cd3fb830cb973de1304c1c24ad50f6a204f6ce0180923c4c23ab53c795fc5"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks.json",
+      "sha256": "84a9398237a21d5c8f88c526d2b5888b9dd0af7f56d1df1d651c6bd3feca605f"
+    },
+    {
+      "path": "evaluation/release/paired-attempt-ledger.json",
+      "sha256": "51bb56564b446481246cfa8f5d9e57b16a5c7d828d331b66204e4106523dbfb2"
+    },
+    {
+      "path": "evaluation/release/evidence/macos-arm64.json",
+      "sha256": "2f750bff87684bcfa30edd93d30d66f88aa24d090e0b87472252bf8755aea324"
+    },
+    {
+      "path": "evaluation/release/evidence/us018-qualification.json",
+      "sha256": "4fd897789e04f82b1c852b187a3a289b6df695bd6676e2871ce02d5867a32c25"
+    }
+  ],
+  "execution": {
+    "required_source_worktree_clean": true,
+    "external_state_directory": "/tmp/distill-us018-v2-20260724",
+    "one_shot": true,
+    "resume_or_replay_permitted": false,
+    "attestation_ref": "refs/distill/qualifications/us018-v2-20260724",
+    "paired_report_name": "paired-tasks-v2.json",
+    "execution_ledger_name": "paired-tasks-v2-execution-ledger.json"
+  }
+}

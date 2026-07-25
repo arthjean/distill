@@ -1,0 +1,12 @@
+{
+  "schema_version": "distill.native-distribution-execution/v1",
+  "qualification_id": "native-distribution-v1-20260724",
+  "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+  "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+  "linux_executions": 1,
+  "package_repetitions": 2,
+  "full_native_check_executions": 1,
+  "first_defect": null,
+  "completed_at": "2026-07-24T21:31:27Z",
+  "status": "GO"
+}

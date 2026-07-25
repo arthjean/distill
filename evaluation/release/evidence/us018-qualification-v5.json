@@ -1,0 +1,49 @@
+{
+  "schema_version": "distill.us018-qualification/v5",
+  "qualification_id": "us018-v5-20260724",
+  "generated_at": "2026-07-24T20:28:30.291Z",
+  "paired": {
+    "status": "GO",
+    "git_revision": "ba6e47faabdbc8c2578419f5ad72ad452774d2f3",
+    "report_sha256": "e56314f4516943e85bde6d0cb3fb3414375ed7ca318f78a6527b655464e31779",
+    "execution_ledger_sha256": "6d425ea1a0deec9b4afb9b87120a4f40e7b9a80004322ad8f0d674256a18c06e",
+    "sample_size": 50,
+    "raw_successes": 50,
+    "projected_successes": 50,
+    "delta_percentage_points": 0,
+    "invocations": 100,
+    "actual_incremental_spend_usd": 0
+  },
+  "macos": {
+    "status": "GO",
+    "git_revision": "ba6e47faabdbc8c2578419f5ad72ad452774d2f3",
+    "binary_sha256": "11963684cd1c716e6f407d66f8be9a02f138626a61598666f1a05cb5c48d2a7d",
+    "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30123580798",
+    "workflow_verification": {
+      "valid": true,
+      "run_id": "30123580798",
+      "conclusion": "success",
+      "event": "push",
+      "head_sha": "ba6e47faabdbc8c2578419f5ad72ad452774d2f3",
+      "workflow_name": "Native macOS arm64 qualification",
+      "downloaded_receipt_sha256": "fa465bb75fb070dc3796d7f3717bfc67e2455a615b4818f798d3af4c4fd06c99",
+      "local_receipt_sha256": "fa465bb75fb070dc3796d7f3717bfc67e2455a615b4818f798d3af4c4fd06c99"
+    }
+  },
+  "same_clean_source_revision": true,
+  "authorization_consumption_valid": true,
+  "paired_evidence_valid": true,
+  "reported_tasks_valid": true,
+  "reported_model_controls_valid": true,
+  "aggregate_evidence_valid": true,
+  "execution_ledger_valid": true,
+  "invocation_outcomes_valid": true,
+  "early_stop_mechanically_valid": true,
+  "paired_gate_go": true,
+  "attestation_chain_valid": true,
+  "remote_attestation_valid": true,
+  "macos_evidence_valid": true,
+  "first_defect": null,
+  "blockers": [],
+  "status": "GO"
+}

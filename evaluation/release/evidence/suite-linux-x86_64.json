@@ -1,0 +1,14 @@
+{
+  "schema_version": "distill.release-suite/v1",
+  "target": "linux-x86_64",
+  "profile": "release",
+  "result": "passed",
+  "git_revision": "d2292ec6a8321e7c2261f9a88021fb4c899ec4c4",
+  "binary_sha256": "e257c4d9daadbfcbfeeb464848423bc87fadcb0a4b8b8ed543657c5ce92b9db4",
+  "commands": [
+    "./scripts/check-native.sh",
+    "cargo build --release --manifest-path native/distill-core/Cargo.toml",
+    "cargo test --release --manifest-path native/distill-core/Cargo.toml"
+  ],
+  "completed_at": "2026-07-24T15:32:24Z"
+}

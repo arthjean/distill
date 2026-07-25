@@ -1,0 +1,14 @@
+{
+  "schema_version": "distill.release-fuzz/v1",
+  "target": "fuzz_engine",
+  "mode": "release",
+  "result": "clean",
+  "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+  "binary_sha256": "11689fee0f7477f2443fd45e585f7e0f5119cb4e23f6b483ea3127063becd8f5",
+  "cpu_seconds": 4483.26,
+  "wall_seconds": 301.72,
+  "timeout_seconds": 5,
+  "workers": 16,
+  "started_at": "2026-07-24T21:26:15Z",
+  "completed_at": "2026-07-24T21:31:17Z"
+}

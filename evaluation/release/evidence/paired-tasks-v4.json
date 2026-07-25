@@ -1,0 +1,553 @@
+{
+  "schema_version": "distill.paired-qualification/v4",
+  "qualification_id": "us018-v4-20260724",
+  "phase": "complete",
+  "started_at": "2026-07-24T20:04:29.854Z",
+  "completed_at": "2026-07-24T20:04:48.565Z",
+  "termination": {
+    "reason": "REPORTED_MODEL_IDENTITY_DIVERGENCE",
+    "task_id": "v4-02",
+    "provider": "claude",
+    "invocations_consumed": 4,
+    "raw_requested_model": "claude-fable-5",
+    "projected_requested_model": "claude-fable-5",
+    "raw_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "canonical_model": "claude-haiku-4-5",
+        "provider": "firstParty"
+      }
+    ],
+    "projected_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      }
+    ],
+    "stopped_at": "2026-07-24T20:04:48.560Z",
+    "retry_permitted": false
+  },
+  "evaluated_inputs": {
+    "git_revision": "f912331e12bf32ed5e2b01ed2db9c05c797d83e4",
+    "source_tree": "86e8311a0e71dc3d6ad084c69504354ef5247328",
+    "source_worktree_clean": true,
+    "native_binary_sha256": "215f7263f54acd72ba4dbaa61038d3614fb35ca4c7787f81e368ba0fd3d77835",
+    "native_binary_sha256_after_preparation": "215f7263f54acd72ba4dbaa61038d3614fb35ca4c7787f81e368ba0fd3d77835",
+    "native_binary_sha256_after_execution": "215f7263f54acd72ba4dbaa61038d3614fb35ca4c7787f81e368ba0fd3d77835",
+    "canonical_build_command": "cargo build --locked --release --manifest-path native/distill-core/Cargo.toml",
+    "canonical_binary_path": "native/distill-core/target/release/distill",
+    "paired_task_manifest_sha256": "a0f7540d4e97a002973b0ad17ee1fd73f445f399c953aaa32458783844877d1a",
+    "authorization_ledger_sha256": "78af731dea576e9c6b2505a6297c04f143a248014144b07fa5433536d90ea02b",
+    "execution_ledger_sha256": "39a24f16cdf2ea5f98b88ceabb8bd8e39fae504769d66c6f575b749ca0a1fb4f"
+  },
+  "billing": {
+    "mode": "existing ChatGPT Pro and Claude Max subscriptions",
+    "api_keys_removed_from_child_environment": true,
+    "removed_environment_variables": [
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_BASE_URL",
+      "CLAUDE_CODE_USE_BEDROCK",
+      "CLAUDE_CODE_USE_VERTEX",
+      "CLAUDE_CODE_USE_FOUNDRY"
+    ],
+    "approved_incremental_spend_usd": 0,
+    "actual_incremental_spend_usd": 0,
+    "invocations": 4,
+    "maximum_invocations": 100,
+    "reported_api_equivalent_usd": 0.09833199999999999,
+    "note": "CLI-reported equivalent cost is usage telemetry, not an additional subscription charge."
+  },
+  "authentication": {
+    "codex": {
+      "login_status": "Logged in using ChatGPT",
+      "access": "ChatGPT subscription"
+    },
+    "claude": {
+      "logged_in": true,
+      "auth_method": "claude.ai",
+      "api_provider": "firstParty",
+      "subscription_type": "max"
+    },
+    "pii_fields_omitted": true
+  },
+  "providers": {
+    "codex": {
+      "subscription": "ChatGPT Pro",
+      "cli_version": "codex-cli 0.145.0",
+      "requested_model": "gpt-5.6-sol",
+      "reported_model": "not exposed by Codex CLI JSON output",
+      "sampling_parameters": {
+        "reasoning_effort": "low",
+        "temperature": "host-controlled and not exposed by Codex CLI"
+      },
+      "tool_state": "ephemeral, read-only sandbox, empty qualification directory, prompt prohibits tools"
+    },
+    "claude": {
+      "subscription": "Claude Max",
+      "cli_version": "2.1.219 (Claude Code)",
+      "requested_model": "claude-fable-5",
+      "reported_model": [
+        "{\"id\":\"claude-fable-5\",\"canonical_model\":\"claude-fable-5\",\"provider\":\"firstParty\"}",
+        "{\"id\":\"claude-haiku-4-5-20251001\",\"canonical_model\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"}"
+      ],
+      "sampling_parameters": {
+        "effort": "low",
+        "prompt_suggestions": false,
+        "temperature": "host-controlled and not exposed by Claude Code"
+      },
+      "tool_state": "safe mode, no tools, no session persistence"
+    }
+  },
+  "controls": {
+    "paired_prompt_model_tool_and_sampling_identity": false,
+    "exact_reported_model_identity_by_pair": [
+      {
+        "task_id": "v4-01",
+        "provider": "codex",
+        "matches": true,
+        "expected_requested_model": "gpt-5.6-sol",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "raw_requested_model": "gpt-5.6-sol",
+        "projected_requested_model": "gpt-5.6-sol",
+        "raw_reported_models": [],
+        "projected_reported_models": []
+      },
+      {
+        "task_id": "v4-02",
+        "provider": "claude",
+        "matches": false,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": false,
+        "reported_model_contract_satisfied": true,
+        "raw_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "raw_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    ],
+    "no_retry": true,
+    "stop_on_first_reported_model_identity_divergence": true,
+    "stop_on_first_required_primary_model_absence": true,
+    "raw_first_tasks": 25,
+    "projected_first_tasks": 25,
+    "provider_order_cells": {
+      "claude|projected_first": 13,
+      "claude|raw_first": 12,
+      "codex|projected_first": 12,
+      "codex|raw_first": 13
+    },
+    "deterministic_rubric": "strict JSON parse, exact keys, exact source-line values",
+    "minimum_raw_successes": 48,
+    "minimum_delta_percentage_points": -2
+  },
+  "scoring": {
+    "sample_size": 2,
+    "confidence_method": "conservative difference of two 95% Wilson intervals",
+    "raw_successes": 2,
+    "projected_successes": 2,
+    "raw_success_rate": 1,
+    "projected_success_rate": 1,
+    "delta_percentage_points": 0,
+    "confidence_interval_percentage_points": [
+      -65.7619772493347,
+      65.7619772493347
+    ],
+    "failures": []
+  },
+  "token_counts": {
+    "raw_observation_tokens": 926,
+    "projected_observation_tokens": 88,
+    "provider_reported_usage": {
+      "codex": [
+        {
+          "task_id": "v4-01",
+          "raw": {
+            "input_tokens": 20606,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 22,
+            "reasoning_output_tokens": 0
+          },
+          "projected": {
+            "input_tokens": 20187,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 22,
+            "reasoning_output_tokens": 0
+          }
+        }
+      ],
+      "claude": [
+        {
+          "task_id": "v4-02",
+          "raw": {
+            "input_tokens": 2,
+            "cache_creation_input_tokens": 1121,
+            "cache_read_input_tokens": 2974,
+            "output_tokens": 40,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 1121,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "not_available",
+            "iterations": [
+              {
+                "input_tokens": 2,
+                "output_tokens": 40,
+                "cache_read_input_tokens": 2974,
+                "cache_creation_input_tokens": 1121,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 1121
+                },
+                "type": "message"
+              }
+            ],
+            "speed": "standard"
+          },
+          "projected": {
+            "input_tokens": 2,
+            "cache_creation_input_tokens": 3378,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 40,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 3378,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "not_available",
+            "iterations": [
+              {
+                "input_tokens": 2,
+                "output_tokens": 40,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 3378,
+                "cache_creation": {
+                  "ephemeral_5m_input_tokens": 0,
+                  "ephemeral_1h_input_tokens": 3378
+                },
+                "type": "message"
+              }
+            ],
+            "speed": "standard"
+          }
+        }
+      ]
+    }
+  },
+  "results": [
+    {
+      "id": "v4-01",
+      "fixture_id": "build-output-01",
+      "category": "build-output",
+      "provider": "codex",
+      "invocation_order": "raw_first",
+      "question": "Which exact compiler error identifies why critical_symbol_01 cannot be resolved? Copy the complete source line.",
+      "response_schema": "build-error/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "compiler_error_line": "ERROR E0142: cannot resolve symbol critical_symbol_01"
+        }
+      },
+      "observation_tokens": {
+        "budget": 128,
+        "raw": 463,
+        "projected": 44
+      },
+      "raw": {
+        "success": true,
+        "parsed": {
+          "compiler_error_line": "ERROR E0142: cannot resolve symbol critical_symbol_01"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"compiler_error_line\":\"ERROR E0142: cannot resolve symbol critical_symbol_01\"}",
+        "requested_model": "gpt-5.6-sol",
+        "reported_models": [],
+        "usage": {
+          "input_tokens": 20606,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 22,
+          "reasoning_output_tokens": 0
+        },
+        "reported_api_equivalent_usd": null,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"019f95ba-b925-7043-be0f-555543868d6e\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"compiler_error_line\\\":\\\"ERROR E0142: cannot resolve symbol critical_symbol_01\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":20606,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":22,\"reasoning_output_tokens\":0}}\n",
+          "stderr": "Reading additional input from stdin...\n"
+        },
+        "evidence": {
+          "prompt_sha256": "0f828c08f4d28b70c0a013c7b5d138445fa8099fa193610beddc3e9370fb42dd",
+          "observation_sha256": "489d0169bf1cfc8753335c55f96ffa90f4b8951faa78bcf06e6446c92b3c28c7",
+          "raw_stdout_sha256": "818b3972011e413209c3fe93a2ec3cbe0843b608c90accc6646bf1e4707a3913",
+          "raw_stderr_sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721",
+          "response_sha256": "4adf7c0805e164c4ba976b62838ad22daaf96295586830e9e2c75228f658fc9c",
+          "reported_models_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "attestation_commit": "990ff95e1064bc2c4a255bb49792527dfc84416b"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "compiler_error_line": "ERROR E0142: cannot resolve symbol critical_symbol_01"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"compiler_error_line\":\"ERROR E0142: cannot resolve symbol critical_symbol_01\"}",
+        "requested_model": "gpt-5.6-sol",
+        "reported_models": [],
+        "usage": {
+          "input_tokens": 20187,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 22,
+          "reasoning_output_tokens": 0
+        },
+        "reported_api_equivalent_usd": null,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"019f95ba-d0d8-7a71-bcd2-3eeb868daffd\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"compiler_error_line\\\":\\\"ERROR E0142: cannot resolve symbol critical_symbol_01\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":20187,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":22,\"reasoning_output_tokens\":0}}\n",
+          "stderr": "Reading additional input from stdin...\n"
+        },
+        "evidence": {
+          "prompt_sha256": "a1fe027f469a4fae1c0454aa7ea9105ed5c5565875946cd38699260eddc02dcf",
+          "observation_sha256": "f85eb65c9b72365bb9cc6ee3cafaf54582757c75fd119452c14fa97c4be2c821",
+          "raw_stdout_sha256": "0fc1d957827c67e6fcb21d4e52957b159cecf36398dd90f43e6f5a71afc331a1",
+          "raw_stderr_sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721",
+          "response_sha256": "4adf7c0805e164c4ba976b62838ad22daaf96295586830e9e2c75228f658fc9c",
+          "reported_models_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "attestation_commit": "aeffe3a76cedb91eec09e5c820696e4ba69c3626"
+        }
+      },
+      "model_identity_control": {
+        "matches": true,
+        "expected_requested_model": "gpt-5.6-sol",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "raw_requested_model": "gpt-5.6-sol",
+        "projected_requested_model": "gpt-5.6-sol",
+        "raw_reported_models": [],
+        "projected_reported_models": []
+      }
+    },
+    {
+      "id": "v4-02",
+      "fixture_id": "build-output-02",
+      "category": "build-output",
+      "provider": "claude",
+      "invocation_order": "projected_first",
+      "question": "Which exact compiler error identifies why critical_symbol_02 cannot be resolved? Copy the complete source line.",
+      "response_schema": "build-error/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "compiler_error_line": "ERROR E0242: cannot resolve symbol critical_symbol_02"
+        }
+      },
+      "observation_tokens": {
+        "budget": 128,
+        "raw": 463,
+        "projected": 44
+      },
+      "raw": {
+        "success": true,
+        "parsed": {
+          "compiler_error_line": "ERROR E0242: cannot resolve symbol critical_symbol_02"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"compiler_error_line\":\"ERROR E0242: cannot resolve symbol critical_symbol_02\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1121,
+          "cache_read_input_tokens": 2974,
+          "output_tokens": 40,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1121,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 40,
+              "cache_read_input_tokens": 2974,
+              "cache_creation_input_tokens": 1121,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1121
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.028752,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":4978,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"2d382d99-b7d2-422b-93e0-bb339f2fea8b\",\"total_cost_usd\":0.028752,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1121,\"cache_read_input_tokens\":2974,\"output_tokens\":40,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1121,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":40,\"cache_read_input_tokens\":2974,\"cache_creation_input_tokens\":1121,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1121},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":1208,\"outputTokens\":26,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.001338,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":40,\"cacheReadInputTokens\":2974,\"cacheCreationInputTokens\":1121,\"webSearchRequests\":0,\"costUSD\":0.027414,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"compiler_error_line\\\":\\\"ERROR E0242: cannot resolve symbol critical_symbol_02\\\"}\",\"ttft_ms\":3156,\"ttft_stream_ms\":2574,\"time_to_request_ms\":12,\"type\":\"result\",\"duration_ms\":3160,\"uuid\":\"76bd48e9-fd8f-47f1-8221-2cdd32ebc753\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "e37b731755665ccf4c89b2a5c97ad3d37d90f6156dbb9fee4de0b4f1074f6fac",
+          "observation_sha256": "59fe871dae7b91822b0709bc0ea0bfdd9edf169c08fc91a0a6567c210135a1d9",
+          "raw_stdout_sha256": "9c044d73eaff444773a2d7a6c16bacac4d8f1d3260b9597030e521ea2810aa80",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "c0eb3801bacda5c3b9949f4840ba266c39b5afeea732fccfdc6ef10fc8d348bd",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "04897155e537149115b469705e9923e471ff6830"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "compiler_error_line": "ERROR E0242: cannot resolve symbol critical_symbol_02"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"compiler_error_line\":\"ERROR E0242: cannot resolve symbol critical_symbol_02\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3378,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 40,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3378,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 40,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 3378,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3378
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.06957999999999999,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":2434,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"8a6eedff-7d30-4ce0-986d-e253a6966f4c\",\"total_cost_usd\":0.06957999999999999,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3378,\"cache_read_input_tokens\":0,\"output_tokens\":40,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3378,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":40,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":3378,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3378},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":40,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":3378,\"webSearchRequests\":0,\"costUSD\":0.06957999999999999,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"compiler_error_line\\\":\\\"ERROR E0242: cannot resolve symbol critical_symbol_02\\\"}\",\"ttft_ms\":2441,\"ttft_stream_ms\":1893,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":2445,\"uuid\":\"c4639fb9-b9c6-4337-8ae5-f0278e39f6c6\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "44fc56e4b4853954f7e9cc1f4e09a5dd20346b7a27ee10791d5e7a42cb3bb659",
+          "observation_sha256": "42edec7b2759aa3df0d3d000f61b33cd018a0c1a267dc09d23aeb7973873c51a",
+          "raw_stdout_sha256": "2fd8ccc3e084887750aa8596411dbcb9a58be542216a984047d243c10433a3cf",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "c0eb3801bacda5c3b9949f4840ba266c39b5afeea732fccfdc6ef10fc8d348bd",
+          "reported_models_sha256": "7fce7c9164dc4c2fa4e8ea0f5601da8634ff21513915cbd1db98d48122ffb157",
+          "attestation_commit": "bc39da5de282da814b9e0a41d1f4407db42d73cc"
+        }
+      },
+      "model_identity_control": {
+        "matches": false,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": false,
+        "reported_model_contract_satisfied": true,
+        "raw_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "raw_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    }
+  ],
+  "status": "NO-GO"
+}

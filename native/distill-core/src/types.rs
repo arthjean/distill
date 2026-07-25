@@ -516,6 +516,13 @@ mod tests {
     }
 
     #[test]
+    fn jsonl_request_without_source_is_invalid() {
+        let failure = Request::from_jsonl(b"{}").expect_err("missing source");
+
+        assert_eq!(failure.code, FailureCode::InvalidRequest);
+    }
+
+    #[test]
     fn every_source_variant_and_failure_round_trips() {
         let variants = [
             Source::Inline {

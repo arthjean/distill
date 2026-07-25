@@ -1,0 +1,75 @@
+{
+  "schema_version": "distill.native-distribution-qualification/v2",
+  "qualification_id": "native-distribution-v2-20260725",
+  "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
+  "aggregation_revision": "875c21a41c8350e4e6afc6805bf5a32250ffe28e",
+  "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+  "predecessor": {
+    "aggregate": "evaluation/release/evidence/native-distribution-v1.json",
+    "status": "NO-GO",
+    "first_defect": "Linux release evidence is not GO on the candidate"
+  },
+  "accepted_post_preregistration_event": {
+    "authorized_by": "Arthur",
+    "authorized_on": "2026-07-25",
+    "branch_revision": "2a6ad76b515d06d548d13e8b593559beb3e20e4d",
+    "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
+    "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30157481395",
+    "conclusion": "success",
+    "evidentiary_role": "none; the immutable macOS qualification receipt and run 30127687300 remain authoritative"
+  },
+  "native_tree_binding": {
+    "selected_path": "suite.native_prevalidation.native_tree",
+    "automated_native_tree": null,
+    "suite_native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1"
+  },
+  "coverage": {
+    "evidence": "evaluation/release/evidence/native-coverage-v1.json",
+    "sha256": "0c092277108104a984155762ebcd2e0519127be3fe7da032291e367a1d54f281",
+    "lines_percent": 89.13154751748849,
+    "branches_percent": 75.08710801393728,
+    "status": "PASS"
+  },
+  "linux": {
+    "evidence": {
+      "automated": "evaluation/release/evidence/automated-linux-x86_64-v2.json",
+      "suite": "evaluation/release/evidence/suite-linux-x86_64-v2.json",
+      "fuzz": "evaluation/release/evidence/fuzz-linux-x86_64-v2.json",
+      "package": "evaluation/release/evidence/package-linux-x86_64-v1.json",
+      "execution": "evaluation/release/evidence/native-distribution-execution-v1.json"
+    },
+    "hashes": {
+      "automated": "35f543466c307ac9fbc6dad2cb23a32be4bfec86d6caa02da1e856d889fc20be",
+      "suite": "0d64fde4bdb18d650da819ef5842cf78bf63a1e8d5054fecb34eb61172415117",
+      "fuzz": "c4fcab005be390f68f0b99f68acdfce7fa3228d08031bcdb3ba1248628df3645",
+      "package": "74fcbfb3b06804ea2ba4d8f5778c3553a7dbbd6baad203f839aee98f92599b2e",
+      "execution": "9a709acec519c51cff1ab2701b83ba83574b3dc06410c409974578d79c4dfff3"
+    },
+    "status": "GO"
+  },
+  "macos": {
+    "evidence": "evaluation/release/evidence/macos-arm64-distribution-v1.json",
+    "sha256": "1f47cbfe252f630fdde1cd8a250c67e45c863b815f7d32b819453c296f2dc334",
+    "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30127687300",
+    "status": "GO"
+  },
+  "package_reproducibility": {
+    "archive_sha256": "abf87b794edc12cb8b973b94dd231af8c4885ae3b9457ae67c2b789ddc49f028",
+    "byte_identical": true,
+    "checksum_sidecars_valid": true
+  },
+  "historical_integrity": {
+    "historical_prds": 9,
+    "historical_legacy_evidence": 3,
+    "historical_qualification_artifacts": 34,
+    "registry_sha256": "11e5b41b9787bb11b9c74825bacb1fd895bd7eea2c5ea6fdc6105718659e95b2",
+    "evidence_set_sha256": "cac91ac888363739288cac392198669c7744efded6686cfedbff5d56e5ffbfbf",
+    "status": "VALID"
+  },
+  "attestation": {
+    "ref": "refs/distill/qualifications/native-distribution-v2-20260725",
+    "head": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba"
+  },
+  "first_defect": null,
+  "status": "GO"
+}

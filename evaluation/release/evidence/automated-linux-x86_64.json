@@ -1,0 +1,90 @@
+{
+  "schema_version": "distill.release-gate/v1",
+  "generated_at": "2026-07-24T15:38:38Z",
+  "git_revision": "d2292ec6a8321e7c2261f9a88021fb4c899ec4c4",
+  "reference_machine": {
+    "os": "linux",
+    "architecture": "x86_64",
+    "kernel": "7.1.4-204.fc44.x86_64",
+    "cpu": "AMD Ryzen 7 7800X3D 8-Core Processor",
+    "memory_bytes": 32746606592
+  },
+  "protocol": {
+    "warm_up_runs": 2,
+    "measured_runs": 20,
+    "percentile": "nearest-rank P95",
+    "tokenizer": "cl100k_base@js-tiktoken-1.0.15"
+  },
+  "corpus": {
+    "fixtures": 102,
+    "p0_preserved": 101,
+    "p0_total": 101,
+    "p0_recall_percent": 100.0,
+    "p1_preserved": 89,
+    "p1_total": 92,
+    "p1_recall_percent": 96.73913043478261,
+    "qualifying_reduction_fixtures": 2,
+    "median_visible_token_reduction_percent": 99.99660513158611,
+    "budget_overruns": 0,
+    "invalid_artifact_references": 0,
+    "pass": true
+  },
+  "recovery": {
+    "restart_restored": 102,
+    "restart_total": 102,
+    "concurrent_writers_restored": 8,
+    "concurrent_writers_total": 8,
+    "sha256_mismatches": 0,
+    "pass": true
+  },
+  "performance": {
+    "cold_start_p95_ms": 2.0441570000000002,
+    "projection_1_mib_p95_ms": 16.305824,
+    "projection_10_mib_p95_ms": 151.117209,
+    "hook_1_mib_p95_ms": 73.641653,
+    "peak_rss_10_mib_bytes": 50163712,
+    "cold_start_limit_ms": 50.0,
+    "projection_1_mib_limit_ms": 100.0,
+    "projection_10_mib_limit_ms": 500.0,
+    "hook_1_mib_limit_ms": 150.0,
+    "peak_rss_limit_bytes": 134217728,
+    "raw_leaks": 0,
+    "adapter_budget_overruns": 0,
+    "pass": true
+  },
+  "fuzz": {
+    "schema_version": "distill.release-fuzz/v1",
+    "target": "fuzz_engine",
+    "mode": "release",
+    "result": "clean",
+    "git_revision": "d2292ec6a8321e7c2261f9a88021fb4c899ec4c4",
+    "binary_sha256": "abb04214224a90641de401fd049c86337d643b0c8016df2a82e21e887b749126",
+    "cpu_seconds": 4496.28,
+    "wall_seconds": 301.69,
+    "timeout_seconds": 5,
+    "workers": 16,
+    "started_at": "2026-07-24T15:32:40Z",
+    "completed_at": "2026-07-24T15:37:41Z"
+  },
+  "linux_release": {
+    "schema_version": "distill.release-suite/v1",
+    "target": "linux-x86_64",
+    "profile": "release",
+    "result": "passed",
+    "git_revision": "d2292ec6a8321e7c2261f9a88021fb4c899ec4c4",
+    "binary_sha256": "e257c4d9daadbfcbfeeb464848423bc87fadcb0a4b8b8ed543657c5ce92b9db4",
+    "commands": [
+      "./scripts/check-native.sh",
+      "cargo build --release --manifest-path native/distill-core/Cargo.toml",
+      "cargo test --release --manifest-path native/distill-core/Cargo.toml"
+    ],
+    "completed_at": "2026-07-24T15:32:24Z"
+  },
+  "critical_failures": {
+    "p0_fact_losses": 0,
+    "invalid_artifact_references": 0,
+    "silent_budget_overruns": 0,
+    "supported_surface_raw_leaks": 0
+  },
+  "status": "GO"
+}
