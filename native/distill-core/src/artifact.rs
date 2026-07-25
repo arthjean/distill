@@ -252,7 +252,7 @@ impl ArtifactStore {
             expires_at,
         )) = record
         else {
-            return self.missing_artifact(&connection, &reference.id, now);
+            return Self::missing_artifact(&connection, &reference.id, now);
         };
         if schema != ARTIFACT_SCHEMA_VERSION {
             return Err(Failure::new(
@@ -488,7 +488,6 @@ impl ArtifactStore {
     }
 
     fn missing_artifact(
-        &self,
         connection: &Connection,
         id: &str,
         now: u64,

@@ -1,8 +1,5 @@
 {
-  // The retained eslint-config and typescript-config workspaces are historical
-  // shared presets and remain outside the native product gate.
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreWorkspaces": ["packages/eslint-config", "packages/typescript-config"],
   "ignoreExportsUsedInFile": {
     "interface": true,
     "type": true,

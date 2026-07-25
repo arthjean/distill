@@ -24,8 +24,6 @@ policy remain in the central module.
 - `docs/architecture/`, `docs/security/`, `docs/integrations/`: current product
   contracts.
 - `docs/migration/`: legacy disposition and rollback record.
-- `packages/eslint-config/`, `packages/typescript-config/`: retained shared
-  presets, outside the native runtime.
 
 ## Toolchains and commands
 
