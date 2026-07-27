@@ -1,7 +1,9 @@
 use crate::cli::SurfaceError;
 use distill::{
     BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
-    EngineConfig, Failure, FailureCode, Outcome, Request, Retention, ScalarValue, Source,
+    EngineConfig, Failure, FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
+    MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES,
+    MAX_PROCESS_TIMEOUT_MS, MIN_PROCESS_TIMEOUT_MS, Outcome, Request, Retention, Source,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -56,8 +58,6 @@ struct ReadArguments {
     path: String,
     budget: McpBudget,
     #[serde(default)]
-    syntax_hint: Option<String>,
-    #[serde(default)]
     binary_policy: Option<BinaryPolicy>,
 }
 
@@ -65,7 +65,6 @@ struct ReadArguments {
 #[serde(deny_unknown_fields)]
 struct RunArguments {
     executable: String,
-    #[serde(default)]
     argv: Vec<String>,
     cwd_root_id: String,
     cwd: String,
@@ -96,7 +95,9 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
         }
         if line.len() > MAX_MESSAGE_BYTES {
             write_protocol_error(output, Value::Null, -32600, "MCP message exceeds 1 MiB")?;
-            drain_line(&mut reader)?;
+            if line.last() != Some(&b'\n') {
+                drain_line(&mut reader)?;
+            }
             continue;
         }
         let request: JsonRpcRequest = match serde_json::from_slice(&line) {
@@ -179,10 +180,6 @@ fn call_tool(
         "distill_read" => {
             let arguments: ReadArguments = serde_json::from_value(arguments)
                 .map_err(|_| (-32602, "invalid distill_read arguments"))?;
-            let mut metadata = adapter_metadata("distill_read");
-            if let Some(hint) = arguments.syntax_hint {
-                metadata.insert("content_class".to_owned(), ScalarValue::String(hint));
-            }
             let budget = arguments.budget.clone();
             let request = Request {
                 contract_version: CONTRACT_VERSION.to_owned(),
@@ -195,7 +192,6 @@ fn call_tool(
                 budget: budget.engine_budget(),
                 preservation_profile: "plain-text/v1".to_owned(),
                 retention: Retention::default(),
-                metadata,
             };
             engine
                 .handle(request)
@@ -225,7 +221,6 @@ fn call_tool(
                 budget: budget.engine_budget(),
                 preservation_profile: "plain-text/v1".to_owned(),
                 retention: Retention::default(),
-                metadata: adapter_metadata("distill_run"),
             };
             engine
                 .handle(request)
@@ -354,10 +349,9 @@ fn tool_definitions() -> Vec<Value> {
                 "additionalProperties": false,
                 "required": ["root_id", "path", "budget"],
                 "properties": {
-                    "root_id": {"type": "string", "description": "Configured acquisition root ID."},
-                    "path": {"type": "string", "description": "Path relative to the configured root."},
+                    "root_id": {"type": "string", "maxLength": MAX_IDENTIFIER_BYTES, "description": "Configured acquisition root ID."},
+                    "path": {"type": "string", "maxLength": MAX_PATH_BYTES, "description": "Path relative to the configured root."},
                     "budget": budget_schema(),
-                    "syntax_hint": {"type": "string", "description": "Optional source syntax hint recorded as bounded metadata."},
                     "binary_policy": {"type": "string", "enum": ["accept", "reject"], "description": "Whether binary bytes may be captured."}
                 }
             },
@@ -376,13 +370,13 @@ fn tool_definitions() -> Vec<Value> {
                 "additionalProperties": false,
                 "required": ["executable", "argv", "cwd_root_id", "cwd", "budget"],
                 "properties": {
-                    "executable": {"type": "string", "description": "Executable path or name. A shell runs only when explicitly supplied here."},
-                    "argv": {"type": "array", "items": {"type": "string"}, "description": "Literal argument vector without shell parsing."},
-                    "cwd_root_id": {"type": "string", "description": "Configured root containing the working directory."},
-                    "cwd": {"type": "string", "description": "Working directory relative to cwd_root_id."},
+                    "executable": {"type": "string", "maxLength": MAX_PROCESS_EXECUTABLE_BYTES, "description": format!("Executable path or name. A shell runs only when explicitly supplied here. Executable plus argv is capped at {MAX_PROCESS_ARGUMENT_BYTES} UTF-8 bytes.")},
+                    "argv": {"type": "array", "maxItems": MAX_PROCESS_ARGUMENTS, "items": {"type": "string"}, "description": "Literal argument vector without shell parsing."},
+                    "cwd_root_id": {"type": "string", "maxLength": MAX_IDENTIFIER_BYTES, "description": "Configured root containing the working directory."},
+                    "cwd": {"type": "string", "maxLength": MAX_PATH_BYTES, "description": "Working directory relative to cwd_root_id."},
                     "budget": budget_schema(),
-                    "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 300000, "description": "Non-interactive process timeout in milliseconds."},
-                    "environment_profile": {"type": "string", "description": "Optional preconfigured environment allowlist profile."}
+                    "timeout_ms": {"type": "integer", "minimum": MIN_PROCESS_TIMEOUT_MS, "maximum": MAX_PROCESS_TIMEOUT_MS, "description": "Non-interactive process timeout in milliseconds."},
+                    "environment_profile": {"type": "string", "maxLength": MAX_IDENTIFIER_BYTES, "description": "Optional preconfigured environment allowlist profile."}
                 }
             },
             "annotations": {
@@ -406,16 +400,6 @@ fn budget_schema() -> Value {
             "reserved_envelope": {"type": "integer", "minimum": 0, "description": "Optional explicit adapter-envelope allowance."}
         }
     })
-}
-
-fn adapter_metadata(tool: &str) -> BTreeMap<String, ScalarValue> {
-    BTreeMap::from([
-        (
-            "adapter".to_owned(),
-            ScalarValue::String("claude-mcp/v1".to_owned()),
-        ),
-        ("tool".to_owned(), ScalarValue::String(tool.to_owned())),
-    ])
 }
 
 fn normalize_root_relative(path: String) -> String {
@@ -463,11 +447,24 @@ fn write_message<W: Write>(output: &mut W, message: &Value) -> Result<(), Surfac
 }
 
 fn drain_line<R: BufRead>(reader: &mut R) -> Result<(), SurfaceError> {
-    let mut discarded = Vec::new();
-    reader
-        .read_until(b'\n', &mut discarded)
-        .map_err(|_| SurfaceError::invalid("cannot drain oversized MCP message"))?;
-    Ok(())
+    loop {
+        let (consumed, finished) = {
+            let available = reader
+                .fill_buf()
+                .map_err(|_| SurfaceError::invalid("cannot drain oversized MCP message"))?;
+            if available.is_empty() {
+                return Ok(());
+            }
+            match available.iter().position(|byte| *byte == b'\n') {
+                Some(position) => (position + 1, true),
+                None => (available.len(), false),
+            }
+        };
+        reader.consume(consumed);
+        if finished {
+            return Ok(());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -519,6 +516,24 @@ mod tests {
         assert_eq!(tools.len(), 2);
         assert_eq!(tools[0]["name"], "distill_read");
         assert_eq!(tools[1]["name"], "distill_run");
+        assert_eq!(
+            tools[1]["inputSchema"]["properties"]["argv"]["maxItems"],
+            MAX_PROCESS_ARGUMENTS
+        );
+        assert_eq!(
+            tools[1]["inputSchema"]["properties"]["timeout_ms"]["minimum"],
+            MIN_PROCESS_TIMEOUT_MS
+        );
+        assert_eq!(
+            tools[1]["inputSchema"]["properties"]["timeout_ms"]["maximum"],
+            MAX_PROCESS_TIMEOUT_MS
+        );
+        assert!(
+            tools[1]["inputSchema"]["properties"]["executable"]["description"]
+                .as_str()
+                .expect("executable description")
+                .contains(&MAX_PROCESS_ARGUMENT_BYTES.to_string())
+        );
         assert!(
             tools[0]["description"]
                 .as_str()
@@ -530,7 +545,63 @@ mod tests {
                 .get("preservation_profile")
                 .is_none()
         );
+        assert!(
+            tools[0]["inputSchema"]["properties"]
+                .get("syntax_hint")
+                .is_none()
+        );
         assert!(responses[1]["result"].get("structuredContent").is_none());
+    }
+
+    #[test]
+    fn removed_syntax_hint_is_rejected_instead_of_ignored() {
+        let temp = TempDir::new().expect("temp");
+        let responses = exchange(
+            config(&temp),
+            &[json!({
+                "jsonrpc":"2.0","id":"read","method":"tools/call",
+                "params":{"name":"distill_read","arguments":{
+                    "root_id":"workspace",
+                    "path":"source.rs",
+                    "syntax_hint":"rust",
+                    "budget":{"unit":"bytes","total_visible_limit":1400}
+                }}
+            })],
+        );
+        assert_eq!(responses[0]["error"]["code"], -32602);
+        assert_eq!(
+            responses[0]["error"]["message"],
+            "invalid distill_read arguments"
+        );
+    }
+
+    #[test]
+    fn run_argv_is_required_by_schema_and_runtime_decoder() {
+        let temp = TempDir::new().expect("temp");
+        let responses = exchange(
+            config(&temp),
+            &[
+                json!({"jsonrpc":"2.0","id":"schema","method":"tools/list"}),
+                json!({
+                    "jsonrpc":"2.0","id":"run","method":"tools/call",
+                    "params":{"name":"distill_run","arguments":{
+                        "executable":"/usr/bin/true",
+                        "cwd_root_id":"workspace",
+                        "cwd":".",
+                        "budget":{"unit":"bytes","total_visible_limit":1400}
+                    }}
+                }),
+            ],
+        );
+        let required = responses[0]["result"]["tools"][1]["inputSchema"]["required"]
+            .as_array()
+            .expect("required fields");
+        assert!(required.contains(&json!("argv")));
+        assert_eq!(responses[1]["error"]["code"], -32602);
+        assert_eq!(
+            responses[1]["error"]["message"],
+            "invalid distill_run arguments"
+        );
     }
 
     #[test]
@@ -656,5 +727,72 @@ mod tests {
             .collect();
         assert_eq!(lines[0]["error"]["code"], -32700);
         assert_eq!(lines[1]["result"], json!({}));
+    }
+
+    #[test]
+    fn oversized_frames_resynchronize_without_consuming_the_next_request() {
+        fn initialize(id: &str) -> Vec<u8> {
+            let mut line = serde_json::to_vec(
+                &json!({"jsonrpc":"2.0","id":id,"method":"initialize","params":{}}),
+            )
+            .expect("initialize");
+            line.push(b'\n');
+            line
+        }
+
+        for mut oversized in [
+            {
+                let mut frame = vec![b'x'; MAX_MESSAGE_BYTES];
+                frame.push(b'\n');
+                frame
+            },
+            {
+                let mut frame = vec![b'x'; MAX_MESSAGE_BYTES + 1];
+                frame.push(b'\n');
+                frame
+            },
+        ] {
+            let temp = TempDir::new().expect("temp");
+            oversized.extend(initialize("next"));
+            let mut output = Vec::new();
+            let mut diagnostics = Vec::new();
+            run(
+                config(&temp),
+                &mut oversized.as_slice(),
+                &mut output,
+                &mut diagnostics,
+            )
+            .expect("MCP run");
+            let responses = String::from_utf8(output)
+                .expect("UTF-8")
+                .lines()
+                .map(|line| serde_json::from_str::<Value>(line).expect("JSON-RPC"))
+                .collect::<Vec<_>>();
+            assert_eq!(responses.len(), 2);
+            assert_eq!(responses[0]["error"]["code"], -32600);
+            assert_eq!(responses[1]["id"], "next");
+            assert!(responses[1]["result"]["serverInfo"].is_object());
+            assert!(diagnostics.is_empty());
+        }
+
+        let temp = TempDir::new().expect("temp");
+        let unterminated = vec![b'x'; MAX_MESSAGE_BYTES + 1];
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        run(
+            config(&temp),
+            &mut unterminated.as_slice(),
+            &mut output,
+            &mut diagnostics,
+        )
+        .expect("MCP EOF");
+        let responses = String::from_utf8(output)
+            .expect("UTF-8")
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).expect("JSON-RPC"))
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0]["error"]["code"], -32600);
+        assert!(diagnostics.is_empty());
     }
 }

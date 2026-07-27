@@ -8,6 +8,16 @@
     "distill_maximum_tokens": 2250,
     "safety_margin_percent": 10
   },
+  "setup": {
+    "matcher": "*",
+    "timeout_seconds": 30,
+    "status_message": "Distill context projection v1",
+    "command_arguments": [
+      "codex-hook",
+      "--mode",
+      "active"
+    ]
+  },
   "surfaces": [
     {
       "category": "shell",
@@ -57,6 +67,7 @@
       "category": "unsupported_event_received",
       "matcher": "*",
       "status": "diagnostic",
+      "fixture": "WebSearch",
       "diagnostic": "unsupported_surface"
     }
   ],

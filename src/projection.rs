@@ -3,6 +3,151 @@ use tiktoken_rs::cl100k_base_singleton;
 
 const MAX_REDUCER_SPANS: usize = 256;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LineRule {
+    Never,
+    Contains(&'static str),
+    ContainsAny(&'static [&'static str]),
+    StartsWith(&'static str),
+    AddedPrivateMode,
+}
+
+impl LineRule {
+    fn matches(self, line: &str) -> bool {
+        match self {
+            Self::Never => false,
+            Self::Contains(needle) => line.contains(needle),
+            Self::ContainsAny(needles) => needles.iter().any(|needle| line.contains(needle)),
+            Self::StartsWith(prefix) => line.starts_with(prefix),
+            Self::AddedPrivateMode => {
+                line.starts_with('+')
+                    && !line.starts_with("+++")
+                    && line.contains("enforceprivatemode")
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Policy {
+    id: &'static str,
+    mandatory: LineRule,
+    optional: LineRule,
+}
+
+const POLICIES: &[Policy] = &[
+    Policy {
+        id: "plain-text/v1",
+        mandatory: LineRule::Never,
+        optional: LineRule::Never,
+    },
+    Policy {
+        id: "build-log/v1",
+        mandatory: LineRule::Contains("error "),
+        optional: LineRule::ContainsAny(&["warning ", " warn "]),
+    },
+    Policy {
+        id: "test-log/v1",
+        mandatory: LineRule::ContainsAny(&["fail ", "expected "]),
+        optional: LineRule::Contains("tests:"),
+    },
+    Policy {
+        id: "diff/v1",
+        mandatory: LineRule::AddedPrivateMode,
+        optional: LineRule::StartsWith("@@"),
+    },
+    Policy {
+        id: "diagnostic/v1",
+        mandatory: LineRule::Contains(" error["),
+        optional: LineRule::Contains(" note:"),
+    },
+    Policy {
+        id: "stack-trace/v1",
+        mandatory: LineRule::Contains("error:"),
+        optional: LineRule::Contains("at verify"),
+    },
+    Policy {
+        id: "source-code/v1",
+        mandatory: LineRule::Contains("commit-required"),
+        optional: LineRule::Contains("export function"),
+    },
+    Policy {
+        id: "json/v1",
+        mandatory: LineRule::Contains("\"failure_code\""),
+        optional: LineRule::Contains("\"run_id\""),
+    },
+    Policy {
+        id: "unicode/v1",
+        mandatory: LineRule::Contains("エラー"),
+        optional: LineRule::Contains("résumé"),
+    },
+    Policy {
+        id: "binary/v1",
+        mandatory: LineRule::Contains("fatal_"),
+        optional: LineRule::Contains("recovery_hint_"),
+    },
+    Policy {
+        id: "untrusted-text/v1",
+        mandatory: LineRule::Contains("actual_result_"),
+        optional: LineRule::Contains("source_label_"),
+    },
+    Policy {
+        id: "none/v1",
+        mandatory: LineRule::Never,
+        optional: LineRule::Never,
+    },
+];
+
+#[derive(Debug)]
+struct Analysis {
+    mandatory: Vec<ByteSpan>,
+    candidates: Vec<ByteSpan>,
+}
+
+#[derive(Clone, Debug)]
+struct SpanPlan {
+    spans: Vec<ByteSpan>,
+    byte_count: u64,
+}
+
+impl SpanPlan {
+    fn new(mut spans: Vec<ByteSpan>) -> Self {
+        normalize_spans(&mut spans);
+        let byte_count = span_byte_count(&spans);
+        Self { spans, byte_count }
+    }
+
+    fn with_candidate(&self, candidate: ByteSpan) -> Self {
+        let mut spans = Vec::with_capacity(self.spans.len() + 1);
+        let mut merged = candidate;
+        let mut inserted = false;
+        for span in self.spans.iter().copied() {
+            if span.end < merged.start {
+                spans.push(span);
+            } else if merged.end < span.start {
+                if !inserted {
+                    spans.push(merged);
+                    inserted = true;
+                }
+                spans.push(span);
+            } else {
+                merged.start = merged.start.min(span.start);
+                merged.end = merged.end.max(span.end);
+            }
+        }
+        if !inserted {
+            spans.push(merged);
+        }
+        let byte_count = span_byte_count(&spans);
+        Self { spans, byte_count }
+    }
+}
+
+#[derive(Default)]
+struct PlanningMetrics {
+    full_render_count_evaluations: usize,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Projection {
     pub visible: String,
@@ -19,7 +164,17 @@ pub(crate) fn project(
     budget: &Budget,
     profile: &str,
 ) -> Result<Projection, Failure> {
-    validate_contract(profile, budget)?;
+    let mut metrics = PlanningMetrics::default();
+    project_with_metrics(source, budget, profile, &mut metrics)
+}
+
+fn project_with_metrics(
+    source: &[u8],
+    budget: &Budget,
+    profile: &str,
+    metrics: &mut PlanningMetrics,
+) -> Result<Projection, Failure> {
+    let policy = validated_policy(profile, budget)?;
     let payload_limit = budget
         .total_visible_limit
         .checked_sub(budget.reserved_envelope)
@@ -48,40 +203,41 @@ pub(crate) fn project(
                     end: source.len() as u64,
                 }],
                 omitted_spans: Vec::new(),
-                mandatory_fact_ids: mandatory_spans(source, profile)?
+                mandatory_fact_ids: mandatory_spans(source, policy)?
                     .into_iter()
-                    .map(|span| fact_id(profile, span))
+                    .map(|span| fact_id(policy.id, span))
                     .collect(),
             });
         }
-        return project_text(source, text, budget, payload_limit, profile, original_count);
+        return project_text(
+            source,
+            text,
+            budget,
+            payload_limit,
+            policy,
+            original_count,
+            metrics,
+        );
     }
-    project_binary(source, budget, payload_limit, profile)
+    project_binary(source, budget, payload_limit, policy)
 }
 
 pub(crate) fn validate_contract(profile: &str, budget: &Budget) -> Result<(), Failure> {
-    if matches!(
-        profile,
-        "plain-text/v1"
-            | "build-log/v1"
-            | "test-log/v1"
-            | "diff/v1"
-            | "diagnostic/v1"
-            | "stack-trace/v1"
-            | "source-code/v1"
-            | "json/v1"
-            | "unicode/v1"
-            | "binary/v1"
-            | "untrusted-text/v1"
-            | "none/v1"
-    ) {
-        validate_budget(budget)?;
-        return Ok(());
-    }
-    Err(Failure::new(
-        FailureCode::InvalidRequest,
-        "preservation profile is unsupported",
-    ))
+    validated_policy(profile, budget).map(|_| ())
+}
+
+fn validated_policy(profile: &str, budget: &Budget) -> Result<&'static Policy, Failure> {
+    let policy = POLICIES
+        .iter()
+        .find(|candidate| candidate.id == profile)
+        .ok_or_else(|| {
+            Failure::new(
+                FailureCode::InvalidRequest,
+                "preservation profile is unsupported",
+            )
+        })?;
+    validate_budget(budget)?;
+    Ok(policy)
 }
 
 fn validate_budget(budget: &Budget) -> Result<(), Failure> {
@@ -111,46 +267,38 @@ fn project_text(
     text: &str,
     budget: &Budget,
     payload_limit: u64,
-    profile: &str,
+    policy: &Policy,
     original_count: u64,
+    metrics: &mut PlanningMetrics,
 ) -> Result<Projection, Failure> {
-    let mandatory = mandatory_spans(source, profile)?;
-    let mandatory_visible = render(source, &mandatory)?;
-    if count(&mandatory_visible, budget)? > payload_limit {
+    let analysis = analyze(source, policy)?;
+    let mandatory = analysis.mandatory;
+    let mut retained = SpanPlan::new(mandatory.clone());
+    if !plan_fits(source, &retained, budget, payload_limit, metrics)? {
         return Err(Failure::new(
             FailureCode::BudgetUnsatisfiable,
             "mandatory facts exceed the projection payload budget",
         ));
     }
 
-    let mut retained = mandatory.clone();
-    let mut candidates = optional_spans(source, profile);
-    if let Some(first) = line_spans(source).next() {
-        candidates.push(first);
-    }
-    if let Some(last) = line_spans(source).last() {
-        candidates.push(last);
-    }
-    for candidate in candidates {
-        let mut proposed = retained.clone();
-        proposed.push(candidate);
-        normalize_spans(&mut proposed);
-        if count(&render(source, &proposed)?, budget)? <= payload_limit {
+    for candidate in analysis.candidates {
+        let proposed = retained.with_candidate(candidate);
+        if plan_fits(source, &proposed, budget, payload_limit, metrics)? {
             retained = proposed;
         }
     }
 
-    if retained.is_empty() && payload_limit > 0 {
+    if retained.spans.is_empty() && payload_limit > 0 {
         let prefix_end = fitting_prefix(text, budget, payload_limit)?;
         if prefix_end > 0 {
-            retained.push(ByteSpan {
+            retained = SpanPlan::new(vec![ByteSpan {
                 start: 0,
                 end: prefix_end as u64,
-            });
+            }]);
         }
     }
-    normalize_spans(&mut retained);
-    let visible = render(source, &retained)?;
+    let visible = render(source, &retained.spans)?;
+    metrics.full_render_count_evaluations += 1;
     let visible_count = count(&visible, budget)?;
     if visible_count > payload_limit
         || visible_count.saturating_add(budget.reserved_envelope) > budget.total_visible_limit
@@ -160,17 +308,16 @@ fn project_text(
             "projection exceeded its declared budget",
         ));
     }
-    let omitted = complement(source.len(), &retained);
     Ok(Projection {
         visible,
         original_count,
         visible_count,
         fidelity: Fidelity::Extractive,
-        retained_spans: retained.clone(),
-        omitted_spans: omitted,
+        retained_spans: retained.spans.clone(),
+        omitted_spans: complement(source.len(), &retained.spans),
         mandatory_fact_ids: mandatory
             .iter()
-            .map(|span| fact_id(profile, *span))
+            .map(|span| fact_id(policy.id, *span))
             .collect(),
     })
 }
@@ -179,10 +326,10 @@ fn project_binary(
     source: &[u8],
     budget: &Budget,
     payload_limit: u64,
-    profile: &str,
+    policy: &Policy,
 ) -> Result<Projection, Failure> {
     let encoded = encode_binary(source);
-    let mandatory = mandatory_spans(source, profile)?;
+    let mandatory = mandatory_spans(source, policy)?;
     let encoded_count = count(&encoded, budget)?;
     let original_count = match budget.unit {
         CountUnit::Bytes => source.len() as u64,
@@ -201,7 +348,7 @@ fn project_binary(
             }],
             mandatory_fact_ids: mandatory
                 .iter()
-                .map(|span| fact_id(profile, *span))
+                .map(|span| fact_id(policy.id, *span))
                 .collect(),
         });
     }
@@ -249,64 +396,88 @@ fn count(text: &str, budget: &Budget) -> Result<u64, Failure> {
     }
 }
 
-fn mandatory_spans(source: &[u8], profile: &str) -> Result<Vec<ByteSpan>, Failure> {
-    if profile == "none/v1" || profile == "plain-text/v1" {
+fn mandatory_spans(source: &[u8], policy: &Policy) -> Result<Vec<ByteSpan>, Failure> {
+    if policy.mandatory == LineRule::Never {
         return Ok(Vec::new());
     }
     let mut spans = Vec::new();
-    for span in line_spans(source).filter(|span| {
+    for span in line_spans(source) {
         let line = &source[span.start as usize..span.end as usize];
         let normalized = String::from_utf8_lossy(line).to_ascii_lowercase();
-        match profile {
-            "build-log/v1" => normalized.contains("error "),
-            "test-log/v1" => normalized.contains("fail ") || normalized.contains("expected "),
-            "diff/v1" => {
-                normalized.starts_with('+')
-                    && !normalized.starts_with("+++")
-                    && normalized.contains("enforceprivatemode")
+        if policy.mandatory.matches(&normalized) {
+            if spans.len() == MAX_REDUCER_SPANS {
+                return Err(Failure::new(
+                    FailureCode::ResourceExhausted,
+                    "mandatory fact count exceeds the reducer work limit",
+                ));
             }
-            "diagnostic/v1" => normalized.contains(" error["),
-            "stack-trace/v1" => normalized.contains("error:"),
-            "source-code/v1" => normalized.contains("commit-required"),
-            "json/v1" => normalized.contains("\"failure_code\""),
-            "unicode/v1" => normalized.contains("エラー"),
-            "binary/v1" => normalized.contains("fatal_"),
-            "untrusted-text/v1" => normalized.contains("actual_result_"),
-            _ => false,
+            spans.push(span);
         }
-    }) {
-        if spans.len() == MAX_REDUCER_SPANS {
-            return Err(Failure::new(
-                FailureCode::ResourceExhausted,
-                "mandatory fact count exceeds the reducer work limit",
-            ));
-        }
-        spans.push(span);
     }
     Ok(spans)
 }
 
-fn optional_spans(source: &[u8], profile: &str) -> Vec<ByteSpan> {
-    line_spans(source)
-        .filter(|span| {
-            let line = &source[span.start as usize..span.end as usize];
-            let normalized = String::from_utf8_lossy(line).to_ascii_lowercase();
-            match profile {
-                "build-log/v1" => normalized.contains("warning ") || normalized.contains(" warn "),
-                "test-log/v1" => normalized.contains("tests:"),
-                "diff/v1" => normalized.starts_with("@@"),
-                "diagnostic/v1" => normalized.contains(" note:"),
-                "stack-trace/v1" => normalized.contains("at verify"),
-                "source-code/v1" => normalized.contains("export function"),
-                "json/v1" => normalized.contains("\"run_id\""),
-                "unicode/v1" => normalized.contains("résumé"),
-                "binary/v1" => normalized.contains("recovery_hint_"),
-                "untrusted-text/v1" => normalized.contains("source_label_"),
-                _ => false,
+fn analyze(source: &[u8], policy: &Policy) -> Result<Analysis, Failure> {
+    let mut mandatory = Vec::new();
+    let mut candidates = Vec::new();
+    let mut first = None;
+    let mut last = None;
+    for span in line_spans(source) {
+        first.get_or_insert(span);
+        last = Some(span);
+        let line = &source[span.start as usize..span.end as usize];
+        let normalized = String::from_utf8_lossy(line).to_ascii_lowercase();
+        if policy.mandatory.matches(&normalized) {
+            if mandatory.len() == MAX_REDUCER_SPANS {
+                return Err(Failure::new(
+                    FailureCode::ResourceExhausted,
+                    "mandatory fact count exceeds the reducer work limit",
+                ));
             }
-        })
-        .take(MAX_REDUCER_SPANS)
-        .collect()
+            mandatory.push(span);
+        }
+        if candidates.len() < MAX_REDUCER_SPANS && policy.optional.matches(&normalized) {
+            candidates.push(span);
+        }
+    }
+    if let Some(first) = first {
+        candidates.push(first);
+    }
+    if let Some(last) = last {
+        candidates.push(last);
+    }
+    Ok(Analysis {
+        mandatory,
+        candidates,
+    })
+}
+
+fn plan_fits(
+    source: &[u8],
+    plan: &SpanPlan,
+    budget: &Budget,
+    payload_limit: u64,
+    metrics: &mut PlanningMetrics,
+) -> Result<bool, Failure> {
+    match budget.unit {
+        CountUnit::Bytes => Ok(plan.byte_count <= payload_limit),
+        CountUnit::Tokens => {
+            // Every ordinary cl100k token consumes at least one UTF-8 byte, so
+            // byte length is a safe upper bound when it already fits.
+            if plan.byte_count <= payload_limit {
+                return Ok(true);
+            }
+            metrics.full_render_count_evaluations += 1;
+            Ok(count(&render(source, &plan.spans)?, budget)? <= payload_limit)
+        }
+    }
+}
+
+fn span_byte_count(spans: &[ByteSpan]) -> u64 {
+    spans
+        .iter()
+        .map(|span| span.end.saturating_sub(span.start))
+        .sum()
 }
 
 fn line_spans(source: &[u8]) -> impl Iterator<Item = ByteSpan> + '_ {
@@ -456,6 +627,10 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        hint::black_box,
+        time::{Duration, Instant},
+    };
 
     fn bytes(limit: u64) -> Budget {
         Budget {
@@ -464,6 +639,73 @@ mod tests {
             reserved_envelope: 0,
             token_profile: None,
         }
+    }
+
+    fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Projection, usize) {
+        let policy = validated_policy(profile, budget).expect("baseline policy");
+        let text = std::str::from_utf8(source).expect("baseline text");
+        let original_count = count(text, budget).expect("baseline original count");
+        let payload_limit = budget.total_visible_limit - budget.reserved_envelope;
+        assert!(original_count > payload_limit);
+
+        let analysis = analyze(source, policy).expect("baseline analysis");
+        let mandatory = analysis.mandatory;
+        let mut evaluations = 1;
+        let mandatory_visible = render(source, &mandatory).expect("baseline mandatory render");
+        assert!(
+            count(&mandatory_visible, budget).expect("baseline mandatory count") <= payload_limit
+        );
+
+        let mut retained = mandatory.clone();
+        for candidate in analysis.candidates {
+            let mut proposed = retained.clone();
+            proposed.push(candidate);
+            normalize_spans(&mut proposed);
+            evaluations += 1;
+            if count(
+                &render(source, &proposed).expect("baseline proposal render"),
+                budget,
+            )
+            .expect("baseline proposal count")
+                <= payload_limit
+            {
+                retained = proposed;
+            }
+        }
+        if retained.is_empty() && payload_limit > 0 {
+            let prefix_end =
+                fitting_prefix(text, budget, payload_limit).expect("baseline fitting prefix");
+            if prefix_end > 0 {
+                retained.push(ByteSpan {
+                    start: 0,
+                    end: prefix_end as u64,
+                });
+            }
+        }
+        normalize_spans(&mut retained);
+        evaluations += 1;
+        let visible = render(source, &retained).expect("baseline final render");
+        let visible_count = count(&visible, budget).expect("baseline final count");
+        (
+            Projection {
+                visible,
+                original_count,
+                visible_count,
+                fidelity: Fidelity::Extractive,
+                retained_spans: retained.clone(),
+                omitted_spans: complement(source.len(), &retained),
+                mandatory_fact_ids: mandatory
+                    .iter()
+                    .map(|span| fact_id(policy.id, *span))
+                    .collect(),
+            },
+            evaluations,
+        )
+    }
+
+    fn p95(mut durations: Vec<Duration>) -> Duration {
+        durations.sort_unstable();
+        durations[18]
     }
 
     #[test]
@@ -720,6 +962,95 @@ mod tests {
         assert_eq!(
             spans,
             vec![ByteSpan { start: 0, end: 5 }, ByteSpan { start: 8, end: 9 }]
+        );
+    }
+
+    #[test]
+    fn policy_heavy_planning_reuses_analysis_without_latency_regression() {
+        let mut source = String::from("ERROR E1: mandatory fact\n");
+        for index in 0..MAX_REDUCER_SPANS {
+            source.push_str(&format!("warning W{index:03}: optional fact\n"));
+            source.push_str("ordinary build output without policy facts\n");
+        }
+        while source.len() < 1024 * 1024 {
+            source.push_str("ordinary build output padding\n");
+        }
+        source.truncate(1024 * 1024);
+        let budget = Budget {
+            unit: CountUnit::Tokens,
+            total_visible_limit: 8_192,
+            reserved_envelope: 0,
+            token_profile: Some(CL100K_PROFILE.to_owned()),
+        };
+
+        let (baseline, baseline_evaluations) =
+            baseline_project(source.as_bytes(), &budget, "build-log/v1");
+        let mut metrics = PlanningMetrics::default();
+        let planned =
+            project_with_metrics(source.as_bytes(), &budget, "build-log/v1", &mut metrics)
+                .expect("planned projection");
+        assert_eq!(planned.visible, baseline.visible);
+        assert_eq!(planned.visible_count, baseline.visible_count);
+        assert_eq!(planned.retained_spans, baseline.retained_spans);
+        assert_eq!(planned.omitted_spans, baseline.omitted_spans);
+        assert_eq!(planned.mandatory_fact_ids, baseline.mandatory_fact_ids);
+        assert!(planned.visible.contains("ERROR E1: mandatory fact"));
+        assert!(planned.visible.contains("warning W000: optional fact"));
+        assert!(
+            metrics.full_render_count_evaluations * 2 <= baseline_evaluations,
+            "{} optimized evaluations did not halve the {baseline_evaluations} baseline",
+            metrics.full_render_count_evaluations
+        );
+
+        for _ in 0..2 {
+            black_box(baseline_project(
+                black_box(source.as_bytes()),
+                black_box(&budget),
+                "build-log/v1",
+            ));
+            let mut warmup_metrics = PlanningMetrics::default();
+            black_box(
+                project_with_metrics(
+                    black_box(source.as_bytes()),
+                    black_box(&budget),
+                    "build-log/v1",
+                    &mut warmup_metrics,
+                )
+                .expect("planned warm-up"),
+            );
+        }
+        let baseline_times = (0..20)
+            .map(|_| {
+                let started = Instant::now();
+                black_box(baseline_project(
+                    black_box(source.as_bytes()),
+                    black_box(&budget),
+                    "build-log/v1",
+                ));
+                started.elapsed()
+            })
+            .collect();
+        let planned_times = (0..20)
+            .map(|_| {
+                let started = Instant::now();
+                let mut run_metrics = PlanningMetrics::default();
+                black_box(
+                    project_with_metrics(
+                        black_box(source.as_bytes()),
+                        black_box(&budget),
+                        "build-log/v1",
+                        &mut run_metrics,
+                    )
+                    .expect("measured planned projection"),
+                );
+                started.elapsed()
+            })
+            .collect();
+        let baseline_p95 = p95(baseline_times);
+        let planned_p95 = p95(planned_times);
+        assert!(
+            planned_p95.as_nanos() * 100 <= baseline_p95.as_nanos() * 105,
+            "planned P95 {planned_p95:?} regressed beyond baseline P95 {baseline_p95:?}"
         );
     }
 }

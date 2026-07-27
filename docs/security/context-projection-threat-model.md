@@ -1,8 +1,8 @@
 # Context projection data threat model
 
-- Version: 1.0
-- Date: 2026-07-24
-- Status: Accepted for the language-spike gate
+- Version: 2.0
+- Date: 2026-07-27
+- Status: Accepted for Request v2 and persisted-proof hardening
 - Contract: [ADR-001](../architecture/ADR-001-context-projection-contract.md)
 
 ## Security objective
@@ -91,7 +91,10 @@ Interrupted work leaves either the prior state or the complete new state.
 
 The default artifact lifetime is seven days. The resolved absolute `expires_at`
 is stored in every artifact reference. The default total source-byte cap is
-512 MiB.
+512 MiB. Receipt lineage is independently bounded to 64 MiB of exact persisted
+receipt bytes globally and 1 MiB per artifact. A receipt insert reserves and
+checks both logical limits in the same transaction that stores the receipt.
+Trace remains complete and bounded by the per-artifact limit.
 
 Before accepting new capture, the store may remove expired source objects and
 their reclaimable metadata. It never evicts an unexpired artifact early. If the
@@ -112,6 +115,29 @@ secret-bearing metadata. Tombstones expire 30 days after source deletion:
 Retention deletion is not secure erasure. Filesystems, snapshots, backups, WAL
 pages, swap, and storage devices can retain recoverable remnants. V1 does not
 claim forensic deletion.
+
+## Persisted proof integrity
+
+Source SHA-256 continues to bind every artifact to its original bytes.
+Acquisition receipts and projection receipts additionally carry versioned
+SHA-256 proof over the exact serialized bytes stored in SQLite. Reads hash and
+compare the stored blob before semantic decoding. No parse, restore, replay, or
+trace path may use a blob whose digest is absent, malformed, or mismatched.
+
+One acquisition-state validator owns construction, schema migration, recovery,
+artifact replay, and trace semantics. It rejects valid JSON whose fields
+contradict the declared source variant or completion state. Migration validates
+the old semantic state before computing a digest, so migration cannot bless an
+already contradictory record.
+
+Each receipt chain step binds the prior head, per-artifact sequence, and exact
+receipt bytes. The artifact row commits the final head, count, and logical byte
+usage, so a missing tail, reordered row, or inconsistent accounting fails before
+trace returns lineage.
+
+The digests are corruption-detection evidence, not signatures. Distill claims
+neither JSON canonicalization nor authenticity against a compromised same-user
+process. It does not canonicalize and reserialize a blob before hashing.
 
 ## Filesystem and permissions policy
 
@@ -158,18 +184,22 @@ inheritance is disabled by default; a named profile allowlists variables and
 caps key and value lengths. Secret values in configured environment metadata are
 redacted from receipts and logs.
 
-Execution has a wall timeout, output-byte cap, bounded event count, bounded
-stderr/stdout buffering, and a termination escalation. Exit code, signal,
-timeout, chronological stream events, working directory identity, and
-truncation state are recorded separately. A timeout, external kill, spawn
-failure, or output limit returns a typed acquisition failure. Partial bytes may
-be committed for diagnosis but are never presented as a complete projection.
+Execution has a wall timeout, output-byte cap, bounded event count, and
+nonblocking stderr/stdout drain. One monotonic lifecycle deadline starts before
+spawn and bounds readiness waits, process-group termination, direct-child reap,
+and pipe teardown. At timeout, Distill closes its pipe reads before reaping so a
+descendant that escaped the owned process group cannot retain a blocking reader.
+Exit code, signal, timeout, chronological stream events, working directory
+identity, and truncation state are recorded separately. A timeout, external
+kill, spawn failure, read failure, or output limit returns a typed acquisition
+failure. Partial bytes may be committed for diagnosis but are never presented
+as a complete projection.
 
 ## Threat and control matrix
 
 | Threat | Attack or failure | Required control and failure |
 |---|---|---|
-| Secret or PII exposure | Source, path, argv, receipt, log, or trace leaks sensitive data | Private store permissions; bounded allowlisted metadata; no raw bodies in logs; redact configured secret values; active mode exposes only the verified projection |
+| Secret or PII exposure | Source, path, argv, receipt, log, or trace leaks sensitive data | Private store permissions; no Request metadata; bounded receipt and configuration fields; no raw bodies in logs; redact configured secret values; active mode exposes only the verified projection |
 | Prompt injection | Stored bytes claim to be instructions or configuration | Content is inert data; reducers use fixed policies; no prompt execution, model call, template evaluation, or policy mutation from source |
 | Path traversal | Relative path escapes an allowed root | Descriptor-relative open, reject absolute and parent components, verify opened identity; fail `unsafe_root` |
 | Symlink race | Attacker swaps a checked path before read or write | No check-then-open authorization; no-follow descriptor operations; pre/post identity checks; abort acquisition |
@@ -178,7 +208,8 @@ be committed for diagnosis but are never presented as a complete projection.
 | Malformed Unicode | Decoder replaces or drops source bytes | Persist original bytes first; validate or deterministically encode model-visible text; byte offsets refer to original bytes |
 | Binary input | NULs or arbitrary bytes corrupt a text reducer | Explicit binary policy and deterministic encoded or metadata-only fidelity; no C-string assumptions |
 | Disk exhaustion | Capture fills disk or exceeds quota | 512 MiB logical cap, preflight reservation, bounded temp files, expired-only GC, atomic failure as `store_full` or `commit_failed` |
-| Database corruption | Metadata or WAL is damaged or inconsistent with objects | Integrity checks, schema versioning, digest verification, backup/recovery procedure; return `artifact_corrupt`; never return unverified bytes |
+| Database corruption | Metadata or WAL is damaged or inconsistent with objects | Exact-byte acquisition and receipt digests, one semantic acquisition validator, schema versioning, source digest verification, and atomic migration; return `artifact_corrupt`; never return unverified bytes |
+| Receipt-lineage amplification | Repeated projection grows SQLite or trace memory without a contract limit | Enforce 64 MiB global and 1 MiB per-artifact exact stored-byte caps transactionally; reject the receipt without partial lineage |
 | Concurrent writers | Races lose commits, reuse IDs, or wait forever | Transactions, unique opaque IDs, bounded busy timeout, at most eight writers, crash tests; return `store_busy` |
 | Stale hook or event schema | Adapter misreads a changed host payload | Exact versioned decoding, allowlisted event kinds, reject unknown required fields, observe-before-active rollout |
 | Unsafe configuration | Attacker changes roots, mode, or retention | User-only configuration, strict schema, no source-derived config, startup validation; fail closed |

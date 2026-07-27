@@ -1,5 +1,46 @@
 # Release qualification
 
+## Architecture-hardening preregistration
+
+`architecture-hardening-v1-20260727` freezes the root-crate candidate at
+`source_tree` `f0f564f8da58ab380c715038a2a35baacfec150a`. The protocol is
+`architecture-hardening-v1-protocol.json`; its immutable preregistration and
+historical-integrity record is `architecture-hardening-v1-ledger.json`. The protocol
+covers Request v2 and framing conformance, persisted-proof mutation and
+semantic checks, lineage limits and eight writers, migration faults, the
+process watchdog, projection behavior and performance, corpus preservation,
+zero-network behavior, setup and restore, and per-platform release-binary
+digests.
+
+Preregistration validation is local and does not run qualification commands:
+
+```bash
+bun evaluation/release/run-architecture-hardening-v1.mjs --validate-only
+```
+
+Execution remains blocked until Arthur separately creates the owner-private
+external authorization record at
+`/tmp/distill-architecture-hardening-v1-20260727-authorization.json`. It binds
+the clean source revision and tree, exact protocol, ledger, and runner hashes,
+the 14,400 CPU-second ceiling, zero subscription calls, zero incremental
+dollars, destinations, and permitted actions. The runner then accepts exactly
+one platform command vector per external destination:
+
+```bash
+bun evaluation/release/run-architecture-hardening-v1.mjs --execute linux-x86_64
+bun evaluation/release/run-architecture-hardening-v1.mjs --execute macos-arm64
+bun evaluation/release/run-architecture-hardening-v1.mjs --aggregate
+```
+
+The default destination is
+`/tmp/distill-architecture-hardening-v1-20260727`. A dirty worktree, changed
+historical hash, mismatched authorization, wrong platform, or pre-existing
+target directory refuses execution. Symlinked, non-owner, or non-private
+authorization and output paths also fail closed. The runner never writes under
+`evaluation/release/evidence/`. Linux and macOS receipts must bind the same
+authorized revision and preregistered source tree; the aggregate is `GO` only
+when both receipts and every gate are `GO`.
+
 ## Current root-crate gate
 
 The root Cargo layout introduces `distill.release-suite/v2` and

@@ -61,7 +61,7 @@ console.log(
     mode: mode.slice(2),
     ...summary,
     secret_scan: "clean",
-    rejection_tests: 4,
+    rejection_tests: 5,
     oracle_self_test: "passed",
   }),
 );
@@ -69,16 +69,19 @@ console.log(
 function runRejectionTests(fixture, profileMap) {
   const mutations = [
     (candidate) => {
-      delete candidate.source_sha256;
+      candidate.annotations.p0[0].needle_base64 = "YQ";
     },
     (candidate) => {
-      delete candidate.budget_profile;
+      candidate.source_sha256 = "0".repeat(64);
     },
     (candidate) => {
-      delete candidate.expected.byte_length;
+      delete candidate.annotations.p0[0].id;
     },
     (candidate) => {
-      delete candidate.annotations.p0;
+      candidate.unknown_key = true;
+    },
+    (candidate) => {
+      candidate.category = "unknown";
     },
   ];
 

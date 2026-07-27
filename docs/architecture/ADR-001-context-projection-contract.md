@@ -52,21 +52,26 @@ Request {
   budget: Budget
   preservation_profile: PreservationProfileId
   retention: Retention
-  metadata: ScalarMap
 }
 ```
 
-`contract_version` selects the complete public semantics. Unknown major versions
-fail with `schema_unsupported`. `request_id` is supplied by the caller for
-idempotency and trace correlation. It does not become an artifact identifier.
+`contract_version` selects the complete public semantics. The current contract
+is `distill.context/v2`. A syntactically decodable `distill.context/v1` request
+fails with `schema_unsupported`; there is no compatibility path that drops v1
+fields. Unknown versions fail the same way.
 
-`metadata` accepts only bounded scalar values from a versioned allowlist. Source
-bodies, command output, environment blocks, and nested untrusted documents do not
-belong in metadata.
+`request_id` is supplied by the caller for correlation only. It does not become
+an artifact identifier and does not provide durable idempotency. Repeating an ID
+does not prevent process re-execution and does not replay a prior `Outcome`.
+
+Request metadata is not part of v2. Persisting arbitrary request metadata or
+adding durable idempotency is a separately versioned capability. Such a
+capability requires explicit request fingerprint, retention, duplicate-conflict,
+in-flight, crash-recovery, and PII semantics before it can enter this contract.
 
 ### Source
 
-`Source` is a closed discriminated union with four v1 variants:
+`Source` is a closed discriminated union with four variants:
 
 ```text
 Source =
@@ -98,6 +103,20 @@ Source =
 - `process` launches one executable with an argv vector. It never implies a
   command shell, string interpolation, or configuration evaluation.
 - `artifact` reuses a previously committed, unexpired source artifact.
+
+Request policy validation precedes clock reads, file opens, process spawn,
+artifact ID generation, and store mutation. A process accepts at most 4,096
+arguments and at most 1,048,576 bytes across the executable plus every argument.
+The exact byte limit is valid; an aggregate or count overflow fails with
+`resource_exhausted`. Process timeouts are from 100 through 300,000 ms.
+
+Failure precedence is contract version, bounded correlation ID, source resource
+and structural validation, retention shape, then projection contract
+validation. Within process validation, argv count and aggregate-byte exhaustion
+precede remaining process-field checks. Invalid structural fields fail with
+`invalid_request`; an unknown configured acquisition root fails with
+`unsafe_root`. The runtime repeats process validation defensively at the OS seam
+but cannot select a different contract failure for the same limit.
 
 An adapter may expose any subset of these variants. It may not change the
 semantics of a variant or fabricate unsupported acquisition metadata.
@@ -239,6 +258,24 @@ and identifiers of all mandatory facts. It does not copy sensitive fact bodies.
 complete, partial, timed-out, signaled, or failed acquisition. Process acquisition
 keeps stdout and stderr as ordered byte events and separately records exit code,
 signal, timeout, working directory identifier, and truncation state.
+
+### Persisted proof
+
+Every persisted acquisition receipt and projection receipt is stored with a
+versioned SHA-256 digest over its exact stored bytes. Verification hashes those
+bytes before decoding them. Acquisition state then passes one semantic
+validation that rejects contradictory variant, completion, partial, truncation,
+path, and process fields before restore, replay, or trace can use it.
+
+These digests detect accidental or storage-level corruption. The contract does
+not claim JSON canonicalization, receipt signatures, authenticity against a
+compromised same-user process, or remote attestation.
+
+Receipt lineage has two logical-byte limits, measured over the exact persisted
+receipt blobs: 64 MiB globally and 1 MiB for one artifact. A receipt that would
+exceed either limit is rejected atomically before becoming visible. Trace
+remains complete rather than paginated because one artifact's materialized
+lineage cannot exceed 1 MiB.
 
 ### Failure
 

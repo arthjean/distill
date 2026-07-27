@@ -1,6 +1,10 @@
-use crate::types::{
-    AcquisitionReceipt, ByteSpan, ByteString, EngineConfig, Failure, FailureCode, ProcessReceipt,
-    ProcessStream, Source, SourceVariant, StreamEvent,
+use crate::{
+    request_policy,
+    request_policy::MAX_SOURCE_BYTES,
+    types::{
+        AcquisitionReceipt, ByteSpan, ByteString, EngineConfig, Failure, FailureCode,
+        ProcessReceipt, ProcessStream, Source, SourceVariant, StreamEvent,
+    },
 };
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,24 +22,28 @@ use std::{
         },
     },
     path::{Component, Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::{Arc, mpsc},
-    thread,
+    process::{Child, ChildStderr, ChildStdout, Command, Stdio},
+    sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub(crate) const MAX_SOURCE_BYTES: usize = 10 * 1024 * 1024;
-const MAX_ARGUMENTS: usize = 4_096;
-const MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
-const DEFAULT_TIMEOUT_MS: u64 = 30_000;
-const MIN_TIMEOUT_MS: u64 = 100;
-const MAX_TIMEOUT_MS: u64 = 300_000;
 const READ_CHUNK_BYTES: usize = 8 * 1024;
+const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROCESS_REAP_TOLERANCE: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Debug)]
 pub(crate) struct Acquired {
     pub bytes: Vec<u8>,
     pub receipt: AcquisitionReceipt,
+}
+
+impl Acquired {
+    fn validated(bytes: Vec<u8>, receipt: AcquisitionReceipt) -> Result<Self, AcquisitionError> {
+        receipt.validate(bytes.len() as u64).map_err(|message| {
+            AcquisitionError::clean(Failure::new(FailureCode::InvariantBreach, message))
+        })?;
+        Ok(Self { bytes, receipt })
+    }
 }
 
 #[derive(Debug)]
@@ -76,12 +84,22 @@ impl ProductionRuntime {
     pub(crate) fn new(config: &EngineConfig) -> Result<Self, Failure> {
         let mut roots = BTreeMap::new();
         for (id, path) in &config.roots {
-            validate_identifier(id, "root ID")?;
+            if !request_policy::valid_identifier(id) {
+                return Err(Failure::new(
+                    FailureCode::InvalidRequest,
+                    "root ID is invalid",
+                ));
+            }
             let root = validate_root(path)?;
             roots.insert(id.clone(), root);
         }
         for (id, profile) in &config.environment_profiles {
-            validate_identifier(id, "environment profile ID")?;
+            if !request_policy::valid_identifier(id) {
+                return Err(Failure::new(
+                    FailureCode::InvalidRequest,
+                    "environment profile ID is invalid",
+                ));
+            }
             if profile.len() > 128 {
                 return Err(Failure::new(
                     FailureCode::InvalidRequest,
@@ -115,10 +133,7 @@ impl ProductionRuntime {
                 "inline source exceeds the 10 MiB limit",
             )));
         }
-        Ok(Acquired {
-            bytes: bytes.0.clone(),
-            receipt: simple_receipt(SourceVariant::Inline),
-        })
+        Acquired::validated(bytes.0.clone(), simple_receipt(SourceVariant::Inline))
     }
 
     fn acquire_file(
@@ -192,9 +207,9 @@ impl ProductionRuntime {
                 "binary file rejected by policy",
             )));
         }
-        Ok(Acquired {
+        Acquired::validated(
             bytes,
-            receipt: AcquisitionReceipt {
+            AcquisitionReceipt {
                 variant: SourceVariant::File,
                 complete: true,
                 partial: false,
@@ -203,7 +218,7 @@ impl ProductionRuntime {
                 relative_path: Some(format!("<{} path bytes>", relative_path.0.len())),
                 process: None,
             },
-        })
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -216,24 +231,9 @@ impl ProductionRuntime {
         timeout_ms: Option<u64>,
         environment_profile: Option<&str>,
     ) -> Result<Acquired, AcquisitionError> {
-        let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-        if !(MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&timeout_ms) {
-            return Err(AcquisitionError::clean(Failure::new(
-                FailureCode::InvalidRequest,
-                "process timeout must be from 100 ms through 300 seconds",
-            )));
-        }
-        let argument_bytes = argv.iter().try_fold(executable.0.len(), |total, argument| {
-            total.checked_add(argument.0.len())
-        });
-        if argv.len() > MAX_ARGUMENTS
-            || argument_bytes.is_none_or(|total| total > MAX_ARGUMENT_BYTES)
-        {
-            return Err(AcquisitionError::clean(Failure::new(
-                FailureCode::ResourceExhausted,
-                "process argv exceeds the configured limits",
-            )));
-        }
+        request_policy::validate_process(executable, argv, timeout_ms)
+            .map_err(AcquisitionError::clean)?;
+        let timeout_ms = timeout_ms.unwrap_or(request_policy::DEFAULT_PROCESS_TIMEOUT_MS);
         let root = self.roots.get(cwd_root_id).ok_or_else(|| {
             AcquisitionError::clean(Failure::new(
                 FailureCode::UnsafeRoot,
@@ -282,136 +282,22 @@ impl ProductionRuntime {
             });
         }
         command.process_group(0);
-        let mut child = command.spawn().map_err(|_| {
+        let started = Instant::now();
+        let child = command.spawn().map_err(|_| {
             AcquisitionError::clean(Failure::new(
                 FailureCode::AcquisitionFailed,
                 "process spawn failed",
             ))
         })?;
-        let process_group = child.id();
-        let stdout = child.stdout.take().ok_or_else(|| {
-            AcquisitionError::clean(Failure::new(
-                FailureCode::InvariantBreach,
-                "process stdout pipe was not created",
-            ))
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            AcquisitionError::clean(Failure::new(
-                FailureCode::InvariantBreach,
-                "process stderr pipe was not created",
-            ))
-        })?;
-
-        let (sender, receiver) = mpsc::sync_channel(8);
-        let stdout_thread = spawn_reader(stdout, ProcessStream::Stdout, sender.clone());
-        let stderr_thread = spawn_reader(stderr, ProcessStream::Stderr, sender);
-        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-        let mut bytes = Vec::new();
-        let mut events = Vec::new();
-        let mut readers_done = 0_u8;
-        let mut terminal_failure = None;
-        let mut exit_status = None;
-        let mut timed_out = false;
-
-        while terminal_failure.is_none() && (readers_done < 2 || exit_status.is_none()) {
-            let now = Instant::now();
-            if now >= deadline {
-                timed_out = true;
-                terminal_failure = Some(Failure::new(
-                    FailureCode::AcquisitionFailed,
-                    "process exceeded its wall timeout",
-                ));
-                break;
-            }
-            if exit_status.is_none() {
-                match child.try_wait() {
-                    Ok(status) => exit_status = status,
-                    Err(_) => {
-                        terminal_failure = Some(Failure::new(
-                            FailureCode::AcquisitionFailed,
-                            "process status could not be inspected",
-                        ));
-                        break;
-                    }
-                }
-            }
-            if readers_done >= 2 {
-                thread::park_timeout(
-                    deadline
-                        .saturating_duration_since(now)
-                        .min(Duration::from_millis(10)),
-                );
-                continue;
-            }
-            let wait = deadline
-                .saturating_duration_since(now)
-                .min(Duration::from_millis(20));
-            match receiver.recv_timeout(wait) {
-                Ok(ReaderMessage::Chunk(stream, chunk)) => {
-                    let remaining = MAX_SOURCE_BYTES.saturating_sub(bytes.len());
-                    let accepted = chunk.len().min(remaining);
-                    if accepted > 0 {
-                        let start = bytes.len();
-                        bytes.extend_from_slice(&chunk[..accepted]);
-                        events.push(StreamEvent {
-                            order: events.len() as u64,
-                            stream,
-                            span: ByteSpan {
-                                start: start as u64,
-                                end: bytes.len() as u64,
-                            },
-                        });
-                    }
-                    if accepted < chunk.len() {
-                        terminal_failure = Some(Failure::new(
-                            FailureCode::ResourceExhausted,
-                            "process output exceeded the 10 MiB limit",
-                        ));
-                    }
-                }
-                Ok(ReaderMessage::Done) => readers_done += 1,
-                Ok(ReaderMessage::Failed) => {
-                    terminal_failure = Some(Failure::new(
-                        FailureCode::AcquisitionFailed,
-                        "process output capture failed",
-                    ));
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    terminal_failure = Some(Failure::new(
-                        FailureCode::AcquisitionFailed,
-                        "process output capture disconnected",
-                    ));
-                }
-            }
-        }
-
-        if terminal_failure.is_some() {
-            terminate_process_group(&mut child, process_group);
-        }
-        let status = match exit_status {
-            Some(status) => status,
-            None => child.wait().map_err(|_| {
-                AcquisitionError::clean(Failure::new(
-                    FailureCode::AcquisitionFailed,
-                    "process wait failed",
-                ))
-            })?,
-        };
-        drop(receiver);
-        let _stdout_joined = stdout_thread.join();
-        let _stderr_joined = stderr_thread.join();
+        let deadline = started + Duration::from_millis(timeout_ms);
+        let capture = ProcessLifecycle::new(child, deadline)?.capture()?;
+        let status = capture.status;
         let signal = process_signal(&status);
-        if terminal_failure.is_none() && signal.is_some() {
-            terminal_failure = Some(Failure::new(
-                FailureCode::AcquisitionFailed,
-                "process terminated by signal",
-            ));
-        }
+        let terminal_failure = capture.failure;
         let partial = terminal_failure.is_some();
-        let acquired = Acquired {
-            bytes,
-            receipt: AcquisitionReceipt {
+        let acquired = Acquired::validated(
+            capture.bytes,
+            AcquisitionReceipt {
                 variant: SourceVariant::Process,
                 complete: !partial,
                 partial,
@@ -421,17 +307,17 @@ impl ProductionRuntime {
                 root_id: Some(cwd_root_id.to_owned()),
                 relative_path: None,
                 process: Some(ProcessReceipt {
-                    events,
+                    events: capture.events,
                     exit_code: status.code(),
                     signal,
-                    timed_out,
+                    timed_out: capture.timed_out,
                     working_directory: format!(
                         "{cwd_root_id}:<{} path bytes>",
                         cwd_relative_path.0.len()
                     ),
                 }),
             },
-        };
+        )?;
         if let Some(failure) = terminal_failure {
             return Err(AcquisitionError {
                 failure,
@@ -556,8 +442,8 @@ fn simple_receipt(variant: SourceVariant) -> AcquisitionReceipt {
     }
 }
 
-pub(crate) fn failure_receipt(source: &Source) -> AcquisitionReceipt {
-    match source {
+pub(crate) fn failure_receipt(source: &Source) -> Result<AcquisitionReceipt, Failure> {
+    let receipt = match source {
         Source::Inline { .. } => AcquisitionReceipt {
             complete: false,
             ..simple_receipt(SourceVariant::Inline)
@@ -601,22 +487,11 @@ pub(crate) fn failure_receipt(source: &Source) -> AcquisitionReceipt {
             complete: false,
             ..simple_receipt(SourceVariant::Artifact)
         },
-    }
-}
-
-fn validate_identifier(value: &str, label: &str) -> Result<(), Failure> {
-    if value.is_empty()
-        || value.len() > 128
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-    {
-        return Err(Failure::new(
-            FailureCode::InvalidRequest,
-            format!("{label} is invalid"),
-        ));
-    }
-    Ok(())
+    };
+    receipt
+        .validate(0)
+        .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))?;
+    Ok(receipt)
 }
 
 fn validate_root(path: &Path) -> Result<ConfiguredRoot, Failure> {
@@ -772,43 +647,290 @@ fn os_string(bytes: &[u8]) -> Result<OsString, Failure> {
     Ok(OsString::from_vec(bytes.to_vec()))
 }
 
-enum ReaderMessage {
-    Chunk(ProcessStream, Vec<u8>),
-    Done,
-    Failed,
+struct ProcessCapture {
+    bytes: Vec<u8>,
+    events: Vec<StreamEvent>,
+    status: std::process::ExitStatus,
+    failure: Option<Failure>,
+    timed_out: bool,
 }
 
-fn spawn_reader<R>(
-    mut reader: R,
-    stream: ProcessStream,
-    sender: mpsc::SyncSender<ReaderMessage>,
-) -> thread::JoinHandle<()>
-where
-    R: Read + Send + 'static,
-{
-    thread::spawn(move || {
-        let mut buffer = [0_u8; READ_CHUNK_BYTES];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => {
-                    let _sent = sender.send(ReaderMessage::Done);
-                    return;
+struct ProcessLifecycle {
+    child: Child,
+    process_group: u32,
+    stdout: Option<ChildStdout>,
+    stderr: Option<ChildStderr>,
+    timeout_at: Instant,
+    deadline: Instant,
+}
+
+impl ProcessLifecycle {
+    fn new(mut child: Child, timeout_at: Instant) -> Result<Self, AcquisitionError> {
+        let process_group = child.id();
+        let deadline = timeout_at + PROCESS_REAP_TOLERANCE;
+        let setup = (|| {
+            let stdout = child.stdout.take().ok_or_else(|| {
+                Failure::new(
+                    FailureCode::InvariantBreach,
+                    "process stdout pipe was not created",
+                )
+            })?;
+            let stderr = child.stderr.take().ok_or_else(|| {
+                Failure::new(
+                    FailureCode::InvariantBreach,
+                    "process stderr pipe was not created",
+                )
+            })?;
+            set_nonblocking(stdout.as_raw_fd())?;
+            set_nonblocking(stderr.as_raw_fd())?;
+            Ok((stdout, stderr))
+        })();
+        let (stdout, stderr) = match setup {
+            Ok(pipes) => pipes,
+            Err(failure) => {
+                terminate_process_group(&mut child, process_group);
+                if reap_child_until(&mut child, deadline).is_err() {
+                    return Err(AcquisitionError::clean(Failure::new(
+                        FailureCode::InvariantBreach,
+                        "spawned process could not be reaped after capture setup failed",
+                    )));
                 }
-                Ok(count) => {
-                    if sender
-                        .send(ReaderMessage::Chunk(stream, buffer[..count].to_vec()))
-                        .is_err()
-                    {
-                        return;
+                return Err(AcquisitionError::clean(failure));
+            }
+        };
+        Ok(Self {
+            child,
+            process_group,
+            stdout: Some(stdout),
+            stderr: Some(stderr),
+            timeout_at,
+            deadline,
+        })
+    }
+
+    fn capture(mut self) -> Result<ProcessCapture, AcquisitionError> {
+        let mut bytes = Vec::new();
+        let mut events = Vec::new();
+        let mut status = None;
+        let mut failure = None;
+        let mut timed_out = false;
+
+        while failure.is_none()
+            && (status.is_none() || self.stdout.is_some() || self.stderr.is_some())
+        {
+            if Instant::now() >= self.timeout_at {
+                timed_out = true;
+                failure = Some(Failure::new(
+                    FailureCode::AcquisitionFailed,
+                    "process exceeded its wall timeout",
+                ));
+                break;
+            }
+            if let Some(capture_failure) = self.drain_ready_streams(&mut bytes, &mut events) {
+                failure = Some(capture_failure);
+                break;
+            }
+            if status.is_none() {
+                match self.child.try_wait() {
+                    Ok(child_status) => {
+                        status = child_status;
+                    }
+                    Err(_) => {
+                        failure = Some(Failure::new(
+                            FailureCode::AcquisitionFailed,
+                            "process status could not be inspected",
+                        ));
+                        break;
                     }
                 }
-                Err(_) => {
-                    let _sent = sender.send(ReaderMessage::Failed);
-                    return;
-                }
+            }
+            if status.is_some() && self.stdout.is_none() && self.stderr.is_none() {
+                break;
+            }
+            if let Err(poll_failure) =
+                poll_streams(self.stdout.as_ref(), self.stderr.as_ref(), self.deadline)
+            {
+                failure = Some(poll_failure);
+                break;
             }
         }
-    })
+
+        if failure.is_some() {
+            // Dropping both read ends releases reader completion even when a
+            // descendant escaped the owned process group with inherited writes.
+            self.stdout.take();
+            self.stderr.take();
+            terminate_process_group(&mut self.child, self.process_group);
+        }
+        let status = match status {
+            Some(status) => status,
+            None => {
+                reap_child_until(&mut self.child, self.deadline).map_err(AcquisitionError::clean)?
+            }
+        };
+        let signal = process_signal(&status);
+        if failure.is_none() && signal.is_some() {
+            failure = Some(Failure::new(
+                FailureCode::AcquisitionFailed,
+                "process terminated by signal",
+            ));
+        }
+        Ok(ProcessCapture {
+            bytes,
+            events,
+            status,
+            failure,
+            timed_out,
+        })
+    }
+
+    fn drain_ready_streams(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        events: &mut Vec<StreamEvent>,
+    ) -> Option<Failure> {
+        if let Some(failure) = read_stream(&mut self.stdout, ProcessStream::Stdout, bytes, events) {
+            return Some(failure);
+        }
+        read_stream(&mut self.stderr, ProcessStream::Stderr, bytes, events)
+    }
+}
+
+fn read_stream<R>(
+    reader: &mut Option<R>,
+    stream: ProcessStream,
+    bytes: &mut Vec<u8>,
+    events: &mut Vec<StreamEvent>,
+) -> Option<Failure>
+where
+    R: Read,
+{
+    let pipe = reader.as_mut()?;
+    let mut buffer = [0_u8; READ_CHUNK_BYTES];
+    match pipe.read(&mut buffer) {
+        Ok(0) => {
+            *reader = None;
+            None
+        }
+        Ok(count) => {
+            let remaining = MAX_SOURCE_BYTES.saturating_sub(bytes.len());
+            let accepted = count.min(remaining);
+            if accepted > 0 {
+                let start = bytes.len();
+                bytes.extend_from_slice(&buffer[..accepted]);
+                events.push(StreamEvent {
+                    order: events.len() as u64,
+                    stream,
+                    span: ByteSpan {
+                        start: start as u64,
+                        end: bytes.len() as u64,
+                    },
+                });
+            }
+            if accepted < count {
+                Some(Failure::new(
+                    FailureCode::ResourceExhausted,
+                    "process output exceeded the 10 MiB limit",
+                ))
+            } else {
+                None
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => None,
+        Err(error) if error.kind() == io::ErrorKind::Interrupted => None,
+        Err(_) => Some(Failure::new(
+            FailureCode::AcquisitionFailed,
+            "process output capture failed",
+        )),
+    }
+}
+
+fn set_nonblocking(descriptor: libc::c_int) -> Result<(), Failure> {
+    // SAFETY: fcntl reads flags from the live child pipe descriptor.
+    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFL) };
+    if flags < 0 {
+        return Err(Failure::new(
+            FailureCode::AcquisitionFailed,
+            "nonblocking process capture is unavailable",
+        ));
+    }
+    // SAFETY: the same live descriptor remains owned by ChildStdout or
+    // ChildStderr, and O_NONBLOCK changes only its file status flags.
+    if unsafe { libc::fcntl(descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(Failure::new(
+            FailureCode::AcquisitionFailed,
+            "nonblocking process capture is unavailable",
+        ));
+    }
+    Ok(())
+}
+
+fn poll_streams(
+    stdout: Option<&ChildStdout>,
+    stderr: Option<&ChildStderr>,
+    deadline: Instant,
+) -> Result<(), Failure> {
+    let mut descriptors = [
+        libc::pollfd {
+            fd: stdout.map_or(-1, AsRawFd::as_raw_fd),
+            events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: stderr.map_or(-1, AsRawFd::as_raw_fd),
+            events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
+            revents: 0,
+        },
+    ];
+    let timeout = poll_timeout(deadline);
+    // SAFETY: descriptors points to two initialized pollfd values for the
+    // duration of poll, and negative descriptors are ignored by POSIX poll.
+    let result = unsafe { libc::poll(descriptors.as_mut_ptr(), descriptors.len() as _, timeout) };
+    if result >= 0 || io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+        Ok(())
+    } else {
+        Err(Failure::new(
+            FailureCode::AcquisitionFailed,
+            "process output readiness could not be inspected",
+        ))
+    }
+}
+
+fn poll_timeout(deadline: Instant) -> libc::c_int {
+    let wait = deadline
+        .saturating_duration_since(Instant::now())
+        .min(PROCESS_POLL_INTERVAL);
+    if wait.is_zero() {
+        return 0;
+    }
+    let milliseconds = wait.as_millis().max(1);
+    libc::c_int::try_from(milliseconds).unwrap_or(libc::c_int::MAX)
+}
+
+fn reap_child_until(
+    child: &mut Child,
+    deadline: Instant,
+) -> Result<std::process::ExitStatus, Failure> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if Instant::now() < deadline => {
+                poll_streams(None, None, deadline)?;
+            }
+            Ok(None) => {
+                return Err(Failure::new(
+                    FailureCode::InvariantBreach,
+                    "process could not be reaped before its lifecycle deadline",
+                ));
+            }
+            Err(_) => {
+                return Err(Failure::new(
+                    FailureCode::AcquisitionFailed,
+                    "process wait failed",
+                ));
+            }
+        }
+    }
 }
 
 fn terminate_process_group(child: &mut Child, process_group: u32) {

@@ -90,6 +90,24 @@ bun evaluation/corpus/check.mjs --write
 bun evaluation/corpus/check.mjs --verify
 ```
 
+### Rust corpus consolidation decision
+
+EP-001 US-004 records `NO-GO` for extracting corpus semantics into a shared
+dev-only Rust module. The root crate currently has one Rust corpus consumer,
+`tests/corpus.rs`; release evaluators are JavaScript protocols, and the closed
+v1-v5 evaluators cannot be rewritten. A new Rust crate or production dependency
+would therefore create an abstraction for one consumer and would not make the
+JavaScript evaluator share its implementation.
+
+The JavaScript validator remains authoritative for complete corpus validation
+and deterministic materialization. The Rust integration test independently
+implements only the semantics it consumes: strict fixture shape, source
+materialization, category-to-profile mapping, digest and fact validation, and
+byte-exact P0/P1 scoring. Both consumers run the same focused rejection classes:
+noncanonical base64, digest mismatch, missing fact IDs, unknown keys, and
+unknown categories. Unknown categories return explicit errors; neither consumer
+falls back to plain text.
+
 `--write` is deterministic for corpus artifacts. The legacy runner imports the
 retired TypeScript source and is intentionally non-executable after its
 deletion. Its committed evidence remains immutable.

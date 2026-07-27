@@ -1,7 +1,8 @@
 use crate::{codex, mcp, setup};
 use distill::{
     ArtifactRef, BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit,
-    Engine, EngineConfig, Failure, FailureCode, Outcome, Request, Retention, ScalarValue, Source,
+    Engine, EngineConfig, Failure, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention,
+    Source,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -24,10 +25,11 @@ Usage:
   distill [--store PATH] status [--json]
   distill [--store PATH] gc [--json]
   distill [--store PATH] [--root ID=PATH] read --root-id ID --path PATH --budget N [--json]
-  distill [--store PATH] [--root ID=PATH] run --cwd-root ID --cwd PATH --budget N [--timeout MS] -- EXECUTABLE [ARG...]
+  distill [--store PATH] [--root ID=PATH] run --cwd-root ID --cwd PATH --budget N [--timeout MS] [--json] -- EXECUTABLE [ARG...]
   distill [--store PATH] codex-hook --mode off|observe|active
   distill [--store PATH] [--root ID=PATH] mcp
-  distill setup codex|claude --config PATH --command PATH [--dry-run|--restore]
+  distill setup codex --config PATH --command PATH [--store PATH] [--mode off|observe|active] [--dry-run|--restore]
+  distill setup claude --config PATH --command PATH [--store PATH] [--root ID=PATH]... [--dry-run|--restore]
 
 Budget options:
   --budget N          Total visible limit (required)
@@ -141,8 +143,14 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
     mut output: W,
     mut diagnostics: E,
 ) -> i32 {
-    let json_mode = raw_args.iter().any(|argument| argument == "--json");
-    let result = run_inner(raw_args, &mut input, &mut output, &mut diagnostics);
+    let mut json_mode = false;
+    let result = run_inner(
+        raw_args,
+        &mut input,
+        &mut output,
+        &mut diagnostics,
+        &mut json_mode,
+    );
     match result {
         Ok(()) => 0,
         Err(error) => {
@@ -186,6 +194,7 @@ fn run_inner<R: Read, W: Write, E: Write>(
     input: &mut R,
     output: &mut W,
     diagnostics: &mut E,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
     let mut args = decode_args(raw_args)?;
     if args.is_empty()
@@ -208,12 +217,12 @@ fn run_inner<R: Read, W: Write, E: Write>(
         .pop_front()
         .ok_or_else(|| SurfaceError::invalid("missing command"))?;
     match command.as_str() {
-        "project" => project(global, args, input, output, diagnostics),
-        "artifact" => artifact(global, args, output),
-        "status" => status(global, args, output),
-        "gc" => gc(global, args, output),
-        "read" => read_file(global, args, output, diagnostics),
-        "run" => run_process(global, args, output, diagnostics),
+        "project" => project(global, args, input, output, diagnostics, json_mode),
+        "artifact" => artifact(global, args, output, json_mode),
+        "status" => status(global, args, output, json_mode),
+        "gc" => gc(global, args, output, json_mode),
+        "read" => read_file(global, args, output, diagnostics, json_mode),
+        "run" => run_process(global, args, output, diagnostics, json_mode),
         "codex-hook" => codex::run(global.config(), args, input, output),
         "mcp" => mcp::run(global.config(), input, output, diagnostics),
         _ => Err(SurfaceError::invalid(format!(
@@ -288,7 +297,10 @@ fn parse_global(args: &mut VecDeque<String>) -> Result<GlobalOptions, SurfaceErr
     })
 }
 
-fn parse_projection(args: &mut VecDeque<String>) -> Result<ProjectionOptions, SurfaceError> {
+fn parse_projection(
+    args: &mut VecDeque<String>,
+    json_mode: &mut bool,
+) -> Result<ProjectionOptions, SurfaceError> {
     let mut total = None;
     let mut reserve = 0_u64;
     let mut unit = CountUnit::Bytes;
@@ -326,6 +338,7 @@ fn parse_projection(args: &mut VecDeque<String>) -> Result<ProjectionOptions, Su
             "--json" => {
                 args.pop_front();
                 json = true;
+                *json_mode = true;
             }
             _ => break,
         }
@@ -353,10 +366,11 @@ fn project<R: Read, W: Write, E: Write>(
     input: &mut R,
     output: &mut W,
     diagnostics: &mut E,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
-    let options = parse_projection(&mut args)?;
+    let options = parse_projection(&mut args, json_mode)?;
     ensure_empty(&args)?;
-    let bytes = read_bounded(input, 10 * 1024 * 1024)?;
+    let bytes = read_bounded(input, MAX_SOURCE_BYTES)?;
     let json = options.json;
     let outcome = Engine::new(global.config())?.handle(request(
         "cli-project",
@@ -374,17 +388,16 @@ fn read_file<W: Write, E: Write>(
     mut args: VecDeque<String>,
     output: &mut W,
     diagnostics: &mut E,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
     let mut root_id = None;
     let mut path = None;
-    let mut syntax_hint = None;
     let mut binary_policy = BinaryPolicy::Accept;
     let mut projection_args = VecDeque::new();
     while let Some(argument) = args.pop_front() {
         match argument.as_str() {
             "--root-id" => root_id = Some(take(&mut args, "--root-id")?),
             "--path" => path = Some(take(&mut args, "--path")?),
-            "--syntax" => syntax_hint = Some(take(&mut args, "--syntax")?),
             "--reject-binary" => binary_policy = BinaryPolicy::Reject,
             _ => {
                 projection_args.push_back(argument);
@@ -393,7 +406,7 @@ fn read_file<W: Write, E: Write>(
             }
         }
     }
-    let options = parse_projection(&mut projection_args)?;
+    let options = parse_projection(&mut projection_args, json_mode)?;
     ensure_empty(&projection_args)?;
     let root_id = root_id.ok_or_else(|| SurfaceError::invalid("--root-id is required"))?;
     if !global.roots.contains_key(&root_id) {
@@ -402,7 +415,7 @@ fn read_file<W: Write, E: Write>(
         ));
     }
     let path = path.ok_or_else(|| SurfaceError::invalid("--path is required"))?;
-    let mut request = request(
+    let request = request(
         "cli-read",
         Source::File {
             root_id,
@@ -411,11 +424,6 @@ fn read_file<W: Write, E: Write>(
         },
         options.clone(),
     );
-    if let Some(hint) = syntax_hint {
-        request
-            .metadata
-            .insert("content_class".to_owned(), ScalarValue::String(hint));
-    }
     let outcome = Engine::new(global.config())?.handle(request)?;
     write_outcome(output, diagnostics, &outcome, options.json)
 }
@@ -425,6 +433,7 @@ fn run_process<W: Write, E: Write>(
     mut args: VecDeque<String>,
     output: &mut W,
     diagnostics: &mut E,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
     let mut cwd_root = None;
     let mut cwd = None;
@@ -449,7 +458,7 @@ fn run_process<W: Write, E: Write>(
             _ => projection_args.push_back(argument),
         }
     }
-    let options = parse_projection(&mut projection_args)?;
+    let options = parse_projection(&mut projection_args, json_mode)?;
     ensure_empty(&projection_args)?;
     let cwd_root_id = cwd_root.ok_or_else(|| SurfaceError::invalid("--cwd-root is required"))?;
     if !global.roots.contains_key(&cwd_root_id) {
@@ -478,6 +487,7 @@ fn artifact<W: Write>(
     global: GlobalOptions,
     mut args: VecDeque<String>,
     output: &mut W,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
     let action = args
         .pop_front()
@@ -486,6 +496,7 @@ fn artifact<W: Write>(
         .pop_front()
         .ok_or_else(|| SurfaceError::invalid("artifact requires an ID or JSON reference"))?;
     let json = remove_flag(&mut args, "--json");
+    *json_mode |= json;
     ensure_empty(&args)?;
     let engine = Engine::new(global.config())?;
     let reference = parse_artifact_target(&engine, &target)?;
@@ -512,8 +523,9 @@ fn status<W: Write>(
     global: GlobalOptions,
     mut args: VecDeque<String>,
     output: &mut W,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
-    let _json = remove_flag(&mut args, "--json");
+    *json_mode |= remove_flag(&mut args, "--json");
     ensure_empty(&args)?;
     write_success(output, &Engine::new(global.config())?.status()?)
 }
@@ -522,8 +534,9 @@ fn gc<W: Write>(
     global: GlobalOptions,
     mut args: VecDeque<String>,
     output: &mut W,
+    json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
-    let _json = remove_flag(&mut args, "--json");
+    *json_mode |= remove_flag(&mut args, "--json");
     ensure_empty(&args)?;
     write_success(output, &Engine::new(global.config())?.collect_garbage()?)
 }
@@ -536,10 +549,6 @@ fn request(id: &str, source: Source, options: ProjectionOptions) -> Request {
         budget: options.budget,
         preservation_profile: options.profile,
         retention: options.retention,
-        metadata: BTreeMap::from([(
-            "adapter".to_owned(),
-            ScalarValue::String("cli/v1".to_owned()),
-        )]),
     }
 }
 
@@ -759,15 +768,16 @@ mod tests {
                 "64",
                 "--",
                 "/usr/bin/printf",
-                "%s",
+                "%s%s",
                 "$(not-a-shell)",
+                "--json",
             ],
             b"",
         );
         assert_eq!(run_code, 0, "{run_error}");
         assert_eq!(
             String::from_utf8(run_output).expect("process output"),
-            "$(not-a-shell)"
+            "$(not-a-shell)--json"
         );
     }
 
@@ -800,12 +810,52 @@ mod tests {
         assert!(output.is_empty());
         assert!(!stderr.contains("stack"));
 
-        let (code, output, _) = run_args(&["--json", "unknown"], b"");
+        let (code, output, stderr) = run_args(&["project", "--json"], b"");
         assert_eq!(code, 2);
         assert_eq!(
             serde_json::from_slice::<Value>(&output).expect("invalid JSON")["ok"],
             false
         );
+        assert!(stderr.is_empty());
+
+        let (code, output, stderr) = run_args(&["--json", "unknown"], b"");
+        assert_eq!(code, 2);
+        assert!(output.is_empty());
+        assert!(stderr.contains("unknown command '--json'"));
+    }
+
+    #[test]
+    fn child_options_after_process_delimiter_cannot_select_json_mode() {
+        let temp = TempDir::new().expect("temp");
+        let workspace = temp.path().join("workspace");
+        fs::create_dir(&workspace).expect("workspace");
+        let root = format!("workspace={}", workspace.display());
+        let store = store(&temp);
+        let store_text = store.to_string_lossy();
+        let (code, output, stderr) = run_args(
+            &[
+                "--store",
+                &store_text,
+                "--root",
+                &root,
+                "run",
+                "--cwd-root",
+                "workspace",
+                "--cwd",
+                ".",
+                "--budget",
+                "64",
+                "--",
+                "/definitely/missing/distill-command",
+                "--json",
+                "--budget",
+            ],
+            b"",
+        );
+
+        assert_eq!(code, 6);
+        assert!(output.is_empty());
+        assert!(stderr.contains("acquisition_failed"));
     }
 
     #[test]
@@ -850,7 +900,9 @@ mod tests {
             "60".to_owned(),
             "--json".to_owned(),
         ]);
-        let parsed = parse_projection(&mut projection).expect("complete projection");
+        let mut json_mode = false;
+        let parsed =
+            parse_projection(&mut projection, &mut json_mode).expect("complete projection");
         assert_eq!(parsed.budget.unit, CountUnit::Tokens);
         assert_eq!(parsed.budget.total_visible_limit, 900);
         assert_eq!(parsed.budget.reserved_envelope, 300);
@@ -858,6 +910,7 @@ mod tests {
         assert_eq!(parsed.profile, "diagnostic/v1");
         assert_eq!(parsed.retention.ttl_seconds, Some(60));
         assert!(parsed.json);
+        assert!(json_mode);
         assert!(projection.is_empty());
 
         let mut invalid_unit = VecDeque::from([
@@ -866,7 +919,7 @@ mod tests {
             "--unit".to_owned(),
             "words".to_owned(),
         ]);
-        assert!(parse_projection(&mut invalid_unit).is_err());
+        assert!(parse_projection(&mut invalid_unit, &mut false).is_err());
 
         let mut duplicate_root = VecDeque::from([
             "--store".to_owned(),

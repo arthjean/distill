@@ -5,14 +5,20 @@
 
 mod artifact;
 mod projection;
+mod request_policy;
 mod runtime;
 mod types;
 
+pub use request_policy::{
+    MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS,
+    MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS, MAX_SOURCE_BYTES, MIN_PROCESS_TIMEOUT_MS,
+};
 pub use types::{
     ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ArtifactTrace, BinaryPolicy, Budget,
     ByteSpan, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, EngineConfig, EngineStatus,
-    Failure, FailureCode, Fidelity, GC_SCHEMA_VERSION, GarbageCollection, Outcome, POLICY_VERSION,
-    PROJECTION_VERSION, PreservationResult, ProcessReceipt, ProcessStream, RECEIPT_SCHEMA_VERSION,
+    Failure, FailureCode, Fidelity, GC_SCHEMA_VERSION, GarbageCollection,
+    MAX_ARTIFACT_LINEAGE_BYTES, MAX_LINEAGE_BYTES, Outcome, POLICY_VERSION, PROJECTION_VERSION,
+    PreservationResult, ProcessReceipt, ProcessStream, RECEIPT_SCHEMA_VERSION,
     RESTORE_SCHEMA_VERSION, Receipt, Request, RestoredArtifact, Retention, STATUS_SCHEMA_VERSION,
     ScalarValue, Source, SourceVariant, StreamEvent, TRACE_SCHEMA_VERSION, VisiblePayload,
 };
@@ -37,6 +43,7 @@ impl Engine {
         let store = ArtifactStore::new(
             config.store_path.clone(),
             config.max_store_bytes,
+            config.max_lineage_bytes,
             config.busy_timeout_ms,
         );
         store.initialize()?;
@@ -49,9 +56,14 @@ impl Engine {
 
     pub fn handle(&self, request: Request) -> Result<Outcome, Failure> {
         let outcome = self.handle_inner(request)?;
+        let request_id = outcome.receipt.request_id.clone();
         self.store
             .record_receipt(&outcome.artifact, &outcome.receipt)
-            .map_err(|failure| failure.with_artifact(outcome.artifact.clone()))?;
+            .map_err(|failure| {
+                failure
+                    .with_artifact(outcome.artifact.clone())
+                    .for_request(&request_id)
+            })?;
         Ok(outcome)
     }
 
@@ -91,8 +103,10 @@ impl Engine {
             store_records: status.records,
             expired_records: status.expired_records,
             max_store_bytes: self.config.max_store_bytes,
+            lineage_bytes: status.lineage_bytes,
+            max_lineage_bytes: self.config.max_lineage_bytes,
             default_ttl_seconds: self.config.default_ttl_seconds,
-            max_source_bytes: runtime::MAX_SOURCE_BYTES as u64,
+            max_source_bytes: MAX_SOURCE_BYTES as u64,
             max_concurrent_writers: 8,
             root_ids: self.config.roots.keys().cloned().collect(),
         })
@@ -104,21 +118,25 @@ impl Engine {
         Ok(GarbageCollection {
             schema_version: GC_SCHEMA_VERSION.to_owned(),
             reclaimed_bytes: report.reclaimed_bytes,
+            reclaimed_lineage_bytes: report.reclaimed_lineage_bytes,
             reclaimed_records: report.reclaimed_records,
         })
     }
 
     fn handle_inner(&self, request: Request) -> Result<Outcome, Failure> {
-        validate_request(&request)?;
+        request_policy::validate(&request, &self.config)?;
         projection::validate_contract(&request.preservation_profile, &request.budget)
             .map_err(|failure| failure.for_request(&request.request_id))?;
         let now = self
             .runtime
             .now()
             .map_err(|failure| failure.for_request(&request.request_id))?;
-        let expires_at =
-            resolve_expiration(&request.retention, now, self.config.default_ttl_seconds)
-                .map_err(|failure| failure.for_request(&request.request_id))?;
+        let expires_at = request_policy::resolve_expiration(
+            &request.retention,
+            now,
+            self.config.default_ttl_seconds,
+        )
+        .map_err(|failure| failure.for_request(&request.request_id))?;
 
         let (acquired, artifact) = match &request.source {
             Source::Artifact { artifact } => {
@@ -146,9 +164,9 @@ impl Engine {
                             complete: true,
                             partial: false,
                             truncated: false,
-                            root_id: stored.acquisition.root_id,
-                            relative_path: stored.acquisition.relative_path,
-                            process: stored.acquisition.process,
+                            root_id: None,
+                            relative_path: None,
+                            process: None,
                         },
                     },
                     artifact.clone(),
@@ -160,8 +178,10 @@ impl Engine {
                     Err(mut acquisition_error) => {
                         let failure = acquisition_error.failure.for_request(&request.request_id);
                         let Some(partial) = acquisition_error.partial.take() else {
+                            let acquisition = failure_receipt(source)
+                                .map_err(|failure| failure.for_request(&request.request_id))?;
                             return Err(Failure {
-                                acquisition: Some(failure_receipt(source)),
+                                acquisition: Some(acquisition),
                                 ..failure
                             });
                         };
@@ -225,6 +245,7 @@ impl Engine {
         let store = ArtifactStore::new(
             config.store_path.clone(),
             config.max_store_bytes,
+            config.max_lineage_bytes,
             config.busy_timeout_ms,
         );
         store.initialize()?;
@@ -262,6 +283,12 @@ fn build_outcome(
         },
         acquisition: acquired.receipt,
     };
+    receipt
+        .acquisition
+        .validate(receipt.artifact.source_bytes)
+        .map_err(|message| {
+            Failure::new(FailureCode::InvariantBreach, message).for_request(&receipt.request_id)
+        })?;
     if receipt
         .visible_count
         .saturating_add(request.budget.reserved_envelope)
@@ -322,6 +349,12 @@ fn validate_config(config: &EngineConfig) -> Result<(), Failure> {
             "artifact store cap must be positive",
         ));
     }
+    if config.max_lineage_bytes == 0 || config.max_lineage_bytes > MAX_LINEAGE_BYTES {
+        return Err(Failure::new(
+            FailureCode::InvalidRequest,
+            "lineage cap must be positive and no greater than 64 MiB",
+        ));
+    }
     if config.busy_timeout_ms == 0 || config.busy_timeout_ms > 5_000 {
         return Err(Failure::new(
             FailureCode::InvalidRequest,
@@ -335,123 +368,6 @@ fn validate_config(config: &EngineConfig) -> Result<(), Failure> {
         ));
     }
     Ok(())
-}
-
-fn validate_request(request: &Request) -> Result<(), Failure> {
-    if request.contract_version != CONTRACT_VERSION {
-        return Err(Failure::new(
-            FailureCode::SchemaUnsupported,
-            "request contract version is unsupported",
-        )
-        .for_request(&request.request_id));
-    }
-    if request.request_id.is_empty() || request.request_id.len() > 128 {
-        return Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "request ID is missing or too long",
-        )
-        .for_request(&request.request_id));
-    }
-    match &request.source {
-        Source::Inline { bytes, .. } if bytes.0.len() > runtime::MAX_SOURCE_BYTES => {
-            return Err(Failure::new(
-                FailureCode::InputTooLarge,
-                "inline source exceeds the 10 MiB limit",
-            )
-            .for_request(&request.request_id));
-        }
-        Source::File {
-            root_id,
-            relative_path,
-            ..
-        } if root_id.is_empty() || root_id.len() > 128 || relative_path.0.len() > 4_096 => {
-            return Err(Failure::new(
-                FailureCode::InvalidRequest,
-                "file source metadata is missing or exceeds its bounds",
-            )
-            .for_request(&request.request_id));
-        }
-        Source::Process {
-            executable,
-            argv,
-            cwd_root_id,
-            cwd_relative_path,
-            ..
-        } if executable.0.is_empty()
-            || executable.0.len() > 4_096
-            || argv.len() > 4_096
-            || argv
-                .iter()
-                .try_fold(0_usize, |total, argument| {
-                    total.checked_add(argument.0.len())
-                })
-                .is_none_or(|total| total > 1024 * 1024)
-            || cwd_root_id.is_empty()
-            || cwd_root_id.len() > 128
-            || cwd_relative_path.0.len() > 4_096 =>
-        {
-            return Err(Failure::new(
-                FailureCode::InvalidRequest,
-                "process source metadata is missing or exceeds its bounds",
-            )
-            .for_request(&request.request_id));
-        }
-        Source::Artifact { artifact }
-            if artifact.id.len() != 32
-                || !artifact.id.bytes().all(is_lower_hex)
-                || artifact.source_sha256.len() != 64
-                || !artifact.source_sha256.bytes().all(is_lower_hex) =>
-        {
-            return Err(Failure::new(
-                FailureCode::InvalidRequest,
-                "artifact reference metadata is invalid",
-            )
-            .for_request(&request.request_id));
-        }
-        _ => {}
-    }
-    const ALLOWED_METADATA: &[&str] = &["content_class", "tool", "trace_id", "adapter"];
-    if request.metadata.iter().any(|(key, value)| {
-        !ALLOWED_METADATA.contains(&key.as_str())
-            || matches!(value, ScalarValue::String(text) if text.len() > 1_024)
-    }) {
-        return Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "request metadata is not in the bounded scalar allowlist",
-        )
-        .for_request(&request.request_id));
-    }
-    Ok(())
-}
-
-fn is_lower_hex(byte: u8) -> bool {
-    byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
-}
-
-fn resolve_expiration(retention: &Retention, now: u64, default_ttl: u64) -> Result<u64, Failure> {
-    match (retention.expires_at, retention.ttl_seconds) {
-        (Some(_), Some(_)) => Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "retention must specify expires_at or ttl_seconds, not both",
-        )),
-        (Some(expires_at), None) if expires_at > now => Ok(expires_at),
-        (None, Some(ttl)) if ttl > 0 => now.checked_add(ttl).ok_or_else(|| {
-            Failure::new(
-                FailureCode::InvalidRequest,
-                "artifact expiration overflows the supported clock",
-            )
-        }),
-        (None, None) => now.checked_add(default_ttl).ok_or_else(|| {
-            Failure::new(
-                FailureCode::InvalidRequest,
-                "default artifact expiration overflows the supported clock",
-            )
-        }),
-        _ => Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "artifact expiration must be in the future",
-        )),
-    }
 }
 
 #[cfg(feature = "fuzzing")]
@@ -485,7 +401,6 @@ mod tests {
             },
             preservation_profile: "plain-text/v1".to_owned(),
             retention: Retention::default(),
-            metadata: BTreeMap::new(),
         }
     }
 
@@ -539,7 +454,7 @@ mod tests {
     fn validation_failures_are_distinct_and_precede_capture() {
         let (_directory, engine) = fixture();
         let mut schema = request(b"x", 1);
-        schema.contract_version = "distill.context/v2".to_owned();
+        schema.contract_version = "distill.context/v1".to_owned();
         assert_eq!(
             engine.handle(schema).expect_err("schema").code,
             FailureCode::SchemaUnsupported
@@ -552,42 +467,28 @@ mod tests {
             engine.handle(token).expect_err("token").code,
             FailureCode::TokenProfileUnsupported
         );
-
-        let mut metadata = request(b"x", 1);
-        metadata.metadata.insert(
-            "raw_body".to_owned(),
-            ScalarValue::String("secret".to_owned()),
-        );
-        assert_eq!(
-            engine.handle(metadata).expect_err("metadata").code,
-            FailureCode::InvalidRequest
-        );
     }
 
     #[test]
     fn request_validation_exercises_every_bounded_source_field() {
-        fn rejected(candidate: &Request) {
+        fn rejected(candidate: &Request, expected: FailureCode) {
+            let config = EngineConfig::local("/tmp/distill-policy-test/store.sqlite".into());
             assert_eq!(
-                validate_request(candidate)
+                request_policy::validate(candidate, &config)
                     .expect_err("invalid request")
                     .code,
-                FailureCode::InvalidRequest
+                expected
             );
         }
 
         let mut candidate = request(b"x", 1);
         candidate.request_id.clear();
-        rejected(&candidate);
+        rejected(&candidate, FailureCode::InvalidRequest);
         candidate.request_id = "x".repeat(129);
-        rejected(&candidate);
+        rejected(&candidate, FailureCode::InvalidRequest);
 
-        candidate = request(&vec![0; runtime::MAX_SOURCE_BYTES + 1], 1);
-        assert_eq!(
-            validate_request(&candidate)
-                .expect_err("oversized inline")
-                .code,
-            FailureCode::InputTooLarge
-        );
+        candidate = request(&vec![0; MAX_SOURCE_BYTES + 1], 1);
+        rejected(&candidate, FailureCode::InputTooLarge);
 
         for (root_id, relative_path) in [
             (String::new(), ByteString::default()),
@@ -600,7 +501,7 @@ mod tests {
                 relative_path,
                 binary_policy: BinaryPolicy::Accept,
             };
-            rejected(&candidate);
+            rejected(&candidate, FailureCode::InvalidRequest);
         }
 
         let process = |executable: ByteString,
@@ -615,53 +516,74 @@ mod tests {
             environment_profile: None,
         };
         let process_cases = [
-            process(
-                ByteString::default(),
-                Vec::new(),
-                "workspace".to_owned(),
-                ByteString::default(),
+            (
+                process(
+                    ByteString::default(),
+                    Vec::new(),
+                    "workspace".to_owned(),
+                    ByteString::default(),
+                ),
+                FailureCode::InvalidRequest,
             ),
-            process(
-                ByteString(vec![b'x'; 4_097]),
-                Vec::new(),
-                "workspace".to_owned(),
-                ByteString::default(),
+            (
+                process(
+                    ByteString(vec![b'x'; 4_097]),
+                    Vec::new(),
+                    "workspace".to_owned(),
+                    ByteString::default(),
+                ),
+                FailureCode::InvalidRequest,
             ),
-            process(
-                ByteString::from_utf8("/bin/echo"),
-                vec![ByteString::default(); 4_097],
-                "workspace".to_owned(),
-                ByteString::default(),
+            (
+                process(
+                    ByteString::from_utf8("/bin/echo"),
+                    vec![ByteString::default(); 4_097],
+                    "workspace".to_owned(),
+                    ByteString::default(),
+                ),
+                FailureCode::ResourceExhausted,
             ),
-            process(
-                ByteString::from_utf8("/bin/echo"),
-                vec![ByteString(vec![b'x'; 1024 * 1024 + 1])],
-                "workspace".to_owned(),
-                ByteString::default(),
+            (
+                process(
+                    ByteString::from_utf8("/bin/echo"),
+                    vec![ByteString(vec![b'x'; 1024 * 1024 + 1])],
+                    "workspace".to_owned(),
+                    ByteString::default(),
+                ),
+                FailureCode::ResourceExhausted,
             ),
-            process(
-                ByteString::from_utf8("/bin/echo"),
-                Vec::new(),
-                String::new(),
-                ByteString::default(),
+            (
+                process(
+                    ByteString::from_utf8("/bin/echo"),
+                    Vec::new(),
+                    String::new(),
+                    ByteString::default(),
+                ),
+                FailureCode::InvalidRequest,
             ),
-            process(
-                ByteString::from_utf8("/bin/echo"),
-                Vec::new(),
-                "x".repeat(129),
-                ByteString::default(),
+            (
+                process(
+                    ByteString::from_utf8("/bin/echo"),
+                    Vec::new(),
+                    "x".repeat(129),
+                    ByteString::default(),
+                ),
+                FailureCode::InvalidRequest,
             ),
-            process(
-                ByteString::from_utf8("/bin/echo"),
-                Vec::new(),
-                "workspace".to_owned(),
-                ByteString(vec![b'x'; 4_097]),
+            (
+                process(
+                    ByteString::from_utf8("/bin/echo"),
+                    Vec::new(),
+                    "workspace".to_owned(),
+                    ByteString(vec![b'x'; 4_097]),
+                ),
+                FailureCode::InvalidRequest,
             ),
         ];
-        for source in process_cases {
+        for (source, expected) in process_cases {
             candidate = request(b"x", 1);
             candidate.source = source;
-            rejected(&candidate);
+            rejected(&candidate, expected);
         }
 
         let valid_artifact = ArtifactRef {
@@ -692,14 +614,68 @@ mod tests {
         ] {
             candidate = request(b"x", 1);
             candidate.source = Source::Artifact { artifact };
-            rejected(&candidate);
+            rejected(&candidate, FailureCode::InvalidRequest);
         }
+    }
 
-        candidate = request(b"x", 1);
-        candidate
-            .metadata
-            .insert("tool".to_owned(), ScalarValue::String("x".repeat(1_025)));
-        rejected(&candidate);
+    #[test]
+    fn process_argument_policy_accepts_exact_limit_and_rejects_one_byte_over() {
+        let executable = ByteString::from_utf8("/bin/echo");
+        let remaining = MAX_PROCESS_ARGUMENT_BYTES - executable.0.len();
+        let width = remaining / MAX_PROCESS_ARGUMENTS;
+        let remainder = remaining % MAX_PROCESS_ARGUMENTS;
+        let mut argv = (0..MAX_PROCESS_ARGUMENTS)
+            .map(|index| ByteString(vec![b'x'; width + usize::from(index < remainder)]))
+            .collect::<Vec<_>>();
+
+        request_policy::validate_process(&executable, &argv, Some(MIN_PROCESS_TIMEOUT_MS))
+            .expect("exact aggregate limit");
+        argv.last_mut().expect("last argument").0.push(b'x');
+        assert_eq!(
+            request_policy::validate_process(&executable, &argv, Some(MIN_PROCESS_TIMEOUT_MS),)
+                .expect_err("one byte over")
+                .code,
+            FailureCode::ResourceExhausted
+        );
+    }
+
+    #[test]
+    fn over_limit_process_is_rejected_before_spawn_or_store_mutation() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let workspace = directory.path().join("workspace");
+        std::fs::create_dir(&workspace).expect("workspace");
+        let marker = workspace.join("must-not-exist");
+        let shell = ["/bin/sh", "/usr/bin/sh"]
+            .into_iter()
+            .find(|path| std::path::Path::new(path).exists())
+            .expect("shell");
+        let script = "touch \"$0\"";
+        let fixed_bytes = shell.len() + 2 + script.len() + marker.as_os_str().len();
+        let padding = "x".repeat(MAX_PROCESS_ARGUMENT_BYTES + 1 - fixed_bytes);
+        let mut config = EngineConfig::local(directory.path().join("private/store.sqlite"));
+        config.roots.insert("workspace".to_owned(), workspace);
+        let engine = Engine::new(config).expect("engine");
+        let mut candidate = request(b"unused", 64);
+        candidate.request_id = "over-limit-process".to_owned();
+        candidate.source = Source::Process {
+            executable: ByteString::from_utf8(shell),
+            argv: vec![
+                ByteString::from_utf8("-c"),
+                ByteString::from_utf8(script),
+                ByteString::from_utf8(marker.to_string_lossy()),
+                ByteString::from_utf8(padding),
+            ],
+            cwd_root_id: "workspace".to_owned(),
+            cwd_relative_path: ByteString::default(),
+            timeout_ms: Some(MIN_PROCESS_TIMEOUT_MS),
+            environment_profile: None,
+        };
+
+        let failure = engine.handle(candidate).expect_err("over-limit process");
+        assert_eq!(failure.code, FailureCode::ResourceExhausted);
+        assert_eq!(failure.request_id.as_deref(), Some("over-limit-process"));
+        assert!(!marker.exists());
+        assert_eq!(engine.status().expect("status").store_records, 0);
     }
 
     #[test]
@@ -804,7 +780,7 @@ mod tests {
     #[test]
     fn retention_resolution_and_configuration_are_strict() {
         assert_eq!(
-            resolve_expiration(
+            request_policy::resolve_expiration(
                 &Retention {
                     expires_at: Some(20),
                     ttl_seconds: Some(10)
@@ -817,7 +793,7 @@ mod tests {
             FailureCode::InvalidRequest
         );
         assert_eq!(
-            resolve_expiration(
+            request_policy::resolve_expiration(
                 &Retention {
                     expires_at: Some(10),
                     ttl_seconds: None
@@ -830,11 +806,11 @@ mod tests {
             FailureCode::InvalidRequest
         );
         assert_eq!(
-            resolve_expiration(&Retention::default(), 10, 100).expect("default"),
+            request_policy::resolve_expiration(&Retention::default(), 10, 100).expect("default"),
             110
         );
         assert_eq!(
-            resolve_expiration(
+            request_policy::resolve_expiration(
                 &Retention {
                     expires_at: None,
                     ttl_seconds: Some(1)
@@ -847,7 +823,7 @@ mod tests {
             FailureCode::InvalidRequest
         );
         assert_eq!(
-            resolve_expiration(&Retention::default(), u64::MAX, 1)
+            request_policy::resolve_expiration(&Retention::default(), u64::MAX, 1)
                 .expect_err("default overflow")
                 .code,
             FailureCode::InvalidRequest
@@ -858,6 +834,24 @@ mod tests {
         invalid.max_store_bytes = 0;
         assert_eq!(
             Engine::fixture(invalid, 1).err().expect("cap").code,
+            FailureCode::InvalidRequest
+        );
+        let mut invalid = EngineConfig::local(directory.path().join("lineage-zero.sqlite"));
+        invalid.max_lineage_bytes = 0;
+        assert_eq!(
+            Engine::fixture(invalid, 1)
+                .err()
+                .expect("zero lineage cap")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let mut invalid = EngineConfig::local(directory.path().join("lineage-high.sqlite"));
+        invalid.max_lineage_bytes = MAX_LINEAGE_BYTES + 1;
+        assert_eq!(
+            Engine::fixture(invalid, 1)
+                .err()
+                .expect("high lineage cap")
+                .code,
             FailureCode::InvalidRequest
         );
 
@@ -929,7 +923,6 @@ mod tests {
             },
             preservation_profile: "plain-text/v1".to_owned(),
             retention: Retention::default(),
-            metadata: BTreeMap::new(),
         };
         let failure = engine.handle(process).expect_err("timeout");
         assert_eq!(failure.code, FailureCode::AcquisitionFailed);
@@ -1000,14 +993,11 @@ mod tests {
     }
 
     #[test]
-    fn failures_and_receipts_never_copy_raw_source_or_secret_metadata() {
+    fn failures_and_receipts_never_copy_raw_source() {
         let (_directory, engine) = fixture();
         let secret = "DISTILL_TEST_SECRET_5f19";
         let mut candidate = request(format!("ERROR {secret}: mandatory\n").as_bytes(), 1);
         candidate.preservation_profile = "build-log/v1".to_owned();
-        candidate
-            .metadata
-            .insert("tool".to_owned(), ScalarValue::String(secret.to_owned()));
         let failure = engine.handle(candidate).expect_err("budget failure");
         let encoded = serde_json::to_string(&failure).expect("failure JSON");
         assert!(!encoded.contains(secret));

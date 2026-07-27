@@ -54,20 +54,39 @@ metadata. The store:
 - creates directories with mode `0700` and data with mode `0600` where POSIX
   enforcement is supported;
 - commits source bytes before returning a reduced projection;
-- verifies stored SHA-256 during recovery;
+- stores schema v3 SHA-256 digests over the exact acquisition and projection
+  receipt blobs, then verifies each digest before decoding;
+- validates acquisition completion, variant fields, and process event spans
+  through one semantic implementation at construction, migration, recovery,
+  replay, receipt insertion, and trace;
+- migrates v2 proof blobs and their digests in one explicit transaction;
+- caps exact receipt bytes at 64 MiB globally and 1 MiB per artifact in the
+  same immediate transaction that assigns the per-artifact lineage sequence;
+- commits receipt count, exact-byte usage, and a sequence-bound lineage hash
+  head on the artifact row so missing tails and reordered rows fail closed;
 - distinguishes unknown, expired, corrupt, full, busy, and permission failures;
 - retains expiration tombstones for the declared lifecycle;
 - never evicts an unexpired artifact to satisfy the store cap.
 
-Default retention is seven days and the default store cap is 512 MiB. V1 accepts
-at most 10 MiB per observation and eight concurrent writers.
+Trace preflights exact blob lengths, then verifies the artifact and complete
+ordered lineage in one read snapshot because one artifact cannot exceed 1 MiB.
+Status schema v2 reports current and maximum global lineage bytes.
+Garbage-collection schema v2 reports reclaimed lineage bytes after cascading
+receipt deletion.
+
+Default retention is seven days and the source-byte store cap is 512 MiB. V1
+accepts at most 10 MiB per observation and eight concurrent writers.
 
 ## Projection policy
 
 `src/projection.rs` provides deterministic extractive
 profiles. It preserves mandatory spans, selects optional spans within the
 remaining budget, and emits a receipt that maps visible and omitted spans to the
-source digest.
+source digest. Closed v1 profile identifiers and line rules are one internal
+policy table. Over-budget text is scanned once for mandatory and optional
+candidates, then planned with normalized spans and reusable byte accounting.
+Token-budget proposals still receive exact full tokenization when selection
+depends on it.
 
 Byte budgets are exact. Token budgets accept only the versioned
 `cl100k_base@js-tiktoken-1.0.15` profile. An unknown tokenizer fails with
@@ -84,6 +103,10 @@ parsers, or executable user projection code.
   replacement;
 - process execution receives an executable and argv directly, without an
   implicit shell;
+- one monotonic lifecycle owns spawn, nonblocking stdout and stderr drain,
+  timeout, process-group termination, direct-child reap, and pipe teardown;
+- every lifecycle wait is capped by one absolute deadline, including a 250 ms
+  teardown tolerance after the declared process timeout;
 - time, source size, output, environment, and working directory are bounded;
 - partial process observations preserve ordered events and typed termination
   metadata;
@@ -104,7 +127,9 @@ They own acquisition and therefore can project before bytes enter Claude's
 context. Native Claude `Read` and `Bash` remain outside Distill.
 
 `src/setup.rs` performs explicit, idempotent configuration
-installation with dry-run, byte-exact backup, and restore.
+installation with dry-run, byte-exact backup, and restore. Codex setup accepts
+only Codex modes and rejects roots; Claude setup accepts only unique roots and
+rejects Codex modes. Target validation completes before configuration mutation.
 
 Adapters may translate envelopes and enforce host limits. They may not own
 projection, tokenization, persistence, or preservation policy.

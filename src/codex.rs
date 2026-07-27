@@ -1,21 +1,25 @@
 use crate::cli::{SurfaceError, write_json_line};
 use distill::{
     Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Failure,
-    FailureCode, Fidelity, Outcome, Request, Retention, ScalarValue, Source,
+    FailureCode, Fidelity, Outcome, Request, Retention, Source,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     io::{Read, Write},
     panic::{AssertUnwindSafe, catch_unwind},
 };
 use tiktoken_rs::cl100k_base_singleton;
 
-const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v1";
+pub(crate) const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v1";
 const PROJECTION_SCHEMA_VERSION: &str = "distill.codex-projection/v1";
-const HOST_OUTPUT_CAP_TOKENS: u64 = 2_500;
-const SAFE_OUTPUT_CAP_TOKENS: u64 = HOST_OUTPUT_CAP_TOKENS * 9 / 10;
+pub(crate) const HOST_OUTPUT_CAP_TOKENS: u64 = 2_500;
+pub(crate) const SAFE_OUTPUT_CAP_TOKENS: u64 = HOST_OUTPUT_CAP_TOKENS * 9 / 10;
+pub(crate) const SETUP_MATCHER: &str = "*";
+pub(crate) const SETUP_TIMEOUT_SECONDS: u64 = 30;
+pub(crate) const SETUP_STATUS_MESSAGE: &str = "Distill context projection v1";
+pub(crate) const SUPPORTED_MODES: &[&str] = &["off", "observe", "active"];
 const DEFAULT_RESERVED_TOKENS: u64 = 450;
 const MAX_HOOK_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -24,6 +28,31 @@ enum Mode {
     Off,
     Observe,
     Active,
+}
+
+impl Mode {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "off" => Some(Self::Off),
+            "observe" => Some(Self::Observe),
+            "active" => Some(Self::Active),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn supports_mode(value: &str) -> bool {
+    let supported = Mode::parse(value).is_some();
+    debug_assert_eq!(SUPPORTED_MODES.contains(&value), supported);
+    supported
+}
+
+pub(crate) fn setup_hook_arguments(mode: &str) -> Vec<String> {
+    vec![
+        "codex-hook".to_owned(),
+        "--mode".to_owned(),
+        mode.to_owned(),
+    ]
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,16 +82,12 @@ pub(crate) fn run<R: Read, W: Write>(
     while let Some(argument) = args.pop_front() {
         match argument.as_str() {
             "--mode" => {
-                mode = Some(match args.pop_front().as_deref() {
-                    Some("off") => Mode::Off,
-                    Some("observe") => Mode::Observe,
-                    Some("active") => Mode::Active,
-                    _ => {
-                        return Err(SurfaceError::invalid(
-                            "--mode requires off, observe, or active",
-                        ));
-                    }
-                });
+                mode = args.pop_front().as_deref().and_then(Mode::parse);
+                if mode.is_none() {
+                    return Err(SurfaceError::invalid(
+                        "--mode requires off, observe, or active",
+                    ));
+                }
             }
             "--budget" => {
                 total_tokens = parse_u64(args.pop_front(), "--budget")?;
@@ -139,16 +164,6 @@ pub(crate) fn run<R: Read, W: Write>(
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
-        metadata: BTreeMap::from([
-            (
-                "adapter".to_owned(),
-                ScalarValue::String("codex-post-tool-use/v1".to_owned()),
-            ),
-            (
-                "tool".to_owned(),
-                ScalarValue::String(event.tool_name.chars().take(128).collect()),
-            ),
-        ]),
     };
     let handled = catch_unwind(AssertUnwindSafe(|| engine.handle(request)));
     let outcome = match handled {
@@ -261,7 +276,7 @@ fn response_bytes(response: &Value) -> Vec<u8> {
     serde_json::to_vec(response).unwrap_or_else(|_| b"null".to_vec())
 }
 
-fn is_unsupported_surface(tool_name: &str) -> bool {
+pub(crate) fn is_unsupported_surface(tool_name: &str) -> bool {
     matches!(
         tool_name,
         "WebSearch"

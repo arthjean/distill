@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use distill::{
     ArtifactRef, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
-    EngineConfig, Request, Retention, ScalarValue, Source,
+    EngineConfig, Request, Retention, Source,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -794,10 +794,6 @@ fn request(fixture: &Fixture, bytes: Vec<u8>, budget: Budget) -> Request {
         budget,
         preservation_profile: preservation_profile(&fixture.category).to_owned(),
         retention: Retention::default(),
-        metadata: BTreeMap::from([(
-            "content_class".to_owned(),
-            ScalarValue::String(fixture.category.clone()),
-        )]),
     }
 }
 

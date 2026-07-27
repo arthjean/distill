@@ -6,7 +6,6 @@ use distill::{
     Source,
 };
 use std::{
-    collections::BTreeMap,
     io,
     net::{SocketAddr, TcpStream},
 };
@@ -56,7 +55,6 @@ fn request(request_id: &str, source: Source) -> Request {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
-        metadata: BTreeMap::new(),
     }
 }
 
