@@ -41,3 +41,6 @@ ROADMAP.md
 
 # Docs
 .docs
+
+# Local generated architecture reports
+/reports/architecture/
