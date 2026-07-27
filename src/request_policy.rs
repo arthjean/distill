@@ -214,3 +214,305 @@ pub(crate) fn valid_identifier(value: &str) -> bool {
 fn is_lower_hex(byte: u8) -> bool {
     byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ARTIFACT_SCHEMA_VERSION, ArtifactRef, BinaryPolicy, Budget, CountUnit};
+    use std::path::PathBuf;
+
+    fn request(source: Source) -> Request {
+        Request {
+            contract_version: CONTRACT_VERSION.to_owned(),
+            request_id: "request".to_owned(),
+            source,
+            budget: Budget {
+                unit: CountUnit::Bytes,
+                total_visible_limit: 32,
+                reserved_envelope: 0,
+                token_profile: None,
+            },
+            preservation_profile: "plain-text/v1".to_owned(),
+            retention: Retention::default(),
+        }
+    }
+
+    fn artifact() -> ArtifactRef {
+        ArtifactRef {
+            schema_version: ARTIFACT_SCHEMA_VERSION.to_owned(),
+            id: "a".repeat(32),
+            source_sha256: "b".repeat(64),
+            source_bytes: 3,
+            created_at: 1,
+            expires_at: 2,
+        }
+    }
+
+    #[test]
+    fn validation_rejects_each_independent_bounded_field() {
+        let mut config = EngineConfig::local(PathBuf::from("store.sqlite"));
+        config
+            .roots
+            .insert("workspace".to_owned(), PathBuf::from("workspace"));
+        config
+            .environment_profiles
+            .insert("safe".to_owned(), Default::default());
+
+        let mut unsupported_contract = request(Source::Inline {
+            bytes: ByteString::default(),
+            media_type: None,
+        });
+        unsupported_contract.contract_version = "unsupported".to_owned();
+        let failure = validate(&unsupported_contract, &config).expect_err("contract");
+        assert_eq!(failure.code, FailureCode::SchemaUnsupported);
+        assert_eq!(failure.request_id.as_deref(), Some("request"));
+        unsupported_contract.request_id.clear();
+        assert!(
+            validate(&unsupported_contract, &config)
+                .expect_err("uncorrelated contract")
+                .request_id
+                .is_none()
+        );
+
+        let mut long_request_id = request(Source::Inline {
+            bytes: ByteString::default(),
+            media_type: None,
+        });
+        long_request_id.request_id = "r".repeat(MAX_IDENTIFIER_BYTES + 1);
+        assert_eq!(
+            validate(&long_request_id, &config)
+                .expect_err("request ID")
+                .code,
+            FailureCode::InvalidRequest
+        );
+
+        let oversized_inline = request(Source::Inline {
+            bytes: ByteString(vec![0; MAX_SOURCE_BYTES + 1]),
+            media_type: None,
+        });
+        assert_eq!(
+            validate(&oversized_inline, &config)
+                .expect_err("inline limit")
+                .code,
+            FailureCode::InputTooLarge
+        );
+
+        let invalid_file_root = request(Source::File {
+            root_id: String::new(),
+            relative_path: ByteString::default(),
+            binary_policy: BinaryPolicy::Accept,
+        });
+        assert_eq!(
+            validate(&invalid_file_root, &config)
+                .expect_err("file root")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let oversized_file_path = request(Source::File {
+            root_id: "workspace".to_owned(),
+            relative_path: ByteString(vec![b'p'; MAX_PATH_BYTES + 1]),
+            binary_policy: BinaryPolicy::Accept,
+        });
+        assert_eq!(
+            validate(&oversized_file_path, &config)
+                .expect_err("file path limit")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let nul_file_path = request(Source::File {
+            root_id: "workspace".to_owned(),
+            relative_path: ByteString(b"nul\0path".to_vec()),
+            binary_policy: BinaryPolicy::Accept,
+        });
+        assert_eq!(
+            validate(&nul_file_path, &config)
+                .expect_err("file path NUL")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let unknown_file_root = request(Source::File {
+            root_id: "unknown".to_owned(),
+            relative_path: ByteString::default(),
+            binary_policy: BinaryPolicy::Accept,
+        });
+        assert_eq!(
+            validate(&unknown_file_root, &config)
+                .expect_err("unknown file root")
+                .code,
+            FailureCode::UnsafeRoot
+        );
+
+        assert_eq!(
+            validate_process(
+                &ByteString::from_utf8("/bin/true"),
+                &vec![ByteString::default(); MAX_PROCESS_ARGUMENTS + 1],
+                None,
+            )
+            .expect_err("argument count")
+            .code,
+            FailureCode::ResourceExhausted
+        );
+        assert_eq!(
+            validate_process(
+                &ByteString::from_utf8("/bin/true"),
+                &[ByteString(vec![b'a'; MAX_PROCESS_ARGUMENT_BYTES])],
+                None,
+            )
+            .expect_err("argument bytes")
+            .code,
+            FailureCode::ResourceExhausted
+        );
+        assert_eq!(
+            validate_process(&ByteString::default(), &[], None)
+                .expect_err("empty executable")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        assert_eq!(
+            validate_process(
+                &ByteString(vec![b'x'; MAX_PROCESS_EXECUTABLE_BYTES + 1]),
+                &[],
+                None,
+            )
+            .expect_err("executable length")
+            .code,
+            FailureCode::InvalidRequest
+        );
+        assert_eq!(
+            validate_process(&ByteString(b"/bin/tr\0ue".to_vec()), &[], None)
+                .expect_err("executable NUL")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        assert_eq!(
+            validate_process(
+                &ByteString::from_utf8("/bin/true"),
+                &[ByteString(b"nul\0argument".to_vec())],
+                None,
+            )
+            .expect_err("argument NUL")
+            .code,
+            FailureCode::InvalidRequest
+        );
+        assert_eq!(
+            validate_process(
+                &ByteString::from_utf8("/bin/true"),
+                &[],
+                Some(MAX_PROCESS_TIMEOUT_MS + 1),
+            )
+            .expect_err("timeout")
+            .code,
+            FailureCode::InvalidRequest
+        );
+
+        let invalid_process_root = request(Source::Process {
+            executable: ByteString::from_utf8("/bin/true"),
+            argv: Vec::new(),
+            cwd_root_id: String::new(),
+            cwd_relative_path: ByteString::default(),
+            timeout_ms: None,
+            environment_profile: None,
+        });
+        assert_eq!(
+            validate(&invalid_process_root, &config)
+                .expect_err("process root")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let oversized_process_path = request(Source::Process {
+            executable: ByteString::from_utf8("/bin/true"),
+            argv: Vec::new(),
+            cwd_root_id: "workspace".to_owned(),
+            cwd_relative_path: ByteString(vec![b'p'; MAX_PATH_BYTES + 1]),
+            timeout_ms: None,
+            environment_profile: None,
+        });
+        assert_eq!(
+            validate(&oversized_process_path, &config)
+                .expect_err("process path limit")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let nul_process_path = request(Source::Process {
+            executable: ByteString::from_utf8("/bin/true"),
+            argv: Vec::new(),
+            cwd_root_id: "workspace".to_owned(),
+            cwd_relative_path: ByteString(b"nul\0path".to_vec()),
+            timeout_ms: None,
+            environment_profile: None,
+        });
+        assert_eq!(
+            validate(&nul_process_path, &config)
+                .expect_err("process path NUL")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        let invalid_environment = request(Source::Process {
+            executable: ByteString::from_utf8("/bin/true"),
+            argv: Vec::new(),
+            cwd_root_id: "workspace".to_owned(),
+            cwd_relative_path: ByteString::default(),
+            timeout_ms: None,
+            environment_profile: Some("invalid!".to_owned()),
+        });
+        assert_eq!(
+            validate(&invalid_environment, &config)
+                .expect_err("invalid environment")
+                .code,
+            FailureCode::InvalidRequest
+        );
+
+        let mut invalid_artifact = artifact();
+        invalid_artifact.id = "a".repeat(31);
+        assert_eq!(
+            validate(
+                &request(Source::Artifact {
+                    artifact: invalid_artifact
+                }),
+                &config,
+            )
+            .expect_err("artifact ID length")
+            .code,
+            FailureCode::InvalidRequest
+        );
+        let mut invalid_artifact = artifact();
+        invalid_artifact.id = "A".repeat(32);
+        assert_eq!(
+            validate(
+                &request(Source::Artifact {
+                    artifact: invalid_artifact
+                }),
+                &config,
+            )
+            .expect_err("artifact ID alphabet")
+            .code,
+            FailureCode::InvalidRequest
+        );
+        let mut invalid_artifact = artifact();
+        invalid_artifact.source_sha256 = "b".repeat(63);
+        assert_eq!(
+            validate(
+                &request(Source::Artifact {
+                    artifact: invalid_artifact
+                }),
+                &config,
+            )
+            .expect_err("source digest length")
+            .code,
+            FailureCode::InvalidRequest
+        );
+        let mut invalid_artifact = artifact();
+        invalid_artifact.source_sha256 = "B".repeat(64);
+        assert_eq!(
+            validate(
+                &request(Source::Artifact {
+                    artifact: invalid_artifact
+                }),
+                &config,
+            )
+            .expect_err("source digest alphabet")
+            .code,
+            FailureCode::InvalidRequest
+        );
+    }
+}

@@ -1836,6 +1836,64 @@ mod tests {
             .expect("commit")
     }
 
+    #[test]
+    fn commit_rejects_each_invalid_boundary_before_persistence() {
+        let (_directory, store) = fixture(0);
+
+        assert_eq!(
+            store
+                .commit("short", b"", &receipt(), 1, 2, None)
+                .expect_err("artifact ID length")
+                .code,
+            FailureCode::InvariantBreach
+        );
+        assert_eq!(
+            store
+                .commit(&"G".repeat(32), b"", &receipt(), 1, 2, None)
+                .expect_err("artifact ID alphabet")
+                .code,
+            FailureCode::InvariantBreach
+        );
+        assert_eq!(
+            store
+                .commit(&"1".repeat(32), b"", &receipt(), u64::MAX, 2, None)
+                .expect_err("creation timestamp")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        assert_eq!(
+            store
+                .commit(&"1".repeat(32), b"", &receipt(), 1, u64::MAX, None)
+                .expect_err("expiration timestamp")
+                .code,
+            FailureCode::InvalidRequest
+        );
+        assert_eq!(
+            store
+                .commit(&"1".repeat(32), b"", &receipt(), 2, 2, None)
+                .expect_err("expiration order")
+                .code,
+            FailureCode::InvalidRequest
+        );
+
+        let mut contradictory = receipt();
+        contradictory.partial = true;
+        assert_eq!(
+            store
+                .commit(&"1".repeat(32), b"", &contradictory, 1, 2, None)
+                .expect_err("acquisition semantics")
+                .code,
+            FailureCode::InvariantBreach
+        );
+        assert_eq!(
+            store
+                .commit(&"1".repeat(32), b"x", &receipt(), 1, 2, None)
+                .expect_err("store capacity")
+                .code,
+            FailureCode::StoreFull
+        );
+    }
+
     fn projection_receipt(reference: &ArtifactRef, request_id: String) -> Receipt {
         Receipt {
             schema_version: RECEIPT_SCHEMA_VERSION.to_owned(),

@@ -981,6 +981,60 @@ mod tests {
     }
 
     #[test]
+    fn production_runtime_rejects_each_invalid_configuration_shape() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let base = EngineConfig::local(directory.path().join("store.sqlite"));
+
+        let mut invalid_root_id = base.clone();
+        invalid_root_id
+            .roots
+            .insert(String::new(), directory.path().to_path_buf());
+        assert_eq!(
+            ProductionRuntime::new(&invalid_root_id)
+                .expect_err("invalid root ID")
+                .safe_message,
+            "root ID is invalid"
+        );
+
+        let mut invalid_profile_id = base.clone();
+        invalid_profile_id
+            .environment_profiles
+            .insert(String::new(), BTreeMap::new());
+        assert_eq!(
+            ProductionRuntime::new(&invalid_profile_id)
+                .expect_err("invalid profile ID")
+                .safe_message,
+            "environment profile ID is invalid"
+        );
+
+        let too_many_variables = (0..129)
+            .map(|index| (format!("VARIABLE_{index}"), String::new()))
+            .collect();
+        let invalid_variables = [
+            too_many_variables,
+            BTreeMap::from([(String::new(), String::new())]),
+            BTreeMap::from([("K".repeat(129), String::new())]),
+            BTreeMap::from([("VARIABLE".to_owned(), "v".repeat(4_097))]),
+            BTreeMap::from([("INVALID=VARIABLE".to_owned(), String::new())]),
+            BTreeMap::from([("INVALID\0VARIABLE".to_owned(), String::new())]),
+            BTreeMap::from([("VARIABLE".to_owned(), "invalid\0value".to_owned())]),
+        ];
+
+        for variables in invalid_variables {
+            let mut config = base.clone();
+            config
+                .environment_profiles
+                .insert("profile".to_owned(), variables);
+            assert_eq!(
+                ProductionRuntime::new(&config)
+                    .expect_err("invalid environment profile")
+                    .code,
+                FailureCode::InvalidRequest
+            );
+        }
+    }
+
+    #[test]
     fn inline_capture_preserves_arbitrary_bytes_and_enforces_limit() {
         let (_directory, runtime) = runtime();
         let source = Source::Inline {
@@ -1032,6 +1086,92 @@ mod tests {
         assert_eq!(
             runtime.acquire(&rejected).expect_err("binary").failure.code,
             FailureCode::AcquisitionFailed
+        );
+    }
+
+    #[test]
+    fn file_capture_rejects_unknown_non_regular_oversized_and_invalid_utf8_sources() {
+        let (directory, runtime) = runtime();
+
+        let unknown = Source::File {
+            root_id: "unknown".to_owned(),
+            relative_path: ByteString::from_utf8("data"),
+            binary_policy: BinaryPolicy::Accept,
+        };
+        assert_eq!(
+            runtime
+                .acquire(&unknown)
+                .expect_err("unknown root")
+                .failure
+                .code,
+            FailureCode::UnsafeRoot
+        );
+
+        fs::create_dir(directory.path().join("directory")).expect("directory");
+        let non_regular = Source::File {
+            root_id: "workspace".to_owned(),
+            relative_path: ByteString::from_utf8("directory"),
+            binary_policy: BinaryPolicy::Accept,
+        };
+        assert_eq!(
+            runtime
+                .acquire(&non_regular)
+                .expect_err("non-regular source")
+                .failure
+                .code,
+            FailureCode::AcquisitionFailed
+        );
+
+        let oversized_path = directory.path().join("oversized");
+        let oversized = File::create(&oversized_path).expect("oversized file");
+        oversized
+            .set_len(MAX_SOURCE_BYTES as u64 + 1)
+            .expect("sparse oversized file");
+        let oversized_source = Source::File {
+            root_id: "workspace".to_owned(),
+            relative_path: ByteString::from_utf8("oversized"),
+            binary_policy: BinaryPolicy::Accept,
+        };
+        assert_eq!(
+            runtime
+                .acquire(&oversized_source)
+                .expect_err("oversized source")
+                .failure
+                .code,
+            FailureCode::InputTooLarge
+        );
+
+        fs::write(directory.path().join("invalid-utf8"), [0xff]).expect("invalid UTF-8");
+        let invalid_utf8 = Source::File {
+            root_id: "workspace".to_owned(),
+            relative_path: ByteString::from_utf8("invalid-utf8"),
+            binary_policy: BinaryPolicy::Reject,
+        };
+        assert_eq!(
+            runtime
+                .acquire(&invalid_utf8)
+                .expect_err("invalid UTF-8")
+                .failure
+                .code,
+            FailureCode::AcquisitionFailed
+        );
+
+        assert_eq!(
+            runtime
+                .acquire(&Source::Artifact {
+                    artifact: crate::types::ArtifactRef {
+                        schema_version: crate::types::ARTIFACT_SCHEMA_VERSION.to_owned(),
+                        id: "a".repeat(32),
+                        source_sha256: "b".repeat(64),
+                        source_bytes: 0,
+                        created_at: 1,
+                        expires_at: 2,
+                    },
+                })
+                .expect_err("artifact source")
+                .failure
+                .code,
+            FailureCode::SourceUnsupported
         );
     }
 

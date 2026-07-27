@@ -960,4 +960,30 @@ mod tests {
         );
         assert_eq!(code, BROKEN_PIPE_EXIT);
     }
+
+    #[test]
+    fn output_and_argument_helpers_cover_both_outcomes() {
+        let output_error = SurfaceError::output(io::Error::other("write failed"));
+        assert_eq!(output_error.exit_code, 70);
+        assert_eq!(output_error.code, "output_failure");
+        assert_eq!(output_error.message, "cannot write command output");
+
+        assert_eq!(normalize_root_relative(".".to_owned()), "");
+        assert_eq!(
+            normalize_root_relative("nested".to_owned()),
+            "nested".to_owned()
+        );
+
+        let mut args = VecDeque::from(["--json".to_owned()]);
+        assert!(remove_flag(&mut args, "--json"));
+        assert!(!remove_flag(&mut args, "--json"));
+        ensure_empty(&args).expect("empty arguments");
+        args.push_back("unexpected".to_owned());
+        assert_eq!(
+            ensure_empty(&args)
+                .expect_err("unexpected argument")
+                .exit_code,
+            2
+        );
+    }
 }

@@ -775,6 +775,302 @@ mod tests {
     }
 
     #[test]
+    fn acquisition_semantics_reject_each_invalid_metadata_shape() {
+        let inline = AcquisitionReceipt {
+            variant: SourceVariant::Inline,
+            complete: true,
+            partial: false,
+            truncated: false,
+            root_id: None,
+            relative_path: None,
+            process: None,
+        };
+        let file = AcquisitionReceipt {
+            variant: SourceVariant::File,
+            complete: true,
+            partial: false,
+            truncated: false,
+            root_id: Some("workspace".to_owned()),
+            relative_path: Some("<4 path bytes>".to_owned()),
+            process: None,
+        };
+        let process = AcquisitionReceipt {
+            variant: SourceVariant::Process,
+            complete: true,
+            partial: false,
+            truncated: false,
+            root_id: Some("workspace".to_owned()),
+            relative_path: None,
+            process: Some(ProcessReceipt {
+                events: vec![StreamEvent {
+                    order: 0,
+                    stream: ProcessStream::Stdout,
+                    span: ByteSpan { start: 0, end: 3 },
+                }],
+                exit_code: Some(0),
+                signal: None,
+                timed_out: false,
+                working_directory: "workspace:<0 path bytes>".to_owned(),
+            }),
+        };
+
+        let invalid_receipts = [
+            (
+                AcquisitionReceipt {
+                    complete: false,
+                    partial: true,
+                    ..inline.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    complete: false,
+                    ..inline.clone()
+                },
+                1,
+            ),
+            (
+                AcquisitionReceipt {
+                    root_id: Some("workspace".to_owned()),
+                    ..inline.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some("<0 path bytes>".to_owned()),
+                    ..inline.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: process.process.clone(),
+                    ..inline
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    root_id: None,
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    root_id: Some(String::new()),
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: None,
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some("4 path bytes>".to_owned()),
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some("<4 path bytes".to_owned()),
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some("< path bytes>".to_owned()),
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some("<four path bytes>".to_owned()),
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some(format!(
+                        "<{} path bytes>",
+                        crate::request_policy::MAX_PATH_BYTES as u64 + 1
+                    )),
+                    ..file.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: process.process.clone(),
+                    ..file
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    root_id: Some(String::new()),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    relative_path: Some("<0 path bytes>".to_owned()),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        working_directory: "other:<0 path bytes>".to_owned(),
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        working_directory: "workspace:invalid".to_owned(),
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        events: vec![StreamEvent {
+                            order: 0,
+                            stream: ProcessStream::Stdout,
+                            span: ByteSpan { start: 0, end: 0 },
+                        }],
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                0,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        events: Vec::new(),
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    complete: false,
+                    process: Some(ProcessReceipt {
+                        events: Vec::new(),
+                        exit_code: Some(1),
+                        signal: None,
+                        timed_out: false,
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                0,
+            ),
+            (
+                AcquisitionReceipt {
+                    complete: false,
+                    process: Some(ProcessReceipt {
+                        events: Vec::new(),
+                        exit_code: None,
+                        signal: Some(15),
+                        timed_out: false,
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                0,
+            ),
+            (
+                AcquisitionReceipt {
+                    complete: false,
+                    process: Some(ProcessReceipt {
+                        events: Vec::new(),
+                        exit_code: None,
+                        signal: None,
+                        timed_out: true,
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                0,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        exit_code: None,
+                        signal: None,
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        exit_code: Some(1),
+                        signal: Some(15),
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        timed_out: true,
+                        ..process.process.clone().expect("process")
+                    }),
+                    ..process.clone()
+                },
+                3,
+            ),
+            (
+                AcquisitionReceipt {
+                    process: Some(ProcessReceipt {
+                        exit_code: None,
+                        signal: Some(15),
+                        ..process.process.expect("process")
+                    }),
+                    ..process
+                },
+                3,
+            ),
+        ];
+
+        for (receipt, source_bytes) in invalid_receipts {
+            assert!(
+                receipt.validate(source_bytes).is_err(),
+                "invalid receipt was accepted: {receipt:?}"
+            );
+        }
+    }
+
+    #[test]
     fn jsonl_request_decoding_is_bounded_strict_and_versioned() {
         let request = Request {
             contract_version: CONTRACT_VERSION.to_owned(),
