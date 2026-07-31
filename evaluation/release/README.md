@@ -1,5 +1,33 @@
 # Release qualification
 
+## Native npm v0.1.0
+
+`architecture-hardening-v3-20260731` qualifies the `0.1.0` root-crate source
+tree for the embedded-native `@arthjean/distill` package. It is a new candidate
+and one-shot qualification, not a retry or relabeling of v2.
+
+Validate the preregistration without executing a gate:
+
+```bash
+bun evaluation/release/run-architecture-hardening-v3.mjs --validate-only
+```
+
+After creating the exact owner-private authorization record declared by the
+protocol, execute Linux locally and macOS through
+`.github/workflows/native-npm-qualification.yml`:
+
+```bash
+bun evaluation/release/run-architecture-hardening-v3.mjs --execute linux-x86_64
+bun evaluation/release/run-architecture-hardening-v3.mjs --aggregate
+```
+
+The macOS workflow uploads its external receipt and native archive separately.
+Copy the receipt into the protocol-declared macOS directory on the clean
+aggregate host before aggregation. Publication is permitted only when the
+aggregate is `GO` and `scripts/package-npm.sh` verifies both archive checksums,
+receipt bindings, and embedded binary digests. Receipts remain external; do not
+write them under `evaluation/release/evidence/`.
+
 ## Architecture-hardening preregistration
 
 `architecture-hardening-v1-20260727` terminated `NO-GO` on Linux because
