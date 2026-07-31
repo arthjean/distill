@@ -2,14 +2,19 @@
 
 ## Native npm v0.1.0
 
-`architecture-hardening-v3-20260731` qualifies the `0.1.0` root-crate source
-tree for the embedded-native `@arthjean/distill` package. It is a new candidate
-and one-shot qualification, not a retry or relabeling of v2.
+`architecture-hardening-v3-20260731` terminated `NO-GO` after both platform
+vectors passed: the Linux gate updated the stale native version in
+`fuzz/Cargo.lock`, leaving the worktree dirty and refusing aggregation. Its
+no-retry rule remains intact.
+
+`architecture-hardening-v4-20260731` qualifies the corrected `0.1.0` root-crate
+source tree for the embedded-native `@arthjean/distill` package. It is a new
+candidate and one-shot qualification, not a retry or relabeling of v3.
 
 Validate the preregistration without executing a gate:
 
 ```bash
-bun evaluation/release/run-architecture-hardening-v3.mjs --validate-only
+bun evaluation/release/run-architecture-hardening-v4.mjs --validate-only
 ```
 
 After creating the exact owner-private authorization record declared by the
@@ -17,8 +22,8 @@ protocol, execute Linux locally and macOS through
 `.github/workflows/native-macos-qualification.yml`:
 
 ```bash
-bun evaluation/release/run-architecture-hardening-v3.mjs --execute linux-x86_64
-bun evaluation/release/run-architecture-hardening-v3.mjs --aggregate
+bun evaluation/release/run-architecture-hardening-v4.mjs --execute linux-x86_64
+bun evaluation/release/run-architecture-hardening-v4.mjs --aggregate
 ```
 
 The macOS workflow uploads its external receipt and native archive separately.
