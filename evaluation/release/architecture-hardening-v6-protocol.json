@@ -1,0 +1,354 @@
+{
+  "schema_version": "distill.architecture-hardening-qualification/v1",
+  "qualification_id": "architecture-hardening-v6-20260731",
+  "status": "PREREGISTERED",
+  "source": {
+    "source_tree": "952711e440754621080d45f8870c55c3b3ce17c3",
+    "source_tree_command": "./scripts/source-tree.sh <authorized-source-revision>",
+    "included_paths": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "clippy.toml",
+      "rust-toolchain.toml",
+      "src/",
+      "tests/",
+      "examples/",
+      "fuzz/",
+      "npm/distill/",
+      "evaluation/release/check-native-npm.mjs"
+    ],
+    "required_clean_worktree_at_execution": true,
+    "required_same_revision_for_all_receipts": true
+  },
+  "platforms": [
+    "linux-x86_64",
+    "macos-arm64"
+  ],
+  "binary": {
+    "path": "target/release/distill",
+    "digest_algorithm": "sha256",
+    "digest_inputs": [
+      "authorized source revision",
+      "canonical root-crate and npm-package source_tree",
+      "target platform",
+      "Rust 1.97.1 release build"
+    ]
+  },
+  "destinations": {
+    "default_root": "/tmp/distill-architecture-hardening-v6-20260731",
+    "linux_directory": "linux-x86_64",
+    "linux_receipt": "linux-x86_64/receipt.json",
+    "macos_directory": "macos-arm64",
+    "macos_receipt": "macos-arm64/receipt.json",
+    "aggregate_directory": "aggregate",
+    "aggregate_receipt": "aggregate/receipt.json",
+    "closed_evidence_destination": null,
+    "preexisting_target_is_error": true
+  },
+  "limits": {
+    "maximum_cpu_seconds": 14400,
+    "platform_cpu_seconds": {
+      "linux-x86_64": 10800,
+      "macos-arm64": 3600
+    },
+    "maximum_subscription_invocations": 0,
+    "incremental_dollar_ceiling_usd": 0,
+    "retry_permitted": false,
+    "provider_failure_counts_as_failure": true
+  },
+  "permitted_external_actions": [
+    "download the pinned toolchains and locked build dependencies on GitHub-hosted runners",
+    "execute the preregistered local command vector on linux-x86_64",
+    "execute the preregistered local command vector on macos-arm64",
+    "transfer the two external receipts and native archives to one clean aggregate host",
+    "publish @arthjean/distill@0.1.0 only after the aggregate receipt is GO and the embedded binary digests match both platform receipts"
+  ],
+  "authorization": {
+    "external_record": "/tmp/distill-architecture-hardening-v6-20260731-authorization.json",
+    "required_mode": "owner-read-write only",
+    "authenticity_claim": "owner-private maintainer record; no defense against a compromised same-user account",
+    "required_fields": [
+      "schema_version",
+      "qualification_id",
+      "authorized_by",
+      "authorized_at",
+      "source_revision",
+      "source_tree",
+      "protocol_schema_version",
+      "protocol_sha256",
+      "ledger_sha256",
+      "runner_sha256",
+      "maximum_cpu_seconds",
+      "maximum_subscription_invocations",
+      "incremental_dollar_ceiling_usd",
+      "destinations",
+      "permitted_external_actions"
+    ]
+  },
+  "gates": {
+    "request_v2_conformance": "Request v2 strict decoding, correlation, and resource precedence",
+    "protocol_continuation": "JSONL, MCP frame, CLI delimiter, and MCP schema continuation",
+    "semantic_corruption": "Contradictory acquisition state fails before restore or trace",
+    "exact_byte_digest_mutation": "Acquisition and receipt byte mutations fail before decoding",
+    "lineage_caps": "Global and per-artifact logical receipt limits fail closed",
+    "eight_writer_concurrency": "Eight writers cannot overshoot source or lineage caps",
+    "migration_interruption": "Schema v2-to-v3 migration faults roll back atomically",
+    "process_watchdog": "Escaped-descendant lifecycle completes within timeout tolerance",
+    "projection_behavior_matrix": "All fidelity, budget, fact, span, and token-vector contracts hold",
+    "corpus_preservation": "Rust and JavaScript corpus validation and preservation agree",
+    "projection_performance": "Policy-heavy analysis reuse and P95 regression limits hold",
+    "zero_network": "Runtime capture, projection, restore, trace, status, and GC remain offline",
+    "setup_restore": "Codex and Claude target parsing, setup, restore, and permissions conform",
+    "npm_package_surface": "The package metadata, POSIX launcher, symlink resolution, exact platform selection, and unsupported runtime rejection conform",
+    "binary_digest": "The release binary digest is recorded after all platform commands"
+  },
+  "commands": {
+    "linux-x86_64": [
+      {
+        "id": "release_build",
+        "argv": [
+          "cargo",
+          "build",
+          "--locked",
+          "--release"
+        ],
+        "maximum_wall_seconds": 1200,
+        "proves": [
+          "binary_digest"
+        ]
+      },
+      {
+        "id": "consolidated_native_gate",
+        "argv": [
+          "./scripts/check-native.sh"
+        ],
+        "maximum_wall_seconds": 7200,
+        "proves": [
+          "request_v2_conformance",
+          "protocol_continuation",
+          "semantic_corruption",
+          "exact_byte_digest_mutation",
+          "lineage_caps",
+          "eight_writer_concurrency",
+          "migration_interruption",
+          "projection_behavior_matrix",
+          "zero_network",
+          "setup_restore"
+        ]
+      },
+      {
+        "id": "corpus_verification",
+        "argv": [
+          "bun",
+          "evaluation/corpus/check.mjs",
+          "--verify"
+        ],
+        "maximum_wall_seconds": 300,
+        "proves": [
+          "corpus_preservation"
+        ]
+      },
+      {
+        "id": "projection_performance",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--release",
+          "projection::tests::policy_heavy_planning_reuses_analysis_without_latency_regression",
+          "--",
+          "--exact"
+        ],
+        "maximum_wall_seconds": 600,
+        "proves": [
+          "projection_performance"
+        ]
+      },
+      {
+        "id": "process_watchdog",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--release",
+          "--test",
+          "process_lifecycle",
+          "escaped_descendant_process_lifecycle_is_bounded_by_external_watchdog",
+          "--",
+          "--exact",
+          "--test-threads=1"
+        ],
+        "maximum_wall_seconds": 600,
+        "proves": [
+          "process_watchdog"
+        ]
+      },
+      {
+        "id": "release_rebuild",
+        "argv": [
+          "cargo",
+          "build",
+          "--locked",
+          "--release"
+        ],
+        "maximum_wall_seconds": 1200,
+        "proves": [
+          "binary_digest"
+        ]
+      },
+      {
+        "id": "npm_package_surface",
+        "argv": [
+          "bun",
+          "evaluation/release/check-native-npm.mjs",
+          "linux-x86_64",
+          "{target_directory}/npm-package-surface"
+        ],
+        "maximum_wall_seconds": 60,
+        "proves": [
+          "npm_package_surface"
+        ]
+      }
+    ],
+    "macos-arm64": [
+      {
+        "id": "macos_contract_and_setup",
+        "argv": [
+          "./scripts/qualify-macos.sh",
+          "{target_directory}/base-receipt.json"
+        ],
+        "maximum_wall_seconds": 1800,
+        "proves": [
+          "request_v2_conformance",
+          "protocol_continuation",
+          "semantic_corruption",
+          "exact_byte_digest_mutation",
+          "lineage_caps",
+          "eight_writer_concurrency",
+          "migration_interruption",
+          "projection_behavior_matrix",
+          "zero_network",
+          "setup_restore",
+          "binary_digest"
+        ]
+      },
+      {
+        "id": "corpus_verification",
+        "argv": [
+          "bun",
+          "evaluation/corpus/check.mjs",
+          "--verify"
+        ],
+        "maximum_wall_seconds": 300,
+        "proves": [
+          "corpus_preservation"
+        ]
+      },
+      {
+        "id": "projection_performance",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--release",
+          "projection::tests::policy_heavy_planning_reuses_analysis_without_latency_regression",
+          "--",
+          "--exact"
+        ],
+        "maximum_wall_seconds": 600,
+        "proves": [
+          "projection_performance"
+        ]
+      },
+      {
+        "id": "process_watchdog",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--release",
+          "--test",
+          "process_lifecycle",
+          "escaped_descendant_process_lifecycle_is_bounded_by_external_watchdog",
+          "--",
+          "--exact",
+          "--test-threads=1"
+        ],
+        "maximum_wall_seconds": 600,
+        "proves": [
+          "process_watchdog"
+        ]
+      },
+      {
+        "id": "release_rebuild",
+        "argv": [
+          "cargo",
+          "build",
+          "--locked",
+          "--release"
+        ],
+        "maximum_wall_seconds": 1200,
+        "proves": [
+          "binary_digest"
+        ]
+      },
+      {
+        "id": "npm_package_surface",
+        "argv": [
+          "bun",
+          "evaluation/release/check-native-npm.mjs",
+          "macos-arm64",
+          "{target_directory}/npm-package-surface"
+        ],
+        "maximum_wall_seconds": 60,
+        "proves": [
+          "npm_package_surface"
+        ]
+      }
+    ]
+  },
+  "aggregate_decision": {
+    "status_go_when": [
+      "both distinct platform receipts exist",
+      "both receipts are GO",
+      "both receipts bind the authorized clean source revision",
+      "both receipts bind the preregistered source_tree",
+      "both receipts contain a valid platform release-binary SHA-256",
+      "every preregistered gate, including the npm package surface, is PASS on each platform command vector that owns it"
+    ],
+    "otherwise": "NO-GO",
+    "partial_or_missing_evidence": "NO-GO",
+    "publication_claim_permitted": true
+  },
+  "reconciliation": {
+    "predecessor": {
+      "qualification_id": "architecture-hardening-v5-20260731",
+      "source_revision": "0f6e86f1365ee67da31ad259efe725841908795a",
+      "source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
+      "executed_targets": [
+        "linux-x86_64",
+        "macos-arm64",
+        "aggregate"
+      ],
+      "status": "GO",
+      "first_defect": null,
+      "aggregate_status": "GO",
+      "package_assembly_status": "GO",
+      "aggregate_receipt_sha256": "0cd2467efa0f71d4bf710f40c6e2d95dcd937fea74707ec28ef013862830b9d8",
+      "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30618716612",
+      "platform_receipts_retained": true
+    },
+    "classification": "new corrected qualification contract, not a retry",
+    "candidate_change": "the source identity now includes the native npm package and a same-platform launcher probe; package metadata rejects unsupported operating systems while the launcher rejects unsupported architectures and Linux runtimes"
+  },
+  "tooling": {
+    "runner": {
+      "path": "evaluation/release/run-architecture-hardening-v6.mjs",
+      "sha256": "4bf80a282b85a8441f7aa975b4a66f7a6eff4a228683bf1286f40144de45d892"
+    },
+    "ledger": {
+      "path": "evaluation/release/architecture-hardening-v6-ledger.json",
+      "sha256": "76cfb15a559d8213afbbdecf46933fceb045a0630ed928c6afd713c0c5a471f1"
+    }
+  }
+}

@@ -19,15 +19,16 @@ download or compilation.
 - Linux x86_64 with GNU libc, `libgcc_s`, and system `libsqlite3.so.0`
 - macOS arm64 with the macOS system runtime and system SQLite
 
-Every other OS and architecture pair fails explicitly in the package launcher.
+npm rejects other operating systems. The launcher rejects unsupported
+architectures and Linux runtimes before invoking a binary.
 
 ## Distribution contract
 
 Both executables must come from the same clean source tree and pass the
 versioned native qualification before publication. The package assembler
-verifies adjacent archive checksums, platform executable identity, qualification
-receipt bindings, and embedded binary SHA-256 values before creating the npm
-tarball.
+verifies adjacent archive checksums, platform executable identity, every
+qualification gate, the aggregate `GO` receipt, and embedded binary SHA-256
+values before creating the npm tarball.
 
 The executable performs no runtime network requests. Source capture, artifact
 persistence and verification, projection, receipts, setup, restore, trace, and

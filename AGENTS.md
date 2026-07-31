@@ -5,7 +5,9 @@ it through the colocated `CLAUDE.md`.
 
 Distill ships the Rust `distill` binary from the root Cargo crate. Cargo and the
 scripts under `scripts/` orchestrate native builds, checks, and packaging. Bun
-is used only for evaluation tooling.
+is used only for evaluation tooling. `npm` is not a project dependency manager
+or build tool; it appears only in end-user installation examples and the
+separately authorized registry publication command for `@arthjean/distill`.
 
 ## Protect contracts, user state, and evidence
 

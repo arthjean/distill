@@ -1,9 +1,10 @@
 {
-  "schema_version": "distill.native-distribution/v2",
+  "schema_version": "distill.native-distribution/v3",
   "strategy": "npm-package-with-embedded-native-assets",
   "source_layout": "root-cargo-crate/v1",
   "current_source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
-  "current_status": "qualified",
+  "current_package_source_tree": "952711e440754621080d45f8870c55c3b3ce17c3",
+  "current_status": "package-qualification-preregistered",
   "release_performed": false,
   "version_changed": true,
   "checksum_scope": "native archive SHA-256, npm tarball SHA-256 and SHA-512 integrity, and npm registry ECDSA signatures; no GitHub provenance attestation is claimed",
@@ -16,6 +17,11 @@
     "aggregate_receipt_sha256": "0cd2467efa0f71d4bf710f40c6e2d95dcd937fea74707ec28ef013862830b9d8",
     "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30618716612",
     "status": "GO"
+  },
+  "npm_package_qualification": {
+    "protocol": "evaluation/release/architecture-hardening-v6-protocol.json",
+    "source_tree": "952711e440754621080d45f8870c55c3b3ce17c3",
+    "status": "PREREGISTERED"
   },
   "historical_qualification": {
     "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
@@ -30,9 +36,9 @@
     "decision": "single public scoped package with both qualified native executables",
     "package": "@arthjean/distill",
     "version": "0.1.0",
-    "tarball_sha256": "d8d502b4134eee0f8a34f5d7dcc63e065d3bdcad78e8a233825eb24cd4c23b33",
-    "package_record_sha256": "e741fb20a50a26a80730b445c717b2d2494e4caa8982592748960c891727cd7b",
-    "status": "ready-to-publish",
+    "tarball_sha256": null,
+    "package_record_sha256": null,
+    "status": "qualification-required",
     "reason": "A current npm installation requirement now justifies a package surface. One package keeps publication atomic, performs no installation-time download, and uses a POSIX launcher rather than a Node runtime to select the exact qualified OS and architecture pair.",
     "legacy_package": "distill-mcp@0.11.2 was retired by the separately authorized US-020 migration; @arthjean/distill distributes only the replacement native engine"
   },

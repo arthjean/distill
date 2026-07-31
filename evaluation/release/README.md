@@ -13,14 +13,19 @@ assembly terminated `NO-GO`: the final release-mode tests left
 not match the release executables restored by `package-native.sh`.
 
 `architecture-hardening-v5-20260731` qualifies the same corrected `0.1.0`
-root-crate source tree. Each platform vector ends with a locked release rebuild
-before the runner hashes the executable. It is a new qualification contract,
-not a retry or relabeling of v4.
+root-crate source tree and exact release executables. It does not include the
+npm metadata or POSIX launcher in its source identity.
+
+`architecture-hardening-v6-20260731` extends that identity with
+`npm/distill/` and a frozen package-surface probe. Both platform vectors verify
+the package metadata, npm OS restriction, symlink resolution, exact native
+selection, unsupported architecture rejection, and Linux GNU-libc rejection.
+It preserves every v5 native gate and ends with the same locked release rebuild.
 
 Validate the preregistration without executing a gate:
 
 ```bash
-bun evaluation/release/run-architecture-hardening-v5.mjs --validate-only
+bun evaluation/release/run-architecture-hardening-v6.mjs --validate-only
 ```
 
 After creating the exact owner-private authorization record declared by the
@@ -28,8 +33,8 @@ protocol, execute Linux locally and macOS through
 `.github/workflows/native-macos-qualification.yml`:
 
 ```bash
-bun evaluation/release/run-architecture-hardening-v5.mjs --execute linux-x86_64
-bun evaluation/release/run-architecture-hardening-v5.mjs --aggregate
+bun evaluation/release/run-architecture-hardening-v6.mjs --execute linux-x86_64
+bun evaluation/release/run-architecture-hardening-v6.mjs --aggregate
 ```
 
 The macOS workflow uploads its external receipt and native archive separately.

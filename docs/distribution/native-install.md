@@ -10,9 +10,10 @@ npm install --global @arthjean/distill
 distill --help
 ```
 
-Its launcher selects only Linux x86_64 GNU or macOS arm64 and fails explicitly
-for every other OS and architecture pair. The npm package version and embedded
-engine version are both `0.1.0`.
+npm rejects operating systems other than Linux and macOS. The launcher selects
+only Linux x86_64 GNU or macOS arm64 and rejects unsupported architectures and
+Linux runtimes. The npm package version and embedded engine version are both
+`0.1.0`.
 
 This archive contains the `distill` local context projection binary for one
 supported packaging platform. Packaging does not itself confer release
@@ -63,6 +64,8 @@ Both commands support `--dry-run` and `--restore`. Codex coverage is limited to
 supported local-tool `PostToolUse` events. Claude native `Read` and `Bash` are
 not intercepted; use `distill_read` and `distill_run`.
 
-Packaging is limited to Linux x86_64 GNU and macOS arm64. Both assets require a
-new same-source-tree qualification for the root Cargo layout. No other platform
-is implied by the archive format.
+Packaging is limited to Linux x86_64 GNU and macOS arm64. Both root-layout
+assets are qualified from source tree
+`4fd63a6a4ef6e87f3e05134183477e5831dc67f5` by
+`architecture-hardening-v5-20260731`. No other platform is implied by the
+archive format.

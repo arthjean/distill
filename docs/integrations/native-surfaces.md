@@ -49,7 +49,7 @@ No v1 support is claimed for Cursor, Windsurf, Continue, generic MCP clients,
 Windows, macOS x86_64, Linux arm64, or Linux musl. The complete migration and
 unsupported-surface matrix is
 [`mcp-first-to-native.md`](../migration/mcp-first-to-native.md). The adapter
-boundaries and direct-native-asset decision are documented in
+boundaries and embedded-native npm distribution decision are documented in
 [`native-context-projection-engine.md`](../architecture/native-context-projection-engine.md).
 
 Sources:

@@ -5,5 +5,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REVISION="${1:-HEAD}"
 
 git -C "$ROOT" ls-tree -r --full-tree "$REVISION" -- \
-  Cargo.toml Cargo.lock clippy.toml rust-toolchain.toml src tests examples fuzz |
+  Cargo.toml Cargo.lock clippy.toml rust-toolchain.toml src tests examples fuzz \
+  npm/distill evaluation/release/check-native-npm.mjs |
   git -C "$ROOT" hash-object --stdin

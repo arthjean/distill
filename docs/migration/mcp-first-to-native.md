@@ -92,7 +92,7 @@ Distill. There is no universal Claude interception claim.
 
 ## Distribution preparation
 
-The selected v1 strategy is two direct native assets:
+US-019 initially selected two direct native assets:
 
 | Target           | Archive                       | Qualification                         |
 | ---------------- | ----------------------------- | ------------------------------------- |
@@ -113,7 +113,8 @@ unsupported.
 The machine-readable contract is
 `docs/distribution/native-assets.json`. No npm launcher, registry publish,
 release tag, version bump, changelog entry, or workflow change was part of
-US-019.
+US-019. The later native npm requirement changed the distribution strategy
+without changing those historical facts.
 
 The v2 aggregate reuses the immutable Linux and macOS receipts and binds both
 platforms to native tree `77c75f741cd69a9b229dd73c1be435181db73cf1`.
@@ -124,8 +125,10 @@ qualified candidate. Qualification does not publish either asset.
 The npm launcher decision was reopened for the explicit native npm installation
 requirement. Version 0.1.0 embeds both qualified executables in one atomic
 package, performs no `postinstall` download, and uses a POSIX launcher so Node
-is not part of the runtime process boundary. Unsupported platform pairs fail
-before invoking a binary.
+is not part of the runtime process boundary. npm rejects other operating
+systems. The launcher selects Linux x86_64 only with GNU libc, selects macOS
+arm64, and rejects unsupported architectures and Linux runtimes before invoking
+a binary.
 
 ## Unsupported platform matrix
 

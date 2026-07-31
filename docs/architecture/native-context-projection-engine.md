@@ -136,25 +136,32 @@ projection, tokenization, persistence, or preservation policy.
 
 ## Distribution
 
-V1 uses direct native release assets:
+Native v0.1.0 uses one public scoped npm package containing both qualified
+executables:
 
 | Platform         | Rust host                  | Asset                         |
 | ---------------- | -------------------------- | ----------------------------- |
 | Linux x86_64 GNU | `x86_64-unknown-linux-gnu` | `distill-linux-x86_64.tar.gz` |
 | macOS arm64      | `aarch64-apple-darwin`     | `distill-macos-arm64.tar.gz`  |
 
-Each archive contains one executable, the MIT license, and installation
-guidance. The executable uses the system runtime and SQLite libraries exercised
-by its packaging host; the assets are not static or musl builds. An adjacent
-SHA-256 file checks transfer integrity but does not authenticate the publisher.
-Release publication must use an authenticated channel and a separately approved
-signature or provenance policy. Assets are built on their supported packaging
-host with `./scripts/package-native.sh`.
+Each intermediate archive contains one executable, the MIT license, and
+installation guidance. `scripts/package-npm.sh` verifies their adjacent
+checksums, exact platform identity, platform receipts, every required gate, the
+aggregate `GO` receipt, and embedded binary digests before producing
+`@arthjean/distill`.
 
-No npm launcher is selected for v1. One native executable is the product
-boundary, and a launcher would add Node, platform resolution, and another
-failure surface without a current requirement. This can be revisited if a
-measured installation or update problem justifies it.
+The npm package performs no installation-time download or compilation. npm
+rejects operating systems other than Linux and macOS. Its POSIX launcher is not
+a Node runtime boundary: it selects Linux x86_64 only when GNU libc is detected,
+selects macOS arm64, and rejects unsupported architectures and Linux runtimes
+before invoking a binary. The native executable continues to use the system
+runtime and SQLite libraries exercised by its packaging host; it is not static
+or musl.
+
+Authenticated npm publication supplies package SHA-512 integrity and registry
+ECDSA signatures. The release does not claim a GitHub provenance attestation.
+Native archives are built on their supported packaging host with
+`./scripts/package-native.sh`.
 
 The asset contract is machine-readable in
 [`docs/distribution/native-assets.json`](../distribution/native-assets.json).
@@ -169,11 +176,15 @@ The release gate must remain inspectable through committed evidence:
 - an aggregate qualification that is `GO` only when paired and macOS gates are
   both `GO`.
 
-The closed aggregate is
+The historical aggregate remains
 [`evaluation/release/evidence/us018-qualification-v5.json`](../../evaluation/release/evidence/us018-qualification-v5.json).
-It qualifies the pre-root-layout source tree on macOS arm64. The root Cargo
-crate changes the candidate identity and remains unqualified on both supported
-platforms until a new versioned release gate is preregistered and executed.
+The root Cargo crate is qualified separately by
+`architecture-hardening-v5-20260731`, whose external aggregate is `GO` for
+source tree `4fd63a6a4ef6e87f3e05134183477e5831dc67f5`. Its Linux and macOS release
+binary digests match the candidate executables. The package metadata and
+launcher are preregistered separately under
+`architecture-hardening-v6-20260731` and must reach aggregate `GO` before npm
+publication.
 
 ## Deliberate boundaries
 

@@ -14,6 +14,12 @@ script_dir=$(CDPATH= cd -P "$(dirname "$source_path")" >/dev/null 2>&1 && pwd)
 
 case "$(uname -s):$(uname -m)" in
   Linux:x86_64)
+    if ! command -v getconf >/dev/null 2>&1 ||
+      ! getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
+      printf '%s\n' \
+        "distill: unsupported Linux x86_64 runtime (GNU libc required)" >&2
+      exit 2
+    fi
     binary="$script_dir/../vendor/linux-x86_64/distill"
     ;;
   Darwin:arm64)

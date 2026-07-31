@@ -11,7 +11,7 @@ distill --help
 
 The package embeds the native Distill executable and performs no download or
 build during installation. It supports Linux x86_64 with GNU libc and macOS
-arm64. Other platforms fail explicitly.
+arm64. Other platforms are rejected during npm installation or by the launcher.
 
 The executable performs no runtime network requests. It captures source bytes
 before returning an omitting projection, stores them with restricted local
