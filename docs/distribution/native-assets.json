@@ -3,11 +3,21 @@
   "strategy": "npm-package-with-embedded-native-assets",
   "source_layout": "root-cargo-crate/v1",
   "current_source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
-  "current_status": "qualification-required",
+  "current_status": "qualified",
   "release_performed": false,
   "version_changed": true,
-  "checksum_scope": "integrity only; publication must use an authenticated release channel and a separately approved provenance or signature policy",
+  "checksum_scope": "native archive SHA-256, npm tarball SHA-256 and SHA-512 integrity, and npm registry ECDSA signatures; no GitHub provenance attestation is claimed",
   "qualification": {
+    "protocol": "evaluation/release/architecture-hardening-v5-protocol.json",
+    "candidate_revision": "0f6e86f1365ee67da31ad259efe725841908795a",
+    "source_layout": "root-cargo-crate/v1",
+    "source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
+    "same_as_current_source_tree": true,
+    "aggregate_receipt_sha256": "0cd2467efa0f71d4bf710f40c6e2d95dcd937fea74707ec28ef013862830b9d8",
+    "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30618716612",
+    "status": "GO"
+  },
+  "historical_qualification": {
     "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
     "candidate_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
     "source_layout": "native/distill-core",
@@ -20,6 +30,9 @@
     "decision": "single public scoped package with both qualified native executables",
     "package": "@arthjean/distill",
     "version": "0.1.0",
+    "tarball_sha256": "d8d502b4134eee0f8a34f5d7dcc63e065d3bdcad78e8a233825eb24cd4c23b33",
+    "package_record_sha256": "e741fb20a50a26a80730b445c717b2d2494e4caa8982592748960c891727cd7b",
+    "status": "ready-to-publish",
     "reason": "A current npm installation requirement now justifies a package surface. One package keeps publication atomic, performs no installation-time download, and uses a POSIX launcher rather than a Node runtime to select the exact qualified OS and architecture pair.",
     "legacy_package": "distill-mcp@0.11.2 was retired by the separately authorized US-020 migration; @arthjean/distill distributes only the replacement native engine"
   },
@@ -36,15 +49,16 @@
       ],
       "packaging_command": "./scripts/package-native.sh",
       "qualification": {
-        "evidence": "evaluation/release/evidence/automated-linux-x86_64-v2.json",
-        "suite_evidence": "evaluation/release/evidence/suite-linux-x86_64-v2.json",
-        "package_evidence": "evaluation/release/evidence/package-linux-x86_64-v1.json",
-        "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
-        "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
-        "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
-        "same_as_current_source_tree": false
+        "qualification_id": "architecture-hardening-v5-20260731",
+        "receipt_sha256": "f60e7d68c0c92fb29bff3d1bc0bed97324684d2d134aced2e9c534e0d12923de",
+        "binary_sha256": "f6a895d1622fb2de71db27c963c4b61b355c3d7c01784854e5bb9421b627f00f",
+        "archive_sha256": "d799e0fa90d7159464e6b693d96371c21ac393f446d6fa0a491ae50a3731e1d5",
+        "git_revision": "0f6e86f1365ee67da31ad259efe725841908795a",
+        "source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
+        "same_as_current_source_tree": true,
+        "status": "GO"
       },
-      "status": "qualification-required"
+      "status": "qualified"
     },
     {
       "platform": "macos-arm64",
@@ -54,14 +68,17 @@
       "runtime_dependencies": ["macOS system runtime", "system libsqlite3"],
       "packaging_command": "./scripts/package-native.sh",
       "qualification": {
-        "evidence": "evaluation/release/evidence/macos-arm64-distribution-v1.json",
-        "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
-        "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30127687300",
-        "git_revision": "69bd3e5e712678a7c03f43b0f6e3e1dd4e2e65ba",
-        "native_tree": "77c75f741cd69a9b229dd73c1be435181db73cf1",
-        "same_as_current_source_tree": false
+        "qualification_id": "architecture-hardening-v5-20260731",
+        "receipt_sha256": "8f9953bbfd149a72e376a7d58b93281e43e8281ae104e975234dacc6bb195497",
+        "binary_sha256": "97cbd2c98dda8c99a6319a21a871909b091140702dbfe4d18a3d2c9b1bb53498",
+        "archive_sha256": "e47a503fdda450e378899a752cf92e6b5579bf5581df1e2926f3a5b3c1458b3a",
+        "workflow_run_url": "https://github.com/arthjean/distill/actions/runs/30618716612",
+        "git_revision": "0f6e86f1365ee67da31ad259efe725841908795a",
+        "source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
+        "same_as_current_source_tree": true,
+        "status": "GO"
       },
-      "status": "qualification-required"
+      "status": "qualified"
     }
   ],
   "unsupported_platforms": [

@@ -13,10 +13,9 @@ raw bytes, and returns a deterministic model-visible projection within an
 explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
-The closed native-distribution v2 evidence qualifies Linux x86_64 and macOS
-arm64 on the pre-root-layout source tree. Version 0.1.0 prepares a native npm
-package for the root Cargo crate; publication remains blocked until both
-embedded binaries pass a new same-source-tree qualification. The retired
+The native v0.1.0 candidate is qualified on Linux x86_64 and macOS arm64 from
+one root-crate source tree. Its npm tarball embeds the exact receipt-bound
+executables and is ready for authenticated registry publication. The retired
 TypeScript MCP-first implementation remains recoverable through the recorded
 pre-US-020 ref, while its historical evidence stays in the repository.
 
@@ -77,8 +76,8 @@ distill --help
 
 The package embeds both qualified native executables. It performs no
 installation-time download and its launcher fails explicitly outside Linux
-x86_64 GNU and macOS arm64. The package is not published until both embedded
-binaries are qualified from the same source tree.
+x86_64 GNU and macOS arm64. Registry publication remains a separate
+authenticated action.
 
 ## CLI
 
