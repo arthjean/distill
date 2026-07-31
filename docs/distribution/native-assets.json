@@ -2,7 +2,7 @@
   "schema_version": "distill.native-distribution/v2",
   "strategy": "npm-package-with-embedded-native-assets",
   "source_layout": "root-cargo-crate/v1",
-  "current_source_tree": "61a582a3c2af991c8c88ddc5563cc6ca062b24f8",
+  "current_source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
   "current_status": "qualification-required",
   "release_performed": false,
   "version_changed": true,
