@@ -157,10 +157,13 @@ fi
 
 (
   cd "$PACKAGE_DIRECTORY"
-  bun pm pack \
-    --destination "$OUTPUT_DIRECTORY" \
-    --filename "$PACKAGE_FILENAME"
+  bun pm pack --destination "$OUTPUT_DIRECTORY"
 )
+
+if [[ ! -f "$OUTPUT_DIRECTORY/$PACKAGE_FILENAME" ]]; then
+  echo "npm tarball was not produced at the expected path" >&2
+  exit 1
+fi
 
 PACKAGE_SHA256="$(sha256 "$OUTPUT_DIRECTORY/$PACKAGE_FILENAME")"
 jq -n \
