@@ -95,7 +95,7 @@
       },
       {
         "path": ".github/workflows/native-macos-qualification.yml",
-        "sha256": "e1d873b3fc05aa1437713f80938f50d568f715f127d852f3322f137428f3513b"
+        "sha256": "390ef9d05950e30660ec53fe392c46a74d8ee28d076ff8e661ca51dbd02ace5c"
       },
       {
         "path": "CHANGELOG.md",

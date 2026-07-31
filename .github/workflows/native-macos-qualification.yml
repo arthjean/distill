@@ -12,8 +12,9 @@ jobs:
     timeout-minutes: 60
     env:
       TMPDIR: /private/tmp
-      DISTILL_ARCH_AUTHORIZATION: /tmp/distill-architecture-hardening-v2-20260727-authorization.json
-      DISTILL_ARCH_RECEIPT: /tmp/distill-architecture-hardening-v2-20260727/macos-arm64/receipt.json
+      DISTILL_ARCH_AUTHORIZATION: /tmp/distill-architecture-hardening-v3-20260731-authorization.json
+      DISTILL_ARCH_RECEIPT: /tmp/distill-architecture-hardening-v3-20260731/macos-arm64/receipt.json
+      DISTILL_PACKAGE_OUTPUT: /tmp/distill-architecture-hardening-v3-20260731/macos-arm64/package
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -22,12 +23,12 @@ jobs:
           components: rustfmt, clippy
       - uses: oven-sh/setup-bun@v1
         with:
-          bun-version: 1.3.4
+          bun-version: 1.3.14
       - name: Create exact qualification authorization
         run: |
-          protocol_file="evaluation/release/architecture-hardening-v2-protocol.json"
-          ledger_file="evaluation/release/architecture-hardening-v2-ledger.json"
-          runner_file="evaluation/release/run-architecture-hardening-v2.mjs"
+          protocol_file="evaluation/release/architecture-hardening-v3-protocol.json"
+          ledger_file="evaluation/release/architecture-hardening-v3-ledger.json"
+          runner_file="evaluation/release/run-architecture-hardening-v3.mjs"
           jq -n \
             --arg revision "$GITHUB_SHA" \
             --arg authorized_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -54,13 +55,23 @@ jobs:
             }' > "$DISTILL_ARCH_AUTHORIZATION"
           chmod 600 "$DISTILL_ARCH_AUTHORIZATION"
       - name: Validate preregistration
-        run: bun evaluation/release/run-architecture-hardening-v2.mjs --validate-only
+        run: bun evaluation/release/run-architecture-hardening-v3.mjs --validate-only
       - name: Run architecture-hardening qualification
-        run: bun evaluation/release/run-architecture-hardening-v2.mjs --execute macos-arm64
+        run: bun evaluation/release/run-architecture-hardening-v3.mjs --execute macos-arm64
+      - name: Package macOS arm64
+        run: ./scripts/package-native.sh
       - name: Upload architecture-hardening receipt
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: distill-architecture-hardening-v2-macos-arm64
+          name: distill-architecture-hardening-v3-macos-arm64
           path: ${{ env.DISTILL_ARCH_RECEIPT }}
+          if-no-files-found: error
+      - name: Upload native archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: distill-native-v0.1.0-macos-arm64
+          path: |
+            ${{ env.DISTILL_PACKAGE_OUTPUT }}/distill-macos-arm64.tar.gz
+            ${{ env.DISTILL_PACKAGE_OUTPUT }}/distill-macos-arm64.tar.gz.sha256
           if-no-files-found: error

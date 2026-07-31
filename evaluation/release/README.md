@@ -14,7 +14,7 @@ bun evaluation/release/run-architecture-hardening-v3.mjs --validate-only
 
 After creating the exact owner-private authorization record declared by the
 protocol, execute Linux locally and macOS through
-`.github/workflows/native-npm-qualification.yml`:
+`.github/workflows/native-macos-qualification.yml`:
 
 ```bash
 bun evaluation/release/run-architecture-hardening-v3.mjs --execute linux-x86_64

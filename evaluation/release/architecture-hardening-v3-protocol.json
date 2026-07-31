@@ -290,7 +290,7 @@
     },
     "ledger": {
       "path": "evaluation/release/architecture-hardening-v3-ledger.json",
-      "sha256": "6b3bcdb2aa151bf62460340c8d4108c71eeea5fcedf623e7edb5ac74c1d5d175"
+      "sha256": "c60711c238c78f4905ec544af222eab4655653ab77bdae3755de25d8435f2371"
     }
   }
 }
