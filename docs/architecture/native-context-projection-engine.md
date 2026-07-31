@@ -182,9 +182,9 @@ The root Cargo crate is qualified separately by
 `architecture-hardening-v5-20260731`, whose external aggregate is `GO` for
 source tree `4fd63a6a4ef6e87f3e05134183477e5831dc67f5`. Its Linux and macOS release
 binary digests match the candidate executables. The package metadata and
-launcher are preregistered separately under
-`architecture-hardening-v6-20260731` and must reach aggregate `GO` before npm
-publication.
+launcher are qualified separately under
+`architecture-hardening-v6-20260731`; its aggregate is `GO` for source tree
+`952711e440754621080d45f8870c55c3b3ce17c3` and permits npm publication.
 
 ## Deliberate boundaries
 

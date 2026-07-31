@@ -13,11 +13,11 @@ raw bytes, and returns a deterministic model-visible projection within an
 explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
-The native v0.1.0 executables are qualified on Linux x86_64 and macOS arm64 from
-one root-crate source tree. A successor gate is preregistered for the npm
-metadata and launcher before authenticated registry publication. The retired
-TypeScript MCP-first implementation remains recoverable through the recorded
-pre-US-020 ref, while its historical evidence stays in the repository.
+The native v0.1.0 package is qualified on Linux x86_64 GNU and macOS arm64 from
+one source tree. Its npm tarball embeds the exact receipt-bound executables and
+is ready for authenticated registry publication. The retired TypeScript
+MCP-first implementation remains recoverable through the recorded pre-US-020
+ref, while its historical evidence stays in the repository.
 
 ## Product contract
 
@@ -158,10 +158,10 @@ tools bypasses projection. MCP stdout contains JSON-RPC only.
 
 | Surface                                           | V1 status          | Contract                                                       |
 | ------------------------------------------------- | ------------------ | -------------------------------------------------------------- |
-| Linux x86_64 GNU                                  | Binary qualified, package gate pending | Embedded npm executable                     |
-| macOS arm64                                       | Binary qualified, package gate pending | Embedded npm executable                     |
-| Codex supported local `PostToolUse` events        | Qualified                              | Automatic off, observe, or active mode       |
-| Claude `distill_read` and `distill_run`           | Qualified                              | Explicit MCP acquisition                    |
+| Linux x86_64 GNU                                  | Qualified          | Embedded npm executable                                        |
+| macOS arm64                                       | Qualified          | Embedded npm executable                                        |
+| Codex supported local `PostToolUse` events        | Qualified          | Automatic off, observe, or active mode                          |
+| Claude `distill_read` and `distill_run`           | Qualified          | Explicit MCP acquisition                                       |
 | Codex hosted tools without a supported hook event | Unsupported        | No interception and no Distill diagnostic                      |
 | Claude native `Read` and `Bash`                   | Unsupported        | Bypass Distill                                                 |
 | Windows, macOS x86_64, Linux arm64, Linux musl    | Unsupported        | No release claim                                               |

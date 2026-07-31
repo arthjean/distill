@@ -21,6 +21,10 @@ npm metadata or POSIX launcher in its source identity.
 the package metadata, npm OS restriction, symlink resolution, exact native
 selection, unsupported architecture rejection, and Linux GNU-libc rejection.
 It preserves every v5 native gate and ends with the same locked release rebuild.
+Both platform receipts and the aggregate are `GO` for candidate
+`8084c132fd252bb2be429067a181e8e525fea7ee`, source tree
+`952711e440754621080d45f8870c55c3b3ce17c3`. The macOS run is
+`https://github.com/arthjean/distill/actions/runs/30620666910`.
 
 Validate the preregistration without executing a gate:
 

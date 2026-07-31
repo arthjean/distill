@@ -65,7 +65,7 @@ supported local-tool `PostToolUse` events. Claude native `Read` and `Bash` are
 not intercepted; use `distill_read` and `distill_run`.
 
 Packaging is limited to Linux x86_64 GNU and macOS arm64. Both root-layout
-assets are qualified from source tree
-`4fd63a6a4ef6e87f3e05134183477e5831dc67f5` by
-`architecture-hardening-v5-20260731`. No other platform is implied by the
+assets and the npm launcher are qualified from source tree
+`952711e440754621080d45f8870c55c3b3ce17c3` by
+`architecture-hardening-v6-20260731`. No other platform is implied by the
 archive format.
