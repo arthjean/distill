@@ -6,7 +6,7 @@ PACKAGE_SOURCE="$ROOT/npm/distill"
 OUTPUT_DIRECTORY="${DISTILL_NPM_PACKAGE_OUTPUT:-$ROOT/dist/npm}"
 PACKAGE_FILENAME="arthjean-distill-0.1.0.tgz"
 PACKAGE_RECORD="arthjean-distill-0.1.0.json"
-QUALIFICATION_ID="architecture-hardening-v4-20260731"
+QUALIFICATION_ID="architecture-hardening-v5-20260731"
 SOURCE_TREE="4fd63a6a4ef6e87f3e05134183477e5831dc67f5"
 
 if [[ "$#" -ne 4 ]]; then

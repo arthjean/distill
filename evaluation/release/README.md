@@ -7,14 +7,20 @@ vectors passed: the Linux gate updated the stale native version in
 `fuzz/Cargo.lock`, leaving the worktree dirty and refusing aggregation. Its
 no-retry rule remains intact.
 
-`architecture-hardening-v4-20260731` qualifies the corrected `0.1.0` root-crate
-source tree for the embedded-native `@arthjean/distill` package. It is a new
-candidate and one-shot qualification, not a retry or relabeling of v3.
+`architecture-hardening-v4-20260731` reached an aggregate `GO`, but package
+assembly terminated `NO-GO`: the final release-mode tests left
+`target/release/distill` linked to a test harness, so the receipt digests did
+not match the release executables restored by `package-native.sh`.
+
+`architecture-hardening-v5-20260731` qualifies the same corrected `0.1.0`
+root-crate source tree. Each platform vector ends with a locked release rebuild
+before the runner hashes the executable. It is a new qualification contract,
+not a retry or relabeling of v4.
 
 Validate the preregistration without executing a gate:
 
 ```bash
-bun evaluation/release/run-architecture-hardening-v4.mjs --validate-only
+bun evaluation/release/run-architecture-hardening-v5.mjs --validate-only
 ```
 
 After creating the exact owner-private authorization record declared by the
@@ -22,8 +28,8 @@ protocol, execute Linux locally and macOS through
 `.github/workflows/native-macos-qualification.yml`:
 
 ```bash
-bun evaluation/release/run-architecture-hardening-v4.mjs --execute linux-x86_64
-bun evaluation/release/run-architecture-hardening-v4.mjs --aggregate
+bun evaluation/release/run-architecture-hardening-v5.mjs --execute linux-x86_64
+bun evaluation/release/run-architecture-hardening-v5.mjs --aggregate
 ```
 
 The macOS workflow uploads its external receipt and native archive separately.

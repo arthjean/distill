@@ -1,0 +1,147 @@
+{
+  "schema_version": "distill.architecture-hardening-qualification-ledger/v1",
+  "qualification_id": "architecture-hardening-v5-20260731",
+  "status": "PREREGISTERED",
+  "preregistered_at": "2026-07-31T09:05:06Z",
+  "protocol": {
+    "path": "evaluation/release/architecture-hardening-v5-protocol.json",
+    "schema_version": "distill.architecture-hardening-qualification/v1"
+  },
+  "authorization": {
+    "status": "REQUIRED",
+    "external_record": "/tmp/distill-architecture-hardening-v5-20260731-authorization.json"
+  },
+  "historical_integrity": {
+    "direct": [
+      {
+        "path": "evaluation/release/native-distribution-v2-protocol.json",
+        "sha256": "9725ac46a66ee7b1b03f19e9c28d0651b451b3d50f92180cebd92e9293f628be"
+      },
+      {
+        "path": "evaluation/release/check-native-distribution-v2.mjs",
+        "sha256": "8e8d442bcaf1ea9dbb3a4cc3efe50b4914d04f21f31f8ea6b2823c676a717f89"
+      },
+      {
+        "path": "evaluation/release/evidence/native-distribution-v2.json",
+        "sha256": "936ef1e12a6398cd6d756f67a09813d9f3146fc15c1176b428cb60de996b45f0"
+      },
+      {
+        "path": "evaluation/release/evidence/fuzz-linux-x86_64.json",
+        "sha256": "1406b62efc64187fa132861e681e6dd27487e180782d48ade01aaf6a2d819a06"
+      },
+      {
+        "path": "evaluation/release/evidence/suite-linux-x86_64.json",
+        "sha256": "153a54838f452750a75ceeb9a2d95e8682fbd151d9dd292e6299b262eef3b817"
+      },
+      {
+        "path": "evaluation/release/paired-qualification-v5-ledger.json",
+        "sha256": "11e5b41b9787bb11b9c74825bacb1fd895bd7eea2c5ea6fdc6105718659e95b2"
+      },
+      {
+        "path": "evaluation/release/run-paired-v5.mjs",
+        "sha256": "bec66a13cf2bb6344281d1064f143c040c1474dcdd0e0f365a3d01adbfdbfb6d"
+      },
+      {
+        "path": "evaluation/release/check-us018-v5.mjs",
+        "sha256": "43504d2d5430ef63115ecd2949f45961e5f564f8f7605f0ff52b141bc8908a36"
+      },
+      {
+        "path": "evaluation/release/paired-tasks-v5.json",
+        "sha256": "888bc3e27487693885ae735132b395f4347cb26f5e30729e5cb3b7157fcb91a7"
+      },
+      {
+        "path": "evaluation/release/evidence/paired-tasks-v5.json",
+        "sha256": "e56314f4516943e85bde6d0cb3fb3414375ed7ca318f78a6527b655464e31779"
+      },
+      {
+        "path": "evaluation/release/evidence/paired-tasks-v5-execution-ledger.json",
+        "sha256": "6d425ea1a0deec9b4afb9b87120a4f40e7b9a80004322ad8f0d674256a18c06e"
+      },
+      {
+        "path": "evaluation/release/evidence/macos-arm64-v5.json",
+        "sha256": "fa465bb75fb070dc3796d7f3717bfc67e2455a615b4818f798d3af4c4fd06c99"
+      },
+      {
+        "path": "evaluation/release/evidence/us018-qualification-v5.json",
+        "sha256": "a9548795655f089ecd5d2081abeb20b5f907d38b873249ba752650bb8e205d1c"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v1-protocol.json",
+        "sha256": "3f2fba1a1ae2961870b574a75f48e21a1d5b00400ae6fe528443851e6bf09bd1"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v1-ledger.json",
+        "sha256": "6abc11b799145cd58f0a3d6f8e498e2a7f6f0dbe07dcec7fa10c6ab96845f359"
+      },
+      {
+        "path": "evaluation/release/run-architecture-hardening-v1.mjs",
+        "sha256": "02de3a2b3945dd0e8c294bba4fd18ff396037dd829433851983b91f4b84c9f47"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v2-protocol.json",
+        "sha256": "86dd0bedb7ffb197c8b2b2fc56d8de62610a4bf402c78765b163ffbf11ddc978"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v2-ledger.json",
+        "sha256": "7e0ff9cd056fd0603d130cab537988a24fcd549516f946af9a695c069d23933a"
+      },
+      {
+        "path": "evaluation/release/run-architecture-hardening-v2.mjs",
+        "sha256": "89ddaf935f67709b3dcd493f066c744d93317f1c4f1a25b4c2a8400f81a16ee1"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v3-protocol.json",
+        "sha256": "c4905f13a7a1cd562182f6f064412d6d2975a2306122f511d7b2b100915993f2"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v3-ledger.json",
+        "sha256": "c60711c238c78f4905ec544af222eab4655653ab77bdae3755de25d8435f2371"
+      },
+      {
+        "path": "evaluation/release/run-architecture-hardening-v3.mjs",
+        "sha256": "23758daec8b17ab58b953d3e44f3ebb09f0ff9f76703949b667e1d0b0928b189"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v4-protocol.json",
+        "sha256": "dcdbe0034dced170f712af796e0d3cb234b5d337d6d17198f6d3899aeb983174"
+      },
+      {
+        "path": "evaluation/release/architecture-hardening-v4-ledger.json",
+        "sha256": "16377588defa4cdd0da99d711ee7e62f40b51c314751bd2eb60e3dd85081bb81"
+      },
+      {
+        "path": "evaluation/release/run-architecture-hardening-v4.mjs",
+        "sha256": "babc8e6e7882a4330fb572517e48e7137b2937d9965a44f8781ffba135d741f5"
+      },
+      {
+        "path": "scripts/qualify-native-distribution.sh",
+        "sha256": "e36c063ca2817806e0675a0786e2b265a44b9979d858947097b051a1cddad525"
+      },
+      {
+        "path": ".github/workflows/native-macos-qualification.yml",
+        "sha256": "2a20607f9be2fa9a77c3ed1431057c6027612d98a1f3dbc11f8353ea52155dae"
+      },
+      {
+        "path": "CHANGELOG.md",
+        "sha256": "b0fe36be1a817ca465792ce8832f4acce0fa89890e96360e7f9d93037f199e6e"
+      },
+      {
+        "path": "docs/releases/RELEASE_NOTES_v0.6.0-beta.md",
+        "sha256": "6bed444c84d4409b2e0cd1b5c56df5c21c3ccd482457e47a0610f2d2621bedd2"
+      },
+      {
+        "path": "docs/releases/RELEASE_NOTES_v0.8.0.md",
+        "sha256": "63005566a9e81d680a17f49bf4dfac810a6053d0237a453751319b6fdc37e79a"
+      }
+    ]
+  },
+  "execution_policy": {
+    "repository_ledger_is_immutable": true,
+    "authorization_is_external": true,
+    "receipts_are_external": true,
+    "no_retry": true,
+    "attempts_before_authorization": 0,
+    "subscription_invocations": 0,
+    "incremental_spend_usd": 0
+  }
+}
