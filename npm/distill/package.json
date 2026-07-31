@@ -1,0 +1,36 @@
+{
+  "name": "@arthjean/distill",
+  "version": "0.1.0",
+  "description": "Bounded, recoverable context projection for coding agents.",
+  "license": "MIT",
+  "author": "Arthur Jean",
+  "homepage": "https://github.com/arthjean/distill#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arthjean/distill.git",
+    "directory": "npm/distill"
+  },
+  "bugs": {
+    "url": "https://github.com/arthjean/distill/issues"
+  },
+  "bin": {
+    "distill": "bin/distill"
+  },
+  "files": [
+    "bin",
+    "vendor",
+    "README.md",
+    "LICENSE"
+  ],
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

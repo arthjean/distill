@@ -1,11 +1,11 @@
 {
   "schema_version": "distill.native-distribution/v2",
-  "strategy": "direct-native-release-assets",
+  "strategy": "npm-package-with-embedded-native-assets",
   "source_layout": "root-cargo-crate/v1",
-  "current_source_tree": "3769cb4e0400f9edd5bd40d8ab4b7c9ffc30b7d8",
+  "current_source_tree": "61a582a3c2af991c8c88ddc5563cc6ca062b24f8",
   "current_status": "qualification-required",
   "release_performed": false,
-  "version_changed": false,
+  "version_changed": true,
   "checksum_scope": "integrity only; publication must use an authenticated release channel and a separately approved provenance or signature policy",
   "qualification": {
     "aggregate": "evaluation/release/evidence/native-distribution-v2.json",
@@ -16,10 +16,12 @@
     "status": "historical-go"
   },
   "npm_launcher": {
-    "selected": false,
-    "decision": "not selected for v1",
-    "reason": "The product boundary is one native executable using the system runtime libraries present on the supported packaging hosts. An npm launcher would add a second runtime, platform resolution, and another failure surface without a current requirement.",
-    "legacy_package": "distill-mcp@0.11.2 was retired by the separately authorized US-020 migration; no npm launcher replaces it"
+    "selected": true,
+    "decision": "single public scoped package with both qualified native executables",
+    "package": "@arthjean/distill",
+    "version": "0.1.0",
+    "reason": "A current npm installation requirement now justifies a package surface. One package keeps publication atomic, performs no installation-time download, and uses a POSIX launcher rather than a Node runtime to select the exact qualified OS and architecture pair.",
+    "legacy_package": "distill-mcp@0.11.2 was retired by the separately authorized US-020 migration; @arthjean/distill distributes only the replacement native engine"
   },
   "assets": [
     {

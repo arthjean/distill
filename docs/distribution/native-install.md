@@ -1,5 +1,19 @@
 # Distill native asset
 
+## npm
+
+The native npm package embeds both supported platform executables and performs
+no installation-time download:
+
+```bash
+npm install --global @arthjean/distill
+distill --help
+```
+
+Its launcher selects only Linux x86_64 GNU or macOS arm64 and fails explicitly
+for every other OS and architecture pair. The npm package version and embedded
+engine version are both `0.1.0`.
+
 This archive contains the `distill` local context projection binary for one
 supported packaging platform. Packaging does not itself confer release
 qualification; consult `docs/distribution/native-assets.json` in the source

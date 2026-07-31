@@ -3,10 +3,12 @@
 ## Decision summary
 
 The validated replacement is the native Rust `distill` binary. Distribution
-uses direct Linux x86_64 and macOS arm64 assets. No npm launcher is selected for
-v1. US-020 removed the approved TypeScript MCP-first package after the native
-qualification and migration gates passed. The pre-deletion commit and recovery
-ref are recorded in `legacy-deletion-plan.md`.
+uses Linux x86_64 and macOS arm64 executables embedded in the scoped
+`@arthjean/distill` package. This new package is a distribution shell around
+the native engine, not a restoration of the TypeScript MCP-first runtime.
+US-020 removed that legacy package after the native qualification and migration
+gates passed. The pre-deletion commit and recovery ref are recorded in
+`legacy-deletion-plan.md`.
 
 US-019 prepared the migration without deleting code or performing a release.
 US-020 removed the legacy runtime and disabled its npm publication workflow.
@@ -110,7 +112,7 @@ unsupported.
 
 The machine-readable contract is
 `docs/distribution/native-assets.json`. No npm launcher, registry publish,
-release tag, version bump, changelog entry, or workflow change is part of
+release tag, version bump, changelog entry, or workflow change was part of
 US-019.
 
 The v2 aggregate reuses the immutable Linux and macOS receipts and binds both
@@ -119,9 +121,11 @@ The remote attestation
 `refs/distill/qualifications/native-distribution-v2-20260725` points to the
 qualified candidate. Qualification does not publish either asset.
 
-The npm launcher decision is reversible. Reconsider it only if measured
-installation or update friction justifies Node and platform-resolution
-complexity.
+The npm launcher decision was reopened for the explicit native npm installation
+requirement. Version 0.1.0 embeds both qualified executables in one atomic
+package, performs no `postinstall` download, and uses a POSIX launcher so Node
+is not part of the runtime process boundary. Unsupported platform pairs fail
+before invoking a binary.
 
 ## Unsupported platform matrix
 

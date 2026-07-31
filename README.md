@@ -14,10 +14,11 @@ explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
 The closed native-distribution v2 evidence qualifies Linux x86_64 and macOS
-arm64 on the pre-root-layout source tree. The current root Cargo crate requires
-a new qualification before publication. Nothing has been published. The
-retired TypeScript MCP-first implementation remains recoverable through the
-recorded pre-US-020 ref, while its historical evidence stays in the repository.
+arm64 on the pre-root-layout source tree. Version 0.1.0 prepares a native npm
+package for the root Cargo crate; publication remains blocked until both
+embedded binaries pass a new same-source-tree qualification. The retired
+TypeScript MCP-first implementation remains recoverable through the recorded
+pre-US-020 ref, while its historical evidence stays in the repository.
 
 ## Product contract
 
@@ -64,6 +65,20 @@ does not publish, tag, change a version, or qualify the resulting source tree.
 The Linux archive targets GNU libc and uses the host's `libgcc_s` and
 `libsqlite3.so.0`. The macOS archive uses the macOS system runtime and SQLite.
 No static or musl compatibility is claimed.
+
+## npm package
+
+The release candidate for the native distribution is `@arthjean/distill`:
+
+```bash
+npm install --global @arthjean/distill
+distill --help
+```
+
+The package embeds both qualified native executables. It performs no
+installation-time download and its launcher fails explicitly outside Linux
+x86_64 GNU and macOS arm64. The package is not published until both embedded
+binaries are qualified from the same source tree.
 
 ## CLI
 
