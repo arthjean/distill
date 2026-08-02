@@ -1,0 +1,287 @@
+name: Publish qualified native npm package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version to qualify and publish
+        required: true
+        type: string
+
+concurrency:
+  group: distill-npm-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-linux:
+    name: Qualify Linux x86_64 GNU
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      EXPECTED_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve preregistered release
+        run: |
+          package_version="$(jq -er '.version' npm/distill/package.json)"
+          test "$package_version" = "$EXPECTED_VERSION"
+          test "$(jq -er '.release_performed' docs/distribution/native-assets.json)" = "false"
+          test "$(jq -er '.npm_launcher.status' docs/distribution/native-assets.json)" = "qualification-required"
+          protocol_file="$(jq -er '.npm_package_qualification.protocol' docs/distribution/native-assets.json)"
+          runner_file="$(jq -er '.tooling.runner.path' "$protocol_file")"
+          output_root="$(jq -er '.destinations.default_root' "$protocol_file")"
+          test "$(jq -er '.status' "$protocol_file")" = "PREREGISTERED"
+          {
+            echo "DISTILL_RELEASE_PROTOCOL=$protocol_file"
+            echo "DISTILL_RELEASE_RUNNER=$runner_file"
+            echo "DISTILL_RELEASE_OUTPUT_ROOT=$output_root"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.97.1
+          rustup toolchain install nightly-2026-07-19 --profile minimal --component llvm-tools-preview
+
+      - name: Install native quality tools
+        run: |
+          cargo install --locked cargo-llvm-cov --version 0.8.4
+          cargo install --locked cargo-fuzz --version 0.12.0
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.3.14
+
+      - name: Create exact qualification authorization
+        run: bun evaluation/release/create-architecture-authorization.mjs "$DISTILL_RELEASE_PROTOCOL" "$GITHUB_SHA"
+
+      - name: Validate preregistration
+        run: bun "$DISTILL_RELEASE_RUNNER" --validate-only
+
+      - name: Execute Linux qualification
+        run: bun "$DISTILL_RELEASE_RUNNER" --execute linux-x86_64
+
+      - name: Package Linux executable
+        env:
+          DISTILL_PACKAGE_OUTPUT: ${{ runner.temp }}/native-package
+        run: ./scripts/package-native.sh
+
+      - name: Prepare Linux evidence transfer
+        run: |
+          transfer="$RUNNER_TEMP/distill-platform"
+          mkdir -p "$transfer/package"
+          install -m 0600 "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/receipt.json" "$transfer/receipt.json"
+          install -m 0600 "$RUNNER_TEMP/native-package/distill-linux-x86_64.tar.gz" "$transfer/package/distill-linux-x86_64.tar.gz"
+          install -m 0600 "$RUNNER_TEMP/native-package/distill-linux-x86_64.tar.gz.sha256" "$transfer/package/distill-linux-x86_64.tar.gz.sha256"
+
+      - name: Upload Linux qualification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: distill-npm-linux
+          path: ${{ runner.temp }}/distill-platform
+          if-no-files-found: error
+          retention-days: 1
+
+  qualify-macos:
+    name: Qualify macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      EXPECTED_VERSION: ${{ inputs.version }}
+      TMPDIR: /private/tmp
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve preregistered release
+        run: |
+          package_version="$(jq -er '.version' npm/distill/package.json)"
+          test "$package_version" = "$EXPECTED_VERSION"
+          test "$(jq -er '.release_performed' docs/distribution/native-assets.json)" = "false"
+          test "$(jq -er '.npm_launcher.status' docs/distribution/native-assets.json)" = "qualification-required"
+          protocol_file="$(jq -er '.npm_package_qualification.protocol' docs/distribution/native-assets.json)"
+          runner_file="$(jq -er '.tooling.runner.path' "$protocol_file")"
+          output_root="$(jq -er '.destinations.default_root' "$protocol_file")"
+          test "$(jq -er '.status' "$protocol_file")" = "PREREGISTERED"
+          {
+            echo "DISTILL_RELEASE_PROTOCOL=$protocol_file"
+            echo "DISTILL_RELEASE_RUNNER=$runner_file"
+            echo "DISTILL_RELEASE_OUTPUT_ROOT=$output_root"
+          } >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt, clippy
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.3.14
+
+      - name: Create exact qualification authorization
+        run: bun evaluation/release/create-architecture-authorization.mjs "$DISTILL_RELEASE_PROTOCOL" "$GITHUB_SHA"
+
+      - name: Validate preregistration
+        run: bun "$DISTILL_RELEASE_RUNNER" --validate-only
+
+      - name: Execute macOS qualification
+        run: bun "$DISTILL_RELEASE_RUNNER" --execute macos-arm64
+
+      - name: Package macOS executable
+        env:
+          DISTILL_PACKAGE_OUTPUT: ${{ runner.temp }}/native-package
+        run: ./scripts/package-native.sh
+
+      - name: Prepare macOS evidence transfer
+        run: |
+          transfer="$RUNNER_TEMP/distill-platform"
+          mkdir -p "$transfer/package"
+          install -m 0600 "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/receipt.json" "$transfer/receipt.json"
+          install -m 0600 "$RUNNER_TEMP/native-package/distill-macos-arm64.tar.gz" "$transfer/package/distill-macos-arm64.tar.gz"
+          install -m 0600 "$RUNNER_TEMP/native-package/distill-macos-arm64.tar.gz.sha256" "$transfer/package/distill-macos-arm64.tar.gz.sha256"
+
+      - name: Upload macOS qualification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: distill-npm-macos
+          path: ${{ runner.temp }}/distill-platform
+          if-no-files-found: error
+          retention-days: 1
+
+  assemble:
+    name: Aggregate and assemble npm package
+    needs: [qualify-linux, qualify-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.3.14
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Resolve preregistered release
+        run: |
+          package_version="$(jq -er '.version' npm/distill/package.json)"
+          test "$package_version" = "$EXPECTED_VERSION"
+          test "$(jq -er '.release_performed' docs/distribution/native-assets.json)" = "false"
+          test "$(jq -er '.npm_launcher.status' docs/distribution/native-assets.json)" = "qualification-required"
+          protocol_file="$(jq -er '.npm_package_qualification.protocol' docs/distribution/native-assets.json)"
+          runner_file="$(jq -er '.tooling.runner.path' "$protocol_file")"
+          output_root="$(jq -er '.destinations.default_root' "$protocol_file")"
+          test "$(jq -er '.status' "$protocol_file")" = "PREREGISTERED"
+          {
+            echo "DISTILL_RELEASE_PROTOCOL=$protocol_file"
+            echo "DISTILL_RELEASE_RUNNER=$runner_file"
+            echo "DISTILL_RELEASE_OUTPUT_ROOT=$output_root"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: distill-npm-linux
+          path: ${{ runner.temp }}/artifacts/linux
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: distill-npm-macos
+          path: ${{ runner.temp }}/artifacts/macos
+
+      - name: Restore private qualification evidence
+        run: |
+          mkdir -m 0700 "$DISTILL_RELEASE_OUTPUT_ROOT"
+          mkdir -m 0700 \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/package" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/package"
+          install -m 0600 "$RUNNER_TEMP/artifacts/linux/receipt.json" "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/receipt.json"
+          install -m 0600 "$RUNNER_TEMP/artifacts/linux/package/distill-linux-x86_64.tar.gz" "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/package/distill-linux-x86_64.tar.gz"
+          install -m 0600 "$RUNNER_TEMP/artifacts/linux/package/distill-linux-x86_64.tar.gz.sha256" "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/package/distill-linux-x86_64.tar.gz.sha256"
+          install -m 0600 "$RUNNER_TEMP/artifacts/macos/receipt.json" "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/receipt.json"
+          install -m 0600 "$RUNNER_TEMP/artifacts/macos/package/distill-macos-arm64.tar.gz" "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/package/distill-macos-arm64.tar.gz"
+          install -m 0600 "$RUNNER_TEMP/artifacts/macos/package/distill-macos-arm64.tar.gz.sha256" "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/package/distill-macos-arm64.tar.gz.sha256"
+
+      - name: Create exact aggregate authorization
+        run: bun evaluation/release/create-architecture-authorization.mjs "$DISTILL_RELEASE_PROTOCOL" "$GITHUB_SHA"
+
+      - name: Aggregate platform receipts
+        run: bun "$DISTILL_RELEASE_RUNNER" --aggregate
+
+      - name: Assemble qualified npm tarball
+        env:
+          DISTILL_NPM_PACKAGE_OUTPUT: ${{ runner.temp }}/npm
+        run: |
+          ./scripts/package-npm.sh \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/package/distill-linux-x86_64.tar.gz" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/linux-x86_64/receipt.json" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/package/distill-macos-arm64.tar.gz" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/macos-arm64/receipt.json" \
+            "$DISTILL_RELEASE_OUTPUT_ROOT/aggregate/receipt.json"
+
+      - name: Verify publish candidate
+        run: |
+          package_name="$(jq -er '.name' npm/distill/package.json)"
+          package_basename="${package_name#@}"
+          package_basename="${package_basename//\//-}"
+          tarball="$RUNNER_TEMP/npm/$package_basename-$EXPECTED_VERSION.tgz"
+          record="$RUNNER_TEMP/npm/$package_basename-$EXPECTED_VERSION.json"
+          qualification_id="$(jq -er '.qualification_id' "$DISTILL_RELEASE_PROTOCOL")"
+          source_tree="$(jq -er '.source.source_tree' "$DISTILL_RELEASE_PROTOCOL")"
+          test "$(jq -er '.package' "$record")" = "$package_name"
+          test "$(jq -er '.version' "$record")" = "$EXPECTED_VERSION"
+          test "$(jq -er '.qualification_id' "$record")" = "$qualification_id"
+          test "$(jq -er '.source_tree' "$record")" = "$source_tree"
+          npm publish --dry-run --access public "$tarball"
+
+      - name: Upload qualified npm candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: distill-npm-candidate
+          path: ${{ runner.temp }}/npm
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish with npm OIDC
+    needs: assemble
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      EXPECTED_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: distill-npm-candidate
+          path: ${{ runner.temp }}/npm
+
+      - name: Verify qualified artifact binding
+        run: |
+          tarball="$RUNNER_TEMP/npm/arthjean-distill-$EXPECTED_VERSION.tgz"
+          record="$RUNNER_TEMP/npm/arthjean-distill-$EXPECTED_VERSION.json"
+          test "$(jq -er '.package' "$record")" = "@arthjean/distill"
+          test "$(jq -er '.version' "$record")" = "$EXPECTED_VERSION"
+          test "$(jq -er '.package_sha256' "$record")" = "$(sha256sum "$tarball" | awk '{print $1}')"
+          test -z "${NODE_AUTH_TOKEN:-}"
+          test -z "${NPM_TOKEN:-}"
+          npm publish --access public "$tarball"

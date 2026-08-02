@@ -48,6 +48,23 @@ aggregate is `GO` and `scripts/package-npm.sh` verifies both archive checksums,
 receipt bindings, and embedded binary digests. Receipts remain external; do not
 write them under `evaluation/release/evidence/`.
 
+## Future npm trusted publishing
+
+`.github/workflows/publish-npm.yml` is the token-free publication boundary for
+versions after the `0.1.0` bootstrap. A manual dispatch names the exact package
+version. Separate GitHub-hosted Linux x86_64 and macOS arm64 jobs execute the
+preregistered protocol and package their native binaries. The publish job
+receives only the qualified tarball and package record from a separate
+no-privilege assembly job. That job restores both private receipts, aggregates
+them fail-closed, runs `scripts/package-npm.sh`, and dry-runs the exact tarball.
+Only the final five-minute job can obtain an npm OIDC credential.
+
+The npm trusted publisher must match repository `arthjean/distill`, workflow
+filename `publish-npm.yml`, environment `npm`, and allowed action
+`npm publish`. The GitHub `npm` environment should require maintainer approval
+and restrict deployment to the release branch or protected release tags. No npm
+token belongs in GitHub secrets.
+
 ## Architecture-hardening preregistration
 
 `architecture-hardening-v1-20260727` terminated `NO-GO` on Linux because
