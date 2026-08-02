@@ -1,5 +1,6 @@
 use super::*;
 use std::collections::BTreeSet;
+use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 
