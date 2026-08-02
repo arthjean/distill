@@ -6,7 +6,7 @@ use distill::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     io::{Read, Write},
     panic::{AssertUnwindSafe, catch_unwind},
 };
@@ -141,16 +141,13 @@ pub(crate) fn run<R: Read, W: Write>(
         );
     }
 
-    let source = response_bytes(&event.tool_response);
+    let source = match response_bytes(&event.tool_response) {
+        Ok(source) => source,
+        Err(failure) => return write_mode_failure(output, mode, &failure),
+    };
     let engine = match Engine::new(config) {
         Ok(engine) => engine,
-        Err(failure) => {
-            return if mode == Mode::Active {
-                write_feedback(output, &failure_feedback(&failure))
-            } else {
-                write_observe_diagnostic(output, &failure)
-            };
-        }
+        Err(failure) => return write_mode_failure(output, mode, &failure),
     };
     let request = Request {
         contract_version: CONTRACT_VERSION.to_owned(),
@@ -171,13 +168,7 @@ pub(crate) fn run<R: Read, W: Write>(
     let handled = catch_unwind(AssertUnwindSafe(|| engine.handle(request)));
     let outcome = match handled {
         Ok(Ok(outcome)) => outcome,
-        Ok(Err(failure)) => {
-            return if mode == Mode::Active {
-                write_feedback(output, &failure_feedback(&failure))
-            } else {
-                write_observe_diagnostic(output, &failure)
-            };
-        }
+        Ok(Err(failure)) => return write_mode_failure(output, mode, &failure),
         Err(_) => {
             let feedback = compact_feedback(
                 FailureCode::InvariantBreach,
@@ -272,11 +263,18 @@ fn validate_event(event: &PostToolUseEvent) -> Result<(), (FailureCode, &'static
     Ok(())
 }
 
-fn response_bytes(response: &Value) -> Vec<u8> {
+fn response_bytes(response: &Value) -> Result<Vec<u8>, Failure> {
     if let Some(text) = response.as_str() {
-        return text.as_bytes().to_vec();
+        return Ok(text.as_bytes().to_vec());
     }
-    serde_json::to_vec(response).unwrap_or_else(|_| b"null".to_vec())
+    serde_json::to_vec(response).map_err(|_| Failure {
+        code: FailureCode::InvariantBreach,
+        safe_message: "Codex tool response cannot be serialized".to_owned(),
+        request_id: None,
+        details: BTreeMap::new(),
+        artifact: None,
+        acquisition: None,
+    })
 }
 
 pub(crate) fn is_unsupported_surface(tool_name: &str) -> bool {
@@ -331,6 +329,18 @@ fn failure_feedback(failure: &Failure) -> String {
         &failure.safe_message,
         failure.artifact.as_ref(),
     )
+}
+
+fn write_mode_failure<W: Write>(
+    output: &mut W,
+    mode: Mode,
+    failure: &Failure,
+) -> Result<(), SurfaceError> {
+    if mode == Mode::Active {
+        write_feedback(output, &failure_feedback(failure))
+    } else {
+        write_observe_diagnostic(output, failure)
+    }
 }
 
 fn compact_feedback(
@@ -535,8 +545,8 @@ mod tests {
             "exit_code": 9,
             "timed_out": false
         });
-        let decoded: Value =
-            serde_json::from_slice(&response_bytes(&response)).expect("complete response");
+        let bytes = response_bytes(&response).expect("serialize response");
+        let decoded: Value = serde_json::from_slice(&bytes).expect("complete response");
         assert_eq!(decoded, response);
     }
 
