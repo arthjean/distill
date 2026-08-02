@@ -168,6 +168,56 @@ fn codex_setup_is_dry_runnable_idempotent_and_exactly_reversible() {
 }
 
 #[test]
+fn codex_setup_updates_owned_binary_and_store_values() {
+    let temp = TempDir::new().expect("temp");
+    let config = temp.path().join("codex.json");
+    let original = b"{}";
+    fs::write(&config, original).expect("original");
+
+    invoke(vec![
+        "codex".to_owned(),
+        "--config".to_owned(),
+        config.display().to_string(),
+        "--command".to_owned(),
+        "/old/distill".to_owned(),
+        "--store".to_owned(),
+        "/old/store.db".to_owned(),
+        "--mode".to_owned(),
+        "active".to_owned(),
+    ])
+    .expect("initial install");
+
+    let receipt = invoke(vec![
+        "codex".to_owned(),
+        "--config".to_owned(),
+        config.display().to_string(),
+        "--command".to_owned(),
+        "/new/distill".to_owned(),
+        "--store".to_owned(),
+        "/new/store.db".to_owned(),
+        "--mode".to_owned(),
+        "observe".to_owned(),
+    ])
+    .expect("updated install");
+
+    assert_eq!(receipt["action"], "installed");
+    assert_eq!(
+        receipt["managed_entry"]["hooks"][0]["command"],
+        "'/new/distill' '--store' '/new/store.db' 'codex-hook' '--mode' 'observe'"
+    );
+    let document: Value =
+        serde_json::from_slice(&fs::read(&config).expect("config")).expect("JSON");
+    assert_eq!(
+        document["hooks"]["PostToolUse"]
+            .as_array()
+            .expect("groups")
+            .len(),
+        1
+    );
+    assert_eq!(fs::read(backup_path(&config)).expect("backup"), original);
+}
+
+#[test]
 fn claude_setup_preserves_other_servers_and_restores_absence() {
     let temp = TempDir::new().expect("temp");
     let config = temp.path().join("claude/settings.json");
@@ -442,6 +492,50 @@ fn duplicate_codex_entries_and_failed_replacements_preserve_original_bytes() {
         duplicate_bytes.as_bytes()
     );
     assert!(!backup_path(&duplicate).exists());
+
+    let collision = temp.path().join("status-collision.json");
+    let collision_bytes = format!(
+        r#"{{"hooks":{{"PostToolUse":[{{"matcher":"*","hooks":[{{"type":"command","command":"user-script","timeout":30,"statusMessage":"{}"}}]}}]}}}}"#,
+        codex::SETUP_STATUS_MESSAGE
+    );
+    fs::write(&collision, collision_bytes.as_bytes()).expect("colliding config");
+    assert!(
+        invoke(vec![
+            "codex".to_owned(),
+            "--config".to_owned(),
+            collision.display().to_string(),
+            "--command".to_owned(),
+            "distill".to_owned(),
+        ])
+        .is_err()
+    );
+    assert_eq!(
+        fs::read(&collision).expect("preserved colliding config"),
+        collision_bytes.as_bytes()
+    );
+    assert!(!backup_path(&collision).exists());
+
+    let decorated = temp.path().join("decorated-managed-hook.json");
+    let decorated_bytes = format!(
+        r#"{{"hooks":{{"PostToolUse":[{{"matcher":"*","userNote":"preserve","hooks":[{{"type":"command","command":"'distill' 'codex-hook' '--mode' 'active'","timeout":30,"statusMessage":"{}"}}]}}]}}}}"#,
+        codex::SETUP_STATUS_MESSAGE
+    );
+    fs::write(&decorated, decorated_bytes.as_bytes()).expect("decorated config");
+    assert!(
+        invoke(vec![
+            "codex".to_owned(),
+            "--config".to_owned(),
+            decorated.display().to_string(),
+            "--command".to_owned(),
+            "distill".to_owned(),
+        ])
+        .is_err()
+    );
+    assert_eq!(
+        fs::read(&decorated).expect("preserved decorated config"),
+        decorated_bytes.as_bytes()
+    );
+    assert!(!backup_path(&decorated).exists());
 
     let ambiguous = temp.path().join("ambiguous.json");
     let ambiguous_original = b"{\"preserve\":true}";

@@ -177,14 +177,7 @@ fn install(options: &Options, command: &str, dry_run: bool) -> Result<Value, Sur
         Target::Codex => document
             .pointer("/hooks/PostToolUse")
             .and_then(Value::as_array)
-            .and_then(|groups| {
-                groups.iter().find(|group| {
-                    group
-                        .pointer("/hooks/0/statusMessage")
-                        .and_then(Value::as_str)
-                        == Some(codex::SETUP_STATUS_MESSAGE)
-                })
-            })
+            .and_then(|groups| groups.iter().find(|group| is_managed_codex_group(group)))
             .cloned()
             .unwrap_or(Value::Null),
         Target::Claude => document
@@ -214,14 +207,17 @@ fn install_codex(
     let hooks = object_entry(root, "hooks")?;
     let groups = array_entry(hooks, "PostToolUse")?;
     let command = hook_command(binary, store_path.as_deref(), mode);
+    if groups
+        .iter()
+        .any(|group| has_codex_status(group) && !is_managed_codex_group(group))
+    {
+        return Err(SurfaceError::invalid(
+            "Codex configuration contains an ambiguous Distill status message",
+        ));
+    }
     let managed_count = groups
         .iter()
-        .filter(|group| {
-            group
-                .pointer("/hooks/0/statusMessage")
-                .and_then(Value::as_str)
-                == Some(codex::SETUP_STATUS_MESSAGE)
-        })
+        .filter(|group| is_managed_codex_group(group))
         .count();
     if managed_count > 1 {
         return Err(SurfaceError::invalid(
@@ -237,12 +233,10 @@ fn install_codex(
             "statusMessage": codex::SETUP_STATUS_MESSAGE,
         }]
     });
-    if let Some(existing) = groups.iter_mut().find(|group| {
-        group
-            .pointer("/hooks/0/statusMessage")
-            .and_then(Value::as_str)
-            == Some(codex::SETUP_STATUS_MESSAGE)
-    }) {
+    if let Some(existing) = groups
+        .iter_mut()
+        .find(|group| is_managed_codex_group(group))
+    {
         if *existing == desired {
             return Ok(false);
         }
@@ -251,6 +245,92 @@ fn install_codex(
     }
     groups.push(desired);
     Ok(true)
+}
+
+fn has_codex_status(group: &Value) -> bool {
+    group
+        .pointer("/hooks/0/statusMessage")
+        .and_then(Value::as_str)
+        == Some(codex::SETUP_STATUS_MESSAGE)
+}
+
+fn is_managed_codex_group(group: &Value) -> bool {
+    let Some(group) = group.as_object() else {
+        return false;
+    };
+    if group.len() != 2 {
+        return false;
+    }
+    let Some(hooks) = group.get("hooks").and_then(Value::as_array) else {
+        return false;
+    };
+    let [hook] = hooks.as_slice() else {
+        return false;
+    };
+    let Some(hook) = hook.as_object() else {
+        return false;
+    };
+    if hook.len() != 4 {
+        return false;
+    }
+    group.get("matcher").and_then(Value::as_str) == Some(codex::SETUP_MATCHER)
+        && hook.get("type").and_then(Value::as_str) == Some("command")
+        && hook.get("timeout").and_then(Value::as_u64) == Some(codex::SETUP_TIMEOUT_SECONDS)
+        && hook.get("statusMessage").and_then(Value::as_str) == Some(codex::SETUP_STATUS_MESSAGE)
+        && hook
+            .get("command")
+            .and_then(Value::as_str)
+            .and_then(parse_shell_command)
+            .is_some_and(|arguments| match arguments.as_slice() {
+                [_, hook, mode_flag, mode] => {
+                    hook == "codex-hook"
+                        && mode_flag == "--mode"
+                        && codex::Mode::parse(mode).is_some()
+                }
+                [_, store_flag, _, hook, mode_flag, mode] => {
+                    store_flag == "--store"
+                        && hook == "codex-hook"
+                        && mode_flag == "--mode"
+                        && codex::Mode::parse(mode).is_some()
+                }
+                _ => false,
+            })
+}
+
+fn parse_shell_command(command: &str) -> Option<Vec<String>> {
+    let mut remaining = command;
+    let mut arguments = Vec::new();
+    while !remaining.is_empty() {
+        remaining = remaining.strip_prefix('\'')?;
+        let mut argument = String::new();
+        loop {
+            let quote = remaining.find('\'')?;
+            argument.push_str(&remaining[..quote]);
+            remaining = &remaining[quote..];
+            if let Some(rest) = remaining.strip_prefix("'\"'\"'") {
+                argument.push('\'');
+                remaining = rest;
+                continue;
+            }
+            remaining = remaining.strip_prefix('\'')?;
+            break;
+        }
+        arguments.push(argument);
+        if remaining.is_empty() {
+            break;
+        }
+        remaining = remaining.strip_prefix(' ')?;
+        if remaining.is_empty() {
+            return None;
+        }
+    }
+    (arguments
+        .iter()
+        .map(|argument| shell_quote(argument))
+        .collect::<Vec<_>>()
+        .join(" ")
+        == command)
+        .then_some(arguments)
 }
 
 fn install_claude(
