@@ -80,7 +80,7 @@ migration.
 leaves events unchanged.
 
 Coverage is defined by
-`docs/integrations/codex-hook-conformance-v1.json`. Hosted tools and specialized
+`docs/integrations/codex-hook-conformance-v2.json`. Hosted tools and specialized
 paths that emit no supported event are blind spots. Distill cannot emit a
 warning for an event it never receives.
 

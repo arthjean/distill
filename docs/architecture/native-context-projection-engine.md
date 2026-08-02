@@ -44,7 +44,9 @@ selection in [ADR-002](ADR-002-language-and-persistence.md).
 
 `src/types.rs` defines the versioned request, outcome,
 artifact, receipt, and failure shapes. No host-specific type crosses this
-boundary.
+boundary. `src/types/acquisition.rs` converts that wire DTO into an exhaustive
+internal acquisition state, so runtime and persistence code cannot construct
+contradictory completion, partial, truncation, or process-terminal states.
 
 ## Persistence and recovery
 
@@ -60,7 +62,8 @@ lifecycle, migration, and permissions have separate ownership. The store:
 - validates acquisition completion, variant fields, and process event spans
   through one semantic implementation at construction, migration, recovery,
   replay, receipt insertion, and trace;
-- migrates v2 proof blobs and their digests in one explicit transaction;
+- migrates either v1 or v2 stores to v3 in one explicit transaction, including
+  creation and hashing of receipt lineage state;
 - creates or migrates the database only during engine initialization;
   steady-state operations open an existing schema v3 store and never silently
   recreate or migrate it;
@@ -90,7 +93,8 @@ source digest. Closed v1 profile identifiers and line rules are one internal
 policy table. Over-budget text is scanned once for mandatory and optional
 candidates, then planned with normalized spans and reusable byte accounting.
 Token-budget proposals still receive exact full tokenization when selection
-depends on it.
+depends on it. The planner enforces the persisted receipt span limit before it
+returns a projection, including both retained and omitted partitions.
 
 Byte budgets are exact. Token budgets accept only the versioned
 `cl100k_base@js-tiktoken-1.0.15` profile. An unknown tokenizer fails with
@@ -124,8 +128,10 @@ trace`, `status`, `gc`, `read`, and `run`.
 
 `src/codex.rs` translates supported Codex `PostToolUse`
 events. It supports off, observe, and active modes and keeps blocking feedback
-within the versioned model-visible limit. It cannot observe hosted or specialized
-tools that emit no supported event.
+within the versioned model-visible limit. Supported tool names and the `mcp__`
+family are classified positively; any received unknown surface fails closed
+with `unsupported_surface`. It cannot observe hosted or specialized tools that
+emit no supported event.
 
 `src/mcp.rs` exposes only `distill_read` and `distill_run`.
 They own acquisition and therefore can project before bytes enter Claude's
@@ -134,7 +140,10 @@ context. Native Claude `Read` and `Bash` remain outside Distill.
 `src/setup.rs` performs explicit, idempotent configuration
 installation with dry-run, byte-exact backup, and restore. Codex setup accepts
 only Codex modes and rejects roots; Claude setup accepts only unique roots and
-rejects Codex modes. Target validation completes before configuration mutation.
+rejects Codex modes. A Codex hook is owned only when its matcher, single command
+hook, timeout, status, and Distill command suffix all match; ambiguous status
+collisions fail without mutation. Target validation completes before
+configuration mutation.
 
 Adapters may translate envelopes and enforce host limits. They may not own
 projection, tokenization, persistence, or preservation policy.

@@ -1,5 +1,17 @@
 # Release qualification
 
+## Native surface contract v2
+
+`docs/integrations/cli-conformance-v2.json` and
+`docs/integrations/codex-hook-conformance-v2.json` freeze the CLI root-failure
+semantics and the positively classified Codex tool surfaces introduced by
+`distill.cli/v2` and `codex.post-tool-use/v2`. Their executable conformance
+tests run with `cargo test` and bind each fixture to the implementation.
+
+These matrices qualify the serialized surface changes only. They do not alter,
+replace, or relabel closed release receipts, and they do not establish a native
+distribution or publication `GO` verdict.
+
 ## Native npm v0.1.0
 
 `architecture-hardening-v3-20260731` terminated `NO-GO` after both platform

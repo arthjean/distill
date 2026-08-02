@@ -19,12 +19,19 @@ configuration mutation.
 Codex replacement uses documented `PostToolUse` blocking feedback because
 `updatedMCPToolOutput` is parsed but unsupported. The adapter caps feedback at
 2,250 tokens against Codex's approximate 2,500-token model-visible hook-output
-limit. The versioned matrix is
-[`codex-hook-conformance-v1.json`](codex-hook-conformance-v1.json). Hosted tools
-and specialized paths that do not emit `PostToolUse` remain blind spots and
+limit. The current versioned matrix is
+[`codex-hook-conformance-v2.json`](codex-hook-conformance-v2.json). The closed
+v1 matrix remains unchanged. Hosted tools and specialized paths that do not
+emit `PostToolUse` remain blind spots and
 cannot produce a Distill diagnostic. One executable conformance test binds the
 adapter input version, cap, supported modes, setup matcher, timeout, status
 message, and generated command arguments to that matrix.
+The hook receives `*` so unsupported events can produce a diagnostic, but the
+adapter positively accepts only the versioned supported names and `mcp__`
+family. Any other received tool name returns `unsupported_surface` without
+capturing its response. Setup identifies an existing managed entry from its
+complete hook structure, not from the display status alone, and refuses
+ambiguous status collisions without changing the configuration.
 
 Claude projection is explicit. `distill_read` and `distill_run` do not intercept
 native Claude `Read` or `Bash`. MCP stdout contains JSON-RPC only, and
@@ -36,9 +43,13 @@ executable-plus-argv, and 100-through-300,000-ms timeout limits. Its `argv`
 field is required by both the published schema and runtime decoder, including
 when the literal argument vector is empty.
 
-CLI JSON failure framing is selected only by a parsed Distill `--json` option.
+CLI JSON uses `distill.cli/v2` and is bound to
+[`cli-conformance-v2.json`](cli-conformance-v2.json). Failure framing is selected
+only by a parsed Distill `--json` option.
 Values after the `run -- EXECUTABLE` delimiter remain literal child argv and
 cannot select Distill output mode.
+Configured-root membership is validated only by `Engine::handle`, so CLI and
+MCP expose the same typed `unsafe_root` engine failure.
 
 CLI status uses `distill.status/v2` and includes `lineage_bytes` plus
 `max_lineage_bytes`. Garbage collection uses `distill.gc/v2` and separately
