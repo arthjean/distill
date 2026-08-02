@@ -318,6 +318,30 @@ fn newline_dense_input_has_bounded_reducer_work_and_receipt_spans() {
 }
 
 #[test]
+fn optional_candidates_leave_room_for_boundary_spans() {
+    let mut source = String::from("first boundary\nordinary separator\n");
+    let mut selected_bytes = "first boundary\n".len() + "last boundary\n".len();
+    for index in 0..MAX_REDUCER_SPANS {
+        let candidate = format!("warning W{index:03}\n");
+        selected_bytes += candidate.len();
+        source.push_str(&candidate);
+        source.push_str("ordinary separator\n");
+    }
+    source.push_str("last boundary\n");
+
+    let outcome = project(
+        source.as_bytes(),
+        &bytes(selected_bytes as u64),
+        "build-log/v1",
+    )
+    .expect("bounded optional projection");
+
+    assert_eq!(outcome.fidelity, Fidelity::Extractive);
+    assert!(outcome.retained_spans.len() <= MAX_RECEIPT_SPANS);
+    assert!(outcome.omitted_spans.len() <= MAX_RECEIPT_SPANS);
+}
+
+#[test]
 fn helpers_reject_invalid_spans_and_normalize_overlap() {
     let failure = render(b"abc", &[ByteSpan { start: 1, end: 9 }]).expect_err("out-of-range span");
     assert_eq!(failure.code, FailureCode::InvariantBreach);

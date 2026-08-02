@@ -1,5 +1,6 @@
 pub const MAX_IDENTIFIER_BYTES: usize = 128;
 pub const MAX_PATH_BYTES: usize = 4_096;
+pub(crate) const MAX_RECEIPT_SPANS: usize = 257;
 
 pub(crate) fn valid_correlation_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_IDENTIFIER_BYTES

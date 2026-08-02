@@ -1,4 +1,7 @@
-use crate::types::{Budget, ByteSpan, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity};
+use crate::{
+    contract::MAX_RECEIPT_SPANS,
+    types::{Budget, ByteSpan, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity},
+};
 use tiktoken_rs::cl100k_base_singleton;
 
 const MAX_REDUCER_SPANS: usize = 256;
@@ -312,7 +315,9 @@ fn project_text(
 
     for candidate in analysis.candidates {
         let proposed = retained.with_candidate(candidate);
-        if plan_fits(source, &proposed, spec, payload_limit)? {
+        if receipt_shape_fits(source.len(), &proposed.spans)
+            && plan_fits(source, &proposed, spec, payload_limit)?
+        {
             retained = proposed;
         }
     }
@@ -563,6 +568,11 @@ fn complement(source_len: usize, retained: &[ByteSpan]) -> Vec<ByteSpan> {
         });
     }
     omitted
+}
+
+fn receipt_shape_fits(source_len: usize, retained: &[ByteSpan]) -> bool {
+    retained.len() <= MAX_RECEIPT_SPANS
+        && complement(source_len, retained).len() <= MAX_RECEIPT_SPANS
 }
 
 fn fitting_prefix_validated(text: &str, spec: ProjectionSpec, limit: u64) -> usize {

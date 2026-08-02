@@ -1,3 +1,4 @@
+use crate::contract::MAX_RECEIPT_SPANS;
 #[cfg(test)]
 use crate::types::MAX_ARTIFACT_LINEAGE_BYTES;
 use crate::types::{
@@ -25,7 +26,6 @@ use sqlite_errors::{map_read_error, map_write_error};
 
 const STORE_SCHEMA_VERSION: i64 = 3;
 const TOMBSTONE_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
-const MAX_RECEIPT_SPANS: usize = 257;
 const EMPTY_LINEAGE_SHA256: &str =
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const LINEAGE_DIGEST_DOMAIN: &[u8] = b"distill.lineage/v1\0";
