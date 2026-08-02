@@ -1,4 +1,4 @@
-use crate::surface::SurfaceError;
+use crate::surface::{SurfaceError, bounded_correlation_id};
 use distill::{
     BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
     EngineConfig, Failure, FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
@@ -410,11 +410,7 @@ fn format_request_id(id: Option<&Value>) -> String {
     let suffix = id
         .map(Value::to_string)
         .unwrap_or_else(|| "notification".to_owned());
-    let mut request_id = format!("mcp:{suffix}");
-    if request_id.len() > 128 {
-        request_id.truncate(128);
-    }
-    request_id
+    bounded_correlation_id(format!("mcp:{suffix}"))
 }
 
 fn write_result<W: Write>(output: &mut W, id: Value, result: Value) -> Result<(), SurfaceError> {

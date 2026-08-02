@@ -4,6 +4,19 @@ use std::io::{self, Write};
 
 pub(crate) const BROKEN_PIPE_EXIT: i32 = 74;
 
+pub(crate) fn bounded_correlation_id(mut value: String) -> String {
+    let limit = distill::MAX_IDENTIFIER_BYTES;
+    if value.len() <= limit {
+        return value;
+    }
+    let mut boundary = limit;
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value.truncate(boundary);
+    value
+}
+
 #[derive(Debug)]
 pub(crate) struct SurfaceError {
     pub(crate) exit_code: i32,
@@ -76,4 +89,17 @@ pub(crate) fn write_json_line<W: Write>(output: &mut W, value: &Value) -> Result
     serde_json::to_writer(&mut *output, value)
         .map_err(|error| SurfaceError::output(io::Error::other(error)))?;
     output.write_all(b"\n").map_err(SurfaceError::output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn correlation_ids_are_bounded_on_utf8_boundaries() {
+        let value = format!("{}é", "a".repeat(127));
+        let bounded = bounded_correlation_id(value);
+        assert_eq!(bounded.len(), distill::MAX_IDENTIFIER_BYTES - 1);
+        assert!(bounded.is_char_boundary(bounded.len()));
+    }
 }

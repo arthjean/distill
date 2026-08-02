@@ -1,4 +1,4 @@
-use crate::surface::{SurfaceError, write_json_line};
+use crate::surface::{SurfaceError, bounded_correlation_id, write_json_line};
 use distill::{
     Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Failure,
     FailureCode, Fidelity, Outcome, Request, Retention, Source,
@@ -292,11 +292,7 @@ pub(crate) fn is_unsupported_surface(tool_name: &str) -> bool {
 }
 
 fn bounded_request_id(event: &PostToolUseEvent) -> String {
-    let mut id = format!("{}:{}", event.session_id, event.tool_use_id);
-    if id.len() > 128 {
-        id.truncate(128);
-    }
-    id
+    bounded_correlation_id(format!("{}:{}", event.session_id, event.tool_use_id))
 }
 
 fn render_projection(outcome: &Outcome) -> String {
