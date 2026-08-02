@@ -1,17 +1,25 @@
 use crate::types::{
-    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, CL100K_PROFILE, CountUnit, Failure,
-    FailureCode, Fidelity, MAX_ARTIFACT_LINEAGE_BYTES, POLICY_VERSION, PROJECTION_VERSION,
-    RECEIPT_SCHEMA_VERSION, Receipt,
+    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode,
+    MAX_ARTIFACT_LINEAGE_BYTES, Receipt, ValidatedAcquisition,
 };
-use rusqlite::{
-    Connection, ErrorCode, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
-};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-    time::Duration,
+use std::{path::PathBuf, time::Duration};
+
+mod lineage;
+mod migration;
+mod permissions;
+mod row;
+mod sqlite_errors;
+
+use lineage::*;
+use migration::migrate_v2_to_v3;
+use permissions::{enforce_store_modes, secure_store_root, validate_optional_store_file};
+use row::{
+    ArtifactReferenceRow, ArtifactRow, CommitReadbackRow, LineageClaimRow, ReceiptLineageRow,
+    ReceiptTargetRow, StatusRow,
 };
+use sqlite_errors::{map_open_error, map_read_error, map_write_error};
 
 const STORE_SCHEMA_VERSION: i64 = 3;
 const TOMBSTONE_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
@@ -31,7 +39,7 @@ pub(crate) struct ArtifactStore {
 #[derive(Clone, Debug)]
 pub(crate) struct StoredArtifact {
     pub bytes: Vec<u8>,
-    pub acquisition: AcquisitionReceipt,
+    pub acquisition: ValidatedAcquisition,
 }
 
 #[derive(Clone, Debug)]
@@ -55,8 +63,7 @@ pub(crate) struct GcReport {
     pub reclaimed_records: u64,
 }
 
-type ReceiptTarget = (String, String, i64, i64, i64, i64, i64, String);
-
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CommitFault {
     BeforeInsert,
@@ -85,8 +92,32 @@ impl ArtifactStore {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[cfg(not(test))]
     pub(crate) fn commit(
+        &self,
+        id: &str,
+        bytes: &[u8],
+        acquisition: &ValidatedAcquisition,
+        created_at: u64,
+        expires_at: u64,
+    ) -> Result<ArtifactRef, Failure> {
+        self.commit_inner(id, bytes, acquisition, created_at, expires_at)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn commit(
+        &self,
+        id: &str,
+        bytes: &[u8],
+        acquisition: &ValidatedAcquisition,
+        created_at: u64,
+        expires_at: u64,
+    ) -> Result<ArtifactRef, Failure> {
+        self.commit_inner(id, bytes, acquisition, created_at, expires_at, None)
+    }
+
+    #[cfg(test)]
+    fn commit_unvalidated(
         &self,
         id: &str,
         bytes: &[u8],
@@ -94,6 +125,20 @@ impl ArtifactStore {
         created_at: u64,
         expires_at: u64,
         fault: Option<CommitFault>,
+    ) -> Result<ArtifactRef, Failure> {
+        let acquisition = ValidatedAcquisition::new(acquisition.clone(), bytes.len() as u64)
+            .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))?;
+        self.commit_inner(id, bytes, &acquisition, created_at, expires_at, fault)
+    }
+
+    fn commit_inner(
+        &self,
+        id: &str,
+        bytes: &[u8],
+        acquisition: &ValidatedAcquisition,
+        created_at: u64,
+        expires_at: u64,
+        #[cfg(test)] fault: Option<CommitFault>,
     ) -> Result<ArtifactRef, Failure> {
         if id.len() != 32
             || !id
@@ -111,6 +156,12 @@ impl ArtifactStore {
                 "source byte length is not representable",
             )
         })?;
+        if acquisition.source_bytes() != source_bytes {
+            return Err(Failure::new(
+                FailureCode::InvariantBreach,
+                "validated acquisition does not match the source byte count",
+            ));
+        }
         let source_bytes_sql = i64::try_from(source_bytes).map_err(|_| {
             Failure::new(
                 FailureCode::ResourceExhausted,
@@ -135,11 +186,8 @@ impl ArtifactStore {
                 "artifact expiration must follow creation",
             ));
         }
-        acquisition
-            .validate(source_bytes)
-            .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))?;
         let digest = sha256_hex(bytes);
-        let acquisition_json = serde_json::to_vec(acquisition).map_err(|_| {
+        let acquisition_json = serde_json::to_vec(acquisition.as_receipt()).map_err(|_| {
             Failure::new(
                 FailureCode::InvariantBreach,
                 "acquisition metadata cannot be serialized",
@@ -158,6 +206,7 @@ impl ArtifactStore {
                 "artifact store has no capacity without evicting live data",
             ));
         }
+        #[cfg(test)]
         if fault == Some(CommitFault::BeforeInsert) {
             return Err(Failure::new(
                 FailureCode::CommitFailed,
@@ -186,6 +235,7 @@ impl ArtifactStore {
                 ],
             )
             .map_err(map_write_error)?;
+        #[cfg(test)]
         if fault == Some(CommitFault::BeforeCommit) {
             return Err(Failure::new(
                 FailureCode::CommitFailed,
@@ -193,6 +243,7 @@ impl ArtifactStore {
             ));
         }
         transaction.commit().map_err(map_write_error)?;
+        #[cfg(test)]
         if fault == Some(CommitFault::AfterCommit) {
             return Err(Failure::new(
                 FailureCode::CommitFailed,
@@ -200,41 +251,36 @@ impl ArtifactStore {
             ));
         }
         enforce_store_modes(&self.path)?;
+        #[cfg(test)]
         if fault == Some(CommitFault::BeforeReadback) {
             return Err(Failure::new(
                 FailureCode::CommitFailed,
                 "injected interruption before artifact readback",
             ));
         }
-        let (stored_digest, stored_bytes, stored_acquisition, stored_acquisition_digest, state): (
-            String,
-            Vec<u8>,
-            Vec<u8>,
-            String,
-            String,
-        ) = connection
+        let stored: CommitReadbackRow = connection
             .query_row(
                 "SELECT sha256, source, source_metadata, source_metadata_sha256, state
                  FROM artifacts WHERE id = ?1",
                 [id],
                 |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
+                    Ok(CommitReadbackRow {
+                        digest: row.get(0)?,
+                        bytes: row.get(1)?,
+                        acquisition_json: row.get(2)?,
+                        acquisition_digest: row.get(3)?,
+                        state: row.get(4)?,
+                    })
                 },
             )
             .map_err(map_read_error)?;
-        if state != "committed"
-            || stored_digest != digest
-            || stored_bytes.len() != bytes.len()
-            || sha256_hex(&stored_bytes) != digest
-            || stored_acquisition != acquisition_json
-            || stored_acquisition_digest != acquisition_digest
-            || sha256_hex(&stored_acquisition) != acquisition_digest
+        if stored.state != "committed"
+            || stored.digest != digest
+            || stored.bytes.len() != bytes.len()
+            || sha256_hex(&stored.bytes) != digest
+            || stored.acquisition_json != acquisition_json
+            || stored.acquisition_digest != acquisition_digest
+            || sha256_hex(&stored.acquisition_json) != acquisition_digest
         {
             return Err(Failure::new(
                 FailureCode::CommitFailed,
@@ -280,25 +326,24 @@ impl ArtifactStore {
             ));
         }
         let connection = self.open(false)?;
-        let record = connection
+        let record: Option<ArtifactReferenceRow> = connection
             .query_row(
                 "SELECT schema_version, sha256, source_bytes, created_at, expires_at
                  FROM artifacts WHERE id = ?1",
                 [id],
                 |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, i64>(4)?,
-                    ))
+                    Ok(ArtifactReferenceRow {
+                        schema: row.get(0)?,
+                        digest: row.get(1)?,
+                        source_bytes: row.get(2)?,
+                        created_at: row.get(3)?,
+                        expires_at: row.get(4)?,
+                    })
                 },
             )
             .optional()
             .map_err(map_read_error)?;
-        let Some((schema_version, source_sha256, source_bytes, created_at, expires_at)) = record
-        else {
+        let Some(row) = record else {
             let tombstone = connection
                 .query_row(
                     "SELECT purge_at FROM tombstones WHERE id = ?1",
@@ -315,19 +360,19 @@ impl ArtifactStore {
                 },
             );
         };
-        if schema_version != ARTIFACT_SCHEMA_VERSION {
+        if row.schema != ARTIFACT_SCHEMA_VERSION {
             return Err(Failure::new(
                 FailureCode::ArtifactSchemaUnsupported,
                 "stored artifact schema is unsupported",
             ));
         }
         let reference = ArtifactRef {
-            schema_version,
+            schema_version: row.schema,
             id: id.to_owned(),
-            source_sha256,
-            source_bytes: nonnegative_u64(source_bytes, "source byte count")?,
-            created_at: nonnegative_u64(created_at, "creation time")?,
-            expires_at: nonnegative_u64(expires_at, "expiration time")?,
+            source_sha256: row.digest,
+            source_bytes: nonnegative_u64(row.source_bytes, "source byte count")?,
+            created_at: nonnegative_u64(row.created_at, "creation time")?,
+            expires_at: nonnegative_u64(row.expires_at, "expiration time")?,
         };
         if now >= reference.expires_at {
             drop(connection);
@@ -369,49 +414,39 @@ impl ArtifactStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(map_write_error)?;
-        let target: Option<ReceiptTarget> = transaction
+        let target: Option<ReceiptTargetRow> = transaction
             .query_row(
                 "SELECT schema_version, sha256, source_bytes, created_at, expires_at,
                         lineage_count, lineage_bytes, lineage_head_sha256
                  FROM artifacts WHERE id = ?1 AND state = 'committed'",
                 [&reference.id],
                 |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                        row.get(6)?,
-                        row.get(7)?,
-                    ))
+                    Ok(ReceiptTargetRow {
+                        schema: row.get(0)?,
+                        digest: row.get(1)?,
+                        source_bytes: row.get(2)?,
+                        created_at: row.get(3)?,
+                        expires_at: row.get(4)?,
+                        lineage_count: row.get(5)?,
+                        lineage_bytes: row.get(6)?,
+                        lineage_head: row.get(7)?,
+                    })
                 },
             )
             .optional()
             .map_err(map_read_error)?;
-        let Some((
-            schema,
-            digest,
-            source_bytes,
-            created_at,
-            expires_at,
-            claimed_count,
-            claimed_bytes,
-            claimed_head,
-        )) = target
-        else {
+        let Some(target) = target else {
             return Err(Failure::new(
                 FailureCode::ArtifactCorrupt,
                 "artifact receipt target failed integrity validation",
             )
             .with_artifact(reference.clone()));
         };
-        if schema != reference.schema_version
-            || digest != reference.source_sha256
-            || nonnegative_u64(source_bytes, "source byte count")? != reference.source_bytes
-            || nonnegative_u64(created_at, "creation time")? != reference.created_at
-            || nonnegative_u64(expires_at, "expiration time")? != reference.expires_at
+        if target.schema != reference.schema_version
+            || target.digest != reference.source_sha256
+            || nonnegative_u64(target.source_bytes, "source byte count")? != reference.source_bytes
+            || nonnegative_u64(target.created_at, "creation time")? != reference.created_at
+            || nonnegative_u64(target.expires_at, "expiration time")? != reference.expires_at
         {
             return Err(Failure::new(
                 FailureCode::ArtifactCorrupt,
@@ -421,8 +456,9 @@ impl ArtifactStore {
         }
         let global_lineage = lineage_usage(&transaction)?;
         let shape = lineage_shape(&transaction, reference)?;
-        let claimed_count = nonnegative_u64(claimed_count, "claimed receipt count")?;
-        let claimed_bytes = nonnegative_u64(claimed_bytes, "claimed lineage usage")?;
+        let claimed_count = nonnegative_u64(target.lineage_count, "claimed receipt count")?;
+        let claimed_bytes = nonnegative_u64(target.lineage_bytes, "claimed lineage usage")?;
+        let claimed_head = target.lineage_head;
         if shape.count != claimed_count
             || shape.bytes != claimed_bytes
             || !valid_sha256(&claimed_head)
@@ -526,16 +562,23 @@ impl ArtifactStore {
         let mut connection = self.open(false)?;
         let transaction = connection.transaction().map_err(map_read_error)?;
         let stored = read_artifact(&transaction, reference, now)?;
-        let (claimed_count, claimed_bytes, claimed_head): (i64, i64, String) = transaction
+        let claim: LineageClaimRow = transaction
             .query_row(
                 "SELECT lineage_count, lineage_bytes, lineage_head_sha256
                  FROM artifacts WHERE id = ?1",
                 [&reference.id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| {
+                    Ok(LineageClaimRow {
+                        count: row.get(0)?,
+                        bytes: row.get(1)?,
+                        head: row.get(2)?,
+                    })
+                },
             )
             .map_err(map_read_error)?;
-        let claimed_count = nonnegative_u64(claimed_count, "claimed receipt count")?;
-        let claimed_bytes = nonnegative_u64(claimed_bytes, "claimed lineage usage")?;
+        let claimed_count = nonnegative_u64(claim.count, "claimed receipt count")?;
+        let claimed_bytes = nonnegative_u64(claim.bytes, "claimed lineage usage")?;
+        let claimed_head = claim.head;
         let shape = lineage_shape(&transaction, reference)?;
         if shape.count != claimed_count
             || shape.bytes != claimed_bytes
@@ -564,10 +607,14 @@ impl ArtifactStore {
         let mut lineage_bytes = 0_u64;
         let mut lineage_head = EMPTY_LINEAGE_SHA256.to_owned();
         while let Some(row) = rows.next().map_err(map_read_error)? {
-            let sequence = nonnegative_u64(
-                row.get::<_, i64>(0).map_err(map_read_error)?,
-                "receipt lineage sequence",
-            )?;
+            let row = ReceiptLineageRow {
+                sequence: row.get(0).map_err(map_read_error)?,
+                request_id: row.get(1).map_err(map_read_error)?,
+                receipt_json: row.get(2).map_err(map_read_error)?,
+                receipt_digest: row.get(3).map_err(map_read_error)?,
+                chain: row.get(4).map_err(map_read_error)?,
+            };
+            let sequence = nonnegative_u64(row.sequence, "receipt lineage sequence")?;
             if sequence != expected_sequence {
                 return Err(Failure::new(
                     FailureCode::ArtifactCorrupt,
@@ -576,17 +623,13 @@ impl ArtifactStore {
                 .with_artifact(reference.clone()));
             }
             expected_sequence = expected_sequence.saturating_add(1);
-            let request_id = row.get::<_, String>(1).map_err(map_read_error)?;
-            let receipt_json = row.get::<_, Vec<u8>>(2).map_err(map_read_error)?;
-            let receipt_digest = row.get::<_, String>(3).map_err(map_read_error)?;
-            let stored_chain = row.get::<_, String>(4).map_err(map_read_error)?;
             verify_exact_digest(
-                &receipt_json,
-                &receipt_digest,
+                &row.receipt_json,
+                &row.receipt_digest,
                 "artifact projection receipt integrity verification failed",
                 reference,
             )?;
-            lineage_bytes = lineage_bytes.saturating_add(receipt_json.len() as u64);
+            lineage_bytes = lineage_bytes.saturating_add(row.receipt_json.len() as u64);
             if lineage_bytes > MAX_ARTIFACT_LINEAGE_BYTES {
                 return Err(Failure::new(
                     FailureCode::ArtifactCorrupt,
@@ -594,8 +637,8 @@ impl ArtifactStore {
                 )
                 .with_artifact(reference.clone()));
             }
-            let expected_chain = lineage_chain_sha256(&lineage_head, sequence, &receipt_json);
-            if stored_chain != expected_chain {
+            let expected_chain = lineage_chain_sha256(&lineage_head, sequence, &row.receipt_json);
+            if row.chain != expected_chain {
                 return Err(Failure::new(
                     FailureCode::ArtifactCorrupt,
                     "artifact receipt lineage commitment is corrupt",
@@ -603,14 +646,14 @@ impl ArtifactStore {
                 .with_artifact(reference.clone()));
             }
             lineage_head = expected_chain;
-            let receipt: Receipt = serde_json::from_slice(&receipt_json).map_err(|_| {
+            let receipt: Receipt = serde_json::from_slice(&row.receipt_json).map_err(|_| {
                 Failure::new(
                     FailureCode::ArtifactCorrupt,
                     "artifact projection receipt is corrupt",
                 )
                 .with_artifact(reference.clone())
             })?;
-            if receipt.request_id != request_id {
+            if receipt.request_id != row.request_id {
                 return Err(Failure::new(
                     FailureCode::ArtifactCorrupt,
                     "artifact projection receipt lineage is inconsistent",
@@ -634,7 +677,7 @@ impl ArtifactStore {
         }
         transaction.commit().map_err(map_read_error)?;
         Ok(StoredTrace {
-            acquisition: stored.acquisition,
+            acquisition: stored.acquisition.into_receipt(),
             receipts,
         })
     }
@@ -647,20 +690,26 @@ impl ArtifactStore {
                 "status time exceeds SQLite limits",
             )
         })?;
-        let (records, bytes, expired): (i64, i64, i64) = connection
+        let row: StatusRow = connection
             .query_row(
                 "SELECT COUNT(*), COALESCE(SUM(source_bytes), 0),
                         COALESCE(SUM(CASE WHEN expires_at <= ?1 THEN 1 ELSE 0 END), 0)
                  FROM artifacts",
                 [now_sql],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| {
+                    Ok(StatusRow {
+                        records: row.get(0)?,
+                        bytes: row.get(1)?,
+                        expired: row.get(2)?,
+                    })
+                },
             )
             .map_err(map_read_error)?;
         Ok(StoreReport {
-            bytes: nonnegative_u64(bytes, "store usage")?,
+            bytes: nonnegative_u64(row.bytes, "store usage")?,
             lineage_bytes: lineage_usage_connection(&connection)?,
-            records: nonnegative_u64(records, "store record count")?,
-            expired_records: nonnegative_u64(expired, "expired record count")?,
+            records: nonnegative_u64(row.records, "store record count")?,
+            expired_records: nonnegative_u64(row.expired, "expired record count")?,
         })
     }
 
@@ -838,61 +887,50 @@ fn read_artifact(
             "artifact reference schema is unsupported",
         ));
     }
-    let record = connection
+    let record: Option<ArtifactRow> = connection
         .query_row(
             "SELECT schema_version, state, source, sha256, source_bytes,
                     source_metadata, source_metadata_sha256, created_at, expires_at
              FROM artifacts WHERE id = ?1",
             [&reference.id],
             |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
-                    row.get::<_, Vec<u8>>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, i64>(8)?,
-                ))
+                Ok(ArtifactRow {
+                    schema: row.get(0)?,
+                    state: row.get(1)?,
+                    bytes: row.get(2)?,
+                    digest: row.get(3)?,
+                    source_bytes: row.get(4)?,
+                    acquisition_json: row.get(5)?,
+                    acquisition_digest: row.get(6)?,
+                    created_at: row.get(7)?,
+                    expires_at: row.get(8)?,
+                })
             },
         )
         .optional()
         .map_err(map_read_error)?;
-    let Some((
-        schema,
-        state,
-        bytes,
-        digest,
-        source_bytes,
-        acquisition_json,
-        acquisition_digest,
-        created_at,
-        expires_at,
-    )) = record
-    else {
+    let Some(row) = record else {
         return ArtifactStore::missing_artifact(connection, &reference.id, now);
     };
-    if schema != ARTIFACT_SCHEMA_VERSION {
+    if row.schema != ARTIFACT_SCHEMA_VERSION {
         return Err(Failure::new(
             FailureCode::ArtifactSchemaUnsupported,
             "stored artifact schema is unsupported",
         ));
     }
-    if state != "committed" {
+    if row.state != "committed" {
         return Err(Failure::new(
             FailureCode::CommitFailed,
             "artifact transaction did not reach committed state",
         ));
     }
-    let source_bytes = nonnegative_u64(source_bytes, "source byte count")?;
-    let created_at = nonnegative_u64(created_at, "creation time")?;
-    let expires_at = nonnegative_u64(expires_at, "expiration time")?;
+    let source_bytes = nonnegative_u64(row.source_bytes, "source byte count")?;
+    let created_at = nonnegative_u64(row.created_at, "creation time")?;
+    let expires_at = nonnegative_u64(row.expires_at, "expiration time")?;
     let stored_reference = ArtifactRef {
-        schema_version: schema,
+        schema_version: row.schema,
         id: reference.id.clone(),
-        source_sha256: digest.clone(),
+        source_sha256: row.digest.clone(),
         source_bytes,
         created_at,
         expires_at,
@@ -903,12 +941,12 @@ fn read_artifact(
                 .with_artifact(stored_reference),
         );
     }
-    if reference.source_sha256 != digest
+    if reference.source_sha256 != row.digest
         || reference.source_bytes != source_bytes
         || reference.created_at != created_at
         || reference.expires_at != expires_at
-        || bytes.len() as u64 != source_bytes
-        || sha256_hex(&bytes) != digest
+        || row.bytes.len() as u64 != source_bytes
+        || sha256_hex(&row.bytes) != row.digest
     {
         return Err(Failure::new(
             FailureCode::ArtifactCorrupt,
@@ -917,619 +955,30 @@ fn read_artifact(
         .with_artifact(stored_reference));
     }
     verify_exact_digest(
-        &acquisition_json,
-        &acquisition_digest,
+        &row.acquisition_json,
+        &row.acquisition_digest,
         "artifact acquisition metadata integrity verification failed",
         &stored_reference,
     )?;
     let acquisition: AcquisitionReceipt =
-        serde_json::from_slice(&acquisition_json).map_err(|_| {
+        serde_json::from_slice(&row.acquisition_json).map_err(|_| {
             Failure::new(
                 FailureCode::ArtifactCorrupt,
                 "artifact acquisition metadata is corrupt",
             )
             .with_artifact(stored_reference.clone())
         })?;
-    acquisition.validate(source_bytes).map_err(|_| {
+    let acquisition = ValidatedAcquisition::new(acquisition, source_bytes).map_err(|_| {
         Failure::new(
             FailureCode::ArtifactCorrupt,
             "artifact acquisition metadata is semantically corrupt",
         )
         .with_artifact(stored_reference)
     })?;
-    Ok(StoredArtifact { bytes, acquisition })
-}
-
-#[derive(Debug)]
-struct LineageShape {
-    count: u64,
-    bytes: u64,
-    last_chain: Option<String>,
-}
-
-fn lineage_shape(
-    connection: &Connection,
-    reference: &ArtifactRef,
-) -> Result<LineageShape, Failure> {
-    let (count, bytes, minimum, maximum, distinct): (i64, i64, i64, i64, i64) = connection
-        .query_row(
-            "SELECT COUNT(*), COALESCE(SUM(length(receipt_metadata)), 0),
-                    COALESCE(MIN(lineage_sequence), -1),
-                    COALESCE(MAX(lineage_sequence), -1),
-                    COUNT(DISTINCT lineage_sequence)
-             FROM artifact_receipts WHERE artifact_id = ?1",
-            [&reference.id],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            },
-        )
-        .map_err(map_read_error)?;
-    let count = nonnegative_u64(count, "receipt row count")?;
-    let bytes = nonnegative_u64(bytes, "artifact lineage usage")?;
-    let distinct = nonnegative_u64(distinct, "distinct receipt sequence count")?;
-    let expected_max = i64::try_from(count)
-        .ok()
-        .and_then(|count| count.checked_sub(1))
-        .unwrap_or(i64::MAX);
-    if distinct != count
-        || (count == 0 && (minimum != -1 || maximum != -1))
-        || (count > 0 && (minimum != 0 || maximum != expected_max))
-    {
-        return Err(Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "artifact receipt lineage sequence is corrupt",
-        )
-        .with_artifact(reference.clone()));
-    }
-    let last_chain = if count == 0 {
-        None
-    } else {
-        connection
-            .query_row(
-                "SELECT lineage_chain_sha256 FROM artifact_receipts
-                 WHERE artifact_id = ?1 ORDER BY lineage_sequence DESC LIMIT 1",
-                [&reference.id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(map_read_error)?
-    };
-    if last_chain
-        .as_deref()
-        .is_some_and(|digest| !valid_sha256(digest))
-    {
-        return Err(Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "artifact receipt lineage commitment is malformed",
-        )
-        .with_artifact(reference.clone()));
-    }
-    Ok(LineageShape {
-        count,
-        bytes,
-        last_chain,
+    Ok(StoredArtifact {
+        bytes: row.bytes,
+        acquisition,
     })
-}
-
-fn validate_lineage_bounds_connection(
-    connection: &Connection,
-    max_lineage_bytes: u64,
-) -> Result<(), Failure> {
-    if lineage_usage_connection(connection)? > max_lineage_bytes {
-        return Err(Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "artifact store lineage exceeds its global logical cap",
-        ));
-    }
-    let oversized = connection
-        .query_row(
-            "SELECT artifact_id FROM artifact_receipts
-             GROUP BY artifact_id
-             HAVING SUM(length(receipt_metadata)) > ?1
-             LIMIT 1",
-            [i64::try_from(MAX_ARTIFACT_LINEAGE_BYTES).map_err(|_| {
-                Failure::new(
-                    FailureCode::InvariantBreach,
-                    "per-artifact lineage cap is not representable",
-                )
-            })?],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(map_read_error)?;
-    if oversized.is_some() {
-        return Err(Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "artifact receipt lineage exceeds its per-artifact logical cap",
-        ));
-    }
-    Ok(())
-}
-
-fn store_usage(transaction: &Transaction<'_>) -> Result<u64, Failure> {
-    let used: i64 = transaction
-        .query_row(
-            "SELECT COALESCE(SUM(source_bytes), 0) FROM artifacts",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(map_write_error)?;
-    nonnegative_u64(used, "store usage")
-}
-
-fn lineage_usage(transaction: &Transaction<'_>) -> Result<u64, Failure> {
-    let used: i64 = transaction
-        .query_row(
-            "SELECT COALESCE(SUM(length(receipt_metadata)), 0)
-             FROM artifact_receipts",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(map_write_error)?;
-    nonnegative_u64(used, "lineage usage")
-}
-
-fn lineage_usage_connection(connection: &Connection) -> Result<u64, Failure> {
-    let used: i64 = connection
-        .query_row(
-            "SELECT COALESCE(SUM(length(receipt_metadata)), 0)
-             FROM artifact_receipts",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(map_read_error)?;
-    nonnegative_u64(used, "lineage usage")
-}
-
-fn collect_in_transaction(transaction: &Transaction<'_>, now: u64) -> Result<GcReport, Failure> {
-    let now_sql = i64::try_from(now).map_err(|_| {
-        Failure::new(
-            FailureCode::InvalidRequest,
-            "garbage collection time exceeds SQLite limits",
-        )
-    })?;
-    let (records, bytes): (i64, i64) = transaction
-        .query_row(
-            "SELECT COUNT(*), COALESCE(SUM(source_bytes), 0)
-             FROM artifacts WHERE expires_at <= ?1",
-            [now_sql],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(map_write_error)?;
-    let lineage_bytes: i64 = transaction
-        .query_row(
-            "SELECT COALESCE(SUM(length(receipt_metadata)), 0)
-             FROM artifact_receipts
-             WHERE artifact_id IN (
-                 SELECT id FROM artifacts WHERE expires_at <= ?1
-             )",
-            [now_sql],
-            |row| row.get(0),
-        )
-        .map_err(map_write_error)?;
-    let purge_at = now.saturating_add(TOMBSTONE_TTL_SECONDS);
-    let purge_at_sql = i64::try_from(purge_at).map_err(|_| {
-        Failure::new(
-            FailureCode::InvalidRequest,
-            "tombstone expiration exceeds SQLite limits",
-        )
-    })?;
-    transaction
-        .execute(
-            "INSERT INTO tombstones
-                (id, schema_version, expired_at, purge_at, failure_code)
-             SELECT id, 'distill.tombstone/v1', expires_at, ?2, 'artifact_expired'
-             FROM artifacts WHERE expires_at <= ?1
-             ON CONFLICT(id) DO UPDATE SET
-                schema_version = excluded.schema_version,
-                expired_at = excluded.expired_at,
-                purge_at = excluded.purge_at,
-                failure_code = excluded.failure_code",
-            params![now_sql, purge_at_sql],
-        )
-        .map_err(map_write_error)?;
-    transaction
-        .execute("DELETE FROM artifacts WHERE expires_at <= ?1", [now_sql])
-        .map_err(map_write_error)?;
-    transaction
-        .execute("DELETE FROM tombstones WHERE purge_at <= ?1", [now_sql])
-        .map_err(map_write_error)?;
-    Ok(GcReport {
-        reclaimed_bytes: nonnegative_u64(bytes, "garbage collection bytes")?,
-        reclaimed_lineage_bytes: nonnegative_u64(
-            lineage_bytes,
-            "garbage collection lineage bytes",
-        )?,
-        reclaimed_records: nonnegative_u64(records, "garbage collection records")?,
-    })
-}
-
-fn verify_exact_digest(
-    bytes: &[u8],
-    digest: &str,
-    message: &'static str,
-    reference: &ArtifactRef,
-) -> Result<(), Failure> {
-    if !valid_sha256(digest) || sha256_hex(bytes) != digest {
-        return Err(
-            Failure::new(FailureCode::ArtifactCorrupt, message).with_artifact(reference.clone())
-        );
-    }
-    Ok(())
-}
-
-fn valid_sha256(digest: &str) -> bool {
-    digest.len() == 64
-        && digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn lineage_chain_sha256(previous: &str, sequence: u64, receipt_json: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(LINEAGE_DIGEST_DOMAIN);
-    digest.update(previous.as_bytes());
-    digest.update(sequence.to_be_bytes());
-    digest.update(receipt_json);
-    format!("{:x}", digest.finalize())
-}
-
-fn validate_receipt(
-    receipt: &Receipt,
-    reference: &ArtifactRef,
-    code: FailureCode,
-) -> Result<(), Failure> {
-    if receipt.schema_version != RECEIPT_SCHEMA_VERSION
-        || receipt.artifact != *reference
-        || receipt.source_sha256 != reference.source_sha256
-        || receipt.projection_version != PROJECTION_VERSION
-        || receipt.policy_version != POLICY_VERSION
-        || receipt.request_id.is_empty()
-        || receipt.request_id.len() > crate::request_policy::MAX_IDENTIFIER_BYTES
-        || receipt.preservation.profile.is_empty()
-        || receipt.preservation.profile.len() > crate::request_policy::MAX_IDENTIFIER_BYTES
-        || receipt.preservation.mandatory_fact_ids.len() > 256
-        || receipt
-            .preservation
-            .mandatory_fact_ids
-            .iter()
-            .any(|id| id.is_empty() || id.len() > crate::request_policy::MAX_IDENTIFIER_BYTES)
-        || receipt.retained_spans.len() > MAX_RECEIPT_SPANS
-        || receipt.omitted_spans.len() > MAX_RECEIPT_SPANS
-        || matches!(receipt.count_unit, CountUnit::Bytes) && receipt.token_profile.is_some()
-        || matches!(receipt.count_unit, CountUnit::Tokens)
-            && receipt.token_profile.as_deref() != Some(CL100K_PROFILE)
-        || !receipt_spans_are_consistent(receipt, reference.source_bytes)
-    {
-        return Err(
-            Failure::new(code, "artifact projection receipt lineage is inconsistent")
-                .with_artifact(reference.clone()),
-        );
-    }
-    receipt
-        .acquisition
-        .validate(reference.source_bytes)
-        .map_err(|_| {
-            Failure::new(
-                code,
-                "artifact projection receipt acquisition is contradictory",
-            )
-            .with_artifact(reference.clone())
-        })
-}
-
-fn receipt_spans_are_consistent(receipt: &Receipt, source_bytes: u64) -> bool {
-    let sorted = |spans: &[crate::types::ByteSpan]| {
-        let mut previous_end = 0_u64;
-        for span in spans {
-            if span.start < previous_end
-                || span.end < span.start
-                || span.end > source_bytes
-                || (span.start == span.end && source_bytes != 0)
-            {
-                return false;
-            }
-            previous_end = span.end;
-        }
-        true
-    };
-    if !sorted(&receipt.retained_spans) || !sorted(&receipt.omitted_spans) {
-        return false;
-    }
-    let mut partition = receipt
-        .retained_spans
-        .iter()
-        .chain(&receipt.omitted_spans)
-        .copied()
-        .collect::<Vec<_>>();
-    partition.sort_by_key(|span| (span.start, span.end));
-    let mut cursor = 0_u64;
-    for span in partition {
-        if span.start != cursor {
-            return false;
-        }
-        cursor = span.end;
-    }
-    let covers_source = cursor == source_bytes;
-    match receipt.fidelity {
-        Fidelity::Exact => receipt.omitted_spans.is_empty() && covers_source,
-        Fidelity::Extractive => covers_source,
-        Fidelity::Encoded | Fidelity::MetadataOnly => {
-            receipt.retained_spans.is_empty() && covers_source
-        }
-    }
-}
-
-#[derive(Debug)]
-struct MigratedLineage {
-    count: u64,
-    bytes: u64,
-    head: String,
-}
-
-fn migrate_v2_to_v3(connection: &mut Connection, max_lineage_bytes: u64) -> Result<(), Failure> {
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(map_write_error)?;
-    transaction
-        .execute_batch(
-            "ALTER TABLE artifacts ADD COLUMN source_metadata_sha256 TEXT;
-             ALTER TABLE artifacts ADD COLUMN lineage_count INTEGER;
-             ALTER TABLE artifacts ADD COLUMN lineage_bytes INTEGER;
-             ALTER TABLE artifacts ADD COLUMN lineage_head_sha256 TEXT;
-             ALTER TABLE artifact_receipts ADD COLUMN lineage_sequence INTEGER;
-             ALTER TABLE artifact_receipts ADD COLUMN receipt_metadata_sha256 TEXT;
-             ALTER TABLE artifact_receipts ADD COLUMN lineage_chain_sha256 TEXT;",
-        )
-        .map_err(map_write_error)?;
-    let migrated_lineage = lineage_usage(&transaction)?;
-    if migrated_lineage > max_lineage_bytes {
-        return Err(Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "v2 receipt lineage exceeds the configured global cap",
-        ));
-    }
-    let oversized_artifact = transaction
-        .query_row(
-            "SELECT artifact_id FROM artifact_receipts
-             GROUP BY artifact_id
-             HAVING SUM(length(receipt_metadata)) > ?1
-             LIMIT 1",
-            [i64::try_from(MAX_ARTIFACT_LINEAGE_BYTES).map_err(|_| {
-                Failure::new(
-                    FailureCode::InvariantBreach,
-                    "per-artifact lineage cap is not representable",
-                )
-            })?],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(map_read_error)?;
-    if oversized_artifact.is_some() {
-        return Err(Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "v2 receipt lineage exceeds the per-artifact cap",
-        ));
-    }
-
-    let artifacts = {
-        let mut statement = transaction
-            .prepare(
-                "SELECT id, schema_version, state, source, sha256, source_bytes,
-                        source_metadata, created_at, expires_at
-                 FROM artifacts",
-            )
-            .map_err(map_read_error)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, Vec<u8>>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
-                    row.get::<_, Vec<u8>>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, i64>(8)?,
-                ))
-            })
-            .map_err(map_read_error)?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(map_read_error)?
-    };
-    let mut references = std::collections::BTreeMap::new();
-    for (
-        id,
-        schema,
-        state,
-        source,
-        source_digest,
-        source_bytes,
-        acquisition_json,
-        created_at,
-        expires_at,
-    ) in artifacts
-    {
-        let source_bytes = nonnegative_u64(source_bytes, "source byte count")?;
-        let created_at = nonnegative_u64(created_at, "creation time")?;
-        let expires_at = nonnegative_u64(expires_at, "expiration time")?;
-        let reference = ArtifactRef {
-            schema_version: schema,
-            id: id.clone(),
-            source_sha256: source_digest.clone(),
-            source_bytes,
-            created_at,
-            expires_at,
-        };
-        if reference.schema_version != ARTIFACT_SCHEMA_VERSION
-            || state != "committed"
-            || source.len() as u64 != source_bytes
-            || sha256_hex(&source) != source_digest
-        {
-            return Err(
-                Failure::new(FailureCode::ArtifactCorrupt, "v2 artifact state is corrupt")
-                    .with_artifact(reference),
-            );
-        }
-        let acquisition: AcquisitionReceipt =
-            serde_json::from_slice(&acquisition_json).map_err(|_| {
-                Failure::new(
-                    FailureCode::ArtifactCorrupt,
-                    "v2 acquisition metadata is corrupt",
-                )
-                .with_artifact(reference.clone())
-            })?;
-        acquisition.validate(source_bytes).map_err(|_| {
-            Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 acquisition metadata is semantically corrupt",
-            )
-            .with_artifact(reference.clone())
-        })?;
-        transaction
-            .execute(
-                "UPDATE artifacts SET source_metadata_sha256 = ?1 WHERE id = ?2",
-                params![sha256_hex(&acquisition_json), id],
-            )
-            .map_err(map_write_error)?;
-        references.insert(id, reference);
-    }
-
-    let receipt_rows = {
-        let mut statement = transaction
-            .prepare(
-                "SELECT sequence, artifact_id, request_id, receipt_metadata
-                 FROM artifact_receipts ORDER BY artifact_id, sequence",
-            )
-            .map_err(map_read_error)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, Vec<u8>>(3)?,
-                ))
-            })
-            .map_err(map_read_error)?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(map_read_error)?
-    };
-    let mut lineage = references
-        .keys()
-        .map(|id| {
-            (
-                id.clone(),
-                MigratedLineage {
-                    count: 0,
-                    bytes: 0,
-                    head: EMPTY_LINEAGE_SHA256.to_owned(),
-                },
-            )
-        })
-        .collect::<std::collections::BTreeMap<_, _>>();
-    for (row_sequence, artifact_id, request_id, receipt_json) in receipt_rows {
-        let reference = references.get(&artifact_id).ok_or_else(|| {
-            Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 receipt names a missing artifact",
-            )
-        })?;
-        let receipt: Receipt = serde_json::from_slice(&receipt_json).map_err(|_| {
-            Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 projection receipt is corrupt",
-            )
-            .with_artifact(reference.clone())
-        })?;
-        if receipt.request_id != request_id {
-            return Err(Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 receipt request binding is corrupt",
-            )
-            .with_artifact(reference.clone()));
-        }
-        validate_receipt(&receipt, reference, FailureCode::ArtifactCorrupt)?;
-        let lineage = lineage.get_mut(&artifact_id).ok_or_else(|| {
-            Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 receipt names a missing artifact",
-            )
-        })?;
-        let sequence_sql = i64::try_from(lineage.count).map_err(|_| {
-            Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 receipt sequence is not representable",
-            )
-        })?;
-        let chain = lineage_chain_sha256(&lineage.head, lineage.count, &receipt_json);
-        transaction
-            .execute(
-                "UPDATE artifact_receipts
-                 SET lineage_sequence = ?1, receipt_metadata_sha256 = ?2,
-                     lineage_chain_sha256 = ?3
-                 WHERE sequence = ?4",
-                params![sequence_sql, sha256_hex(&receipt_json), chain, row_sequence],
-            )
-            .map_err(map_write_error)?;
-        lineage.count = lineage.count.checked_add(1).ok_or_else(|| {
-            Failure::new(
-                FailureCode::ArtifactCorrupt,
-                "v2 receipt sequence is exhausted",
-            )
-        })?;
-        lineage.bytes = lineage
-            .bytes
-            .checked_add(receipt_json.len() as u64)
-            .ok_or_else(|| {
-                Failure::new(
-                    FailureCode::ArtifactCorrupt,
-                    "v2 receipt lineage size is not representable",
-                )
-            })?;
-        lineage.head = chain;
-    }
-    for (artifact_id, lineage) in lineage {
-        transaction
-            .execute(
-                "UPDATE artifacts
-                 SET lineage_count = ?1, lineage_bytes = ?2, lineage_head_sha256 = ?3
-                 WHERE id = ?4",
-                params![
-                    i64::try_from(lineage.count).map_err(|_| {
-                        Failure::new(
-                            FailureCode::ArtifactCorrupt,
-                            "v2 receipt sequence is not representable",
-                        )
-                    })?,
-                    i64::try_from(lineage.bytes).map_err(|_| {
-                        Failure::new(
-                            FailureCode::ArtifactCorrupt,
-                            "v2 receipt lineage size is not representable",
-                        )
-                    })?,
-                    lineage.head,
-                    artifact_id,
-                ],
-            )
-            .map_err(map_write_error)?;
-    }
-    transaction
-        .execute_batch(
-            "CREATE UNIQUE INDEX artifact_receipts_artifact_sequence
-                 ON artifact_receipts(artifact_id, lineage_sequence);
-             PRAGMA user_version = 3;",
-        )
-        .map_err(map_write_error)?;
-    transaction.commit().map_err(map_write_error)?;
-    Ok(())
 }
 
 fn nonnegative_u64(value: i64, label: &str) -> Result<u64, Failure> {
@@ -1545,254 +994,15 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn secure_store_root(path: &Path) -> Result<(), Failure> {
-    let existed = path.exists();
-    fs::create_dir_all(path).map_err(|_| {
-        Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store root cannot be created",
-        )
-    })?;
-    let metadata = fs::symlink_metadata(path).map_err(|_| {
-        Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store root cannot be inspected",
-        )
-    })?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(Failure::new(
-            FailureCode::UnsafeRoot,
-            "artifact store root must be a real directory",
-        ));
-    }
-    validate_store_owner(&metadata, "artifact store root")?;
-    verify_no_store_symlinks(path)?;
-    if existed {
-        let mode = store_mode(&metadata);
-        if mode != 0o700 {
-            return Err(Failure::new(
-                FailureCode::PermissionDenied,
-                "existing artifact store root is not mode 0700",
-            ));
-        }
-        Ok(())
-    } else {
-        set_mode(path, 0o700)
-    }
-}
-
-#[cfg(unix)]
-fn validate_store_owner(metadata: &fs::Metadata, label: &str) -> Result<(), Failure> {
-    use std::os::unix::fs::MetadataExt;
-    // SAFETY: geteuid has no preconditions and does not dereference memory.
-    if metadata.uid() != unsafe { libc::geteuid() } {
-        return Err(Failure::new(
-            FailureCode::PermissionDenied,
-            format!("{label} is not owned by the current user"),
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn validate_store_owner(_metadata: &fs::Metadata, _label: &str) -> Result<(), Failure> {
-    Err(Failure::new(
-        FailureCode::PermissionDenied,
-        "POSIX ownership enforcement is unavailable",
-    ))
-}
-
-fn verify_no_store_symlinks(path: &Path) -> Result<(), Failure> {
-    let mut current = PathBuf::from("/");
-    for component in path.components() {
-        match component {
-            std::path::Component::RootDir => continue,
-            std::path::Component::Normal(value) => current.push(value),
-            _ => {
-                return Err(Failure::new(
-                    FailureCode::UnsafeRoot,
-                    "artifact store root contains an unsafe component",
-                ));
-            }
-        }
-        if fs::symlink_metadata(&current)
-            .map(|metadata| metadata.file_type().is_symlink())
-            .unwrap_or(false)
-        {
-            return Err(Failure::new(
-                FailureCode::UnsafeRoot,
-                "artifact store root traverses a symlink",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_store_file(path: &Path) -> Result<(), Failure> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| {
-        Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store file cannot be inspected",
-        )
-    })?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(Failure::new(
-            FailureCode::UnsafeRoot,
-            "artifact store file must be a regular file",
-        ));
-    }
-    validate_store_owner(&metadata, "artifact store file")?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if metadata.nlink() != 1 {
-            return Err(Failure::new(
-                FailureCode::UnsafeRoot,
-                "artifact store file must not be hard-linked",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_optional_store_file(path: &Path) -> Result<(), Failure> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => validate_store_file(path),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store file cannot be inspected",
-        )),
-    }
-}
-
-#[cfg(unix)]
-fn store_mode(metadata: &fs::Metadata) -> u32 {
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o777
-}
-
-#[cfg(not(unix))]
-fn store_mode(_metadata: &fs::Metadata) -> u32 {
-    0
-}
-
-#[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) -> Result<(), Failure> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|_| {
-        Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store permissions cannot be enforced",
-        )
-    })?;
-    let actual = fs::metadata(path)
-        .map_err(|_| {
-            Failure::new(
-                FailureCode::PermissionDenied,
-                "artifact store permissions cannot be verified",
-            )
-        })?
-        .permissions()
-        .mode()
-        & 0o777;
-    if actual != mode {
-        return Err(Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store permissions are not private",
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn set_mode(_path: &Path, _mode: u32) -> Result<(), Failure> {
-    Err(Failure::new(
-        FailureCode::PermissionDenied,
-        "POSIX permission enforcement is unavailable",
-    ))
-}
-
-fn enforce_store_modes(path: &Path) -> Result<(), Failure> {
-    validate_store_file(path)?;
-    set_mode(path, 0o600)?;
-    for suffix in ["-wal", "-shm"] {
-        let sidecar = PathBuf::from(format!("{}{suffix}", path.display()));
-        if fs::symlink_metadata(&sidecar).is_ok() {
-            validate_store_file(&sidecar)?;
-            set_mode(&sidecar, 0o600)?;
-        }
-    }
-    Ok(())
-}
-
-fn map_open_error(error: rusqlite::Error) -> Failure {
-    match sqlite_code(&error) {
-        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => {
-            Failure::new(FailureCode::StoreBusy, "artifact store is busy")
-        }
-        Some(ErrorCode::PermissionDenied | ErrorCode::ReadOnly) => Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact store is not writable",
-        ),
-        Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => {
-            Failure::new(FailureCode::ArtifactCorrupt, "artifact database is corrupt")
-        }
-        Some(ErrorCode::DiskFull) => Failure::new(FailureCode::StoreFull, "artifact store is full"),
-        _ => Failure::new(
-            FailureCode::CommitFailed,
-            "artifact store initialization failed",
-        ),
-    }
-}
-
-fn map_write_error(error: rusqlite::Error) -> Failure {
-    match sqlite_code(&error) {
-        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => {
-            Failure::new(FailureCode::StoreBusy, "artifact transaction timed out")
-        }
-        Some(ErrorCode::PermissionDenied | ErrorCode::ReadOnly) => Failure::new(
-            FailureCode::PermissionDenied,
-            "artifact transaction is not writable",
-        ),
-        Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => {
-            Failure::new(FailureCode::ArtifactCorrupt, "artifact database is corrupt")
-        }
-        Some(ErrorCode::DiskFull) => Failure::new(FailureCode::StoreFull, "artifact store is full"),
-        _ => Failure::new(FailureCode::CommitFailed, "artifact transaction failed"),
-    }
-}
-
-fn map_read_error(error: rusqlite::Error) -> Failure {
-    match sqlite_code(&error) {
-        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => {
-            Failure::new(FailureCode::StoreBusy, "artifact store is busy")
-        }
-        Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => {
-            Failure::new(FailureCode::ArtifactCorrupt, "artifact database is corrupt")
-        }
-        _ => Failure::new(
-            FailureCode::ArtifactCorrupt,
-            "artifact record cannot be decoded",
-        ),
-    }
-}
-
-fn sqlite_code(error: &rusqlite::Error) -> Option<ErrorCode> {
-    match error {
-        rusqlite::Error::SqliteFailure(code, _) => Some(code.code),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{
         AcquisitionReceipt, ByteSpan, CountUnit, Fidelity, MAX_LINEAGE_BYTES, POLICY_VERSION,
-        PROJECTION_VERSION, PreservationResult, SourceVariant,
+        PROJECTION_VERSION, PreservationResult, RECEIPT_SCHEMA_VERSION, SourceVariant,
     };
     use std::{
+        fs,
         os::unix::fs::{PermissionsExt, symlink},
         sync::{Arc, Barrier},
         thread,
@@ -1825,7 +1035,7 @@ mod tests {
 
     fn commit(store: &ArtifactStore, id: u64, bytes: &[u8], now: u64) -> ArtifactRef {
         store
-            .commit(
+            .commit_unvalidated(
                 &format!("{id:032x}"),
                 bytes,
                 &receipt(),
@@ -1842,35 +1052,35 @@ mod tests {
 
         assert_eq!(
             store
-                .commit("short", b"", &receipt(), 1, 2, None)
+                .commit_unvalidated("short", b"", &receipt(), 1, 2, None)
                 .expect_err("artifact ID length")
                 .code,
             FailureCode::InvariantBreach
         );
         assert_eq!(
             store
-                .commit(&"G".repeat(32), b"", &receipt(), 1, 2, None)
+                .commit_unvalidated(&"G".repeat(32), b"", &receipt(), 1, 2, None)
                 .expect_err("artifact ID alphabet")
                 .code,
             FailureCode::InvariantBreach
         );
         assert_eq!(
             store
-                .commit(&"1".repeat(32), b"", &receipt(), u64::MAX, 2, None)
+                .commit_unvalidated(&"1".repeat(32), b"", &receipt(), u64::MAX, 2, None)
                 .expect_err("creation timestamp")
                 .code,
             FailureCode::InvalidRequest
         );
         assert_eq!(
             store
-                .commit(&"1".repeat(32), b"", &receipt(), 1, u64::MAX, None)
+                .commit_unvalidated(&"1".repeat(32), b"", &receipt(), 1, u64::MAX, None)
                 .expect_err("expiration timestamp")
                 .code,
             FailureCode::InvalidRequest
         );
         assert_eq!(
             store
-                .commit(&"1".repeat(32), b"", &receipt(), 2, 2, None)
+                .commit_unvalidated(&"1".repeat(32), b"", &receipt(), 2, 2, None)
                 .expect_err("expiration order")
                 .code,
             FailureCode::InvalidRequest
@@ -1880,14 +1090,22 @@ mod tests {
         contradictory.partial = true;
         assert_eq!(
             store
-                .commit(&"1".repeat(32), b"", &contradictory, 1, 2, None)
+                .commit_unvalidated(&"1".repeat(32), b"", &contradictory, 1, 2, None)
                 .expect_err("acquisition semantics")
+                .code,
+            FailureCode::InvariantBreach
+        );
+        let mismatched = ValidatedAcquisition::new(receipt(), 0).expect("validated receipt");
+        assert_eq!(
+            store
+                .commit(&"2".repeat(32), b"x", &mismatched, 1, 2)
+                .expect_err("validated acquisition source length")
                 .code,
             FailureCode::InvariantBreach
         );
         assert_eq!(
             store
-                .commit(&"1".repeat(32), b"x", &receipt(), 1, 2, None)
+                .commit_unvalidated(&"1".repeat(32), b"x", &receipt(), 1, 2, None)
                 .expect_err("store capacity")
                 .code,
             FailureCode::StoreFull
@@ -2024,7 +1242,7 @@ mod tests {
         );
         let recovered = restarted.retrieve(&artifact, 101).expect("recover");
         assert_eq!(recovered.bytes, b"\0source\xff");
-        assert_eq!(recovered.acquisition, receipt());
+        assert_eq!(recovered.acquisition.as_receipt(), &receipt());
 
         let directory_mode = fs::metadata(store.path.parent().expect("parent"))
             .expect("directory metadata")
@@ -2077,10 +1295,10 @@ mod tests {
     fn garbage_collection_only_removes_expired_sources_and_keeps_tombstones() {
         let (_directory, store) = fixture(1_024);
         let expired = store
-            .commit(&"1".repeat(32), b"old", &receipt(), 10, 20, None)
+            .commit_unvalidated(&"1".repeat(32), b"old", &receipt(), 10, 20, None)
             .expect("expired commit");
         let live = store
-            .commit(&"2".repeat(32), b"live", &receipt(), 10, 200, None)
+            .commit_unvalidated(&"2".repeat(32), b"live", &receipt(), 10, 200, None)
             .expect("live commit");
         let report = store.collect_garbage(20).expect("collect");
         assert_eq!(
@@ -2136,7 +1354,7 @@ mod tests {
                     barrier.wait();
                     let bytes = format!("writer-{index}");
                     store
-                        .commit(
+                        .commit_unvalidated(
                             &format!("{:032x}", index + 1),
                             bytes.as_bytes(),
                             &receipt(),
@@ -2171,7 +1389,7 @@ mod tests {
         let (_directory, store) = fixture(5);
         let first = commit(&store, 1, b"12345", 100);
         let full = store
-            .commit(&"2".repeat(32), b"x", &receipt(), 100, 200, None)
+            .commit_unvalidated(&"2".repeat(32), b"x", &receipt(), 100, 200, None)
             .expect_err("store full");
         assert_eq!(full.code, FailureCode::StoreFull);
         assert_eq!(store.retrieve(&first, 101).expect("first").bytes, b"12345");
@@ -2187,7 +1405,7 @@ mod tests {
             1,
         );
         let busy = contender
-            .commit(&"3".repeat(32), b"x", &receipt(), 100, 200, None)
+            .commit_unvalidated(&"3".repeat(32), b"x", &receipt(), 100, 200, None)
             .expect_err("busy");
         assert_eq!(busy.code, FailureCode::StoreBusy);
         locking.execute_batch("ROLLBACK").expect("release lock");
@@ -2210,7 +1428,7 @@ mod tests {
         .enumerate()
         {
             let id = format!("{:032x}", offset + 10);
-            let result = store.commit(&id, b"bytes", &receipt(), 100, 200, Some(fault));
+            let result = store.commit_unvalidated(&id, b"bytes", &receipt(), 100, 200, Some(fault));
             assert_eq!(result.expect_err("fault").code, FailureCode::CommitFailed);
             let rows: i64 = Connection::open(&store.path)
                 .expect("connection")
@@ -2605,7 +1823,7 @@ mod tests {
 
         assert_eq!(
             store
-                .commit(&"5".repeat(32), b"source", &contradiction, 100, 200, None,)
+                .commit_unvalidated(&"5".repeat(32), b"source", &contradiction, 100, 200, None,)
                 .expect_err("new contradiction")
                 .code,
             FailureCode::InvariantBreach
@@ -2771,10 +1989,10 @@ mod tests {
 
         let (_directory, store) = fixture(4_096);
         let expired = store
-            .commit(&"3".repeat(32), b"old", &receipt(), 10, 20, None)
+            .commit_unvalidated(&"3".repeat(32), b"old", &receipt(), 10, 20, None)
             .expect("expired artifact");
         let live = store
-            .commit(&"4".repeat(32), b"new", &receipt(), 10, 200, None)
+            .commit_unvalidated(&"4".repeat(32), b"new", &receipt(), 10, 200, None)
             .expect("live artifact");
         let expired_receipt = projection_receipt(&expired, "expired".to_owned());
         let live_receipt = projection_receipt(&live, "live".to_owned());

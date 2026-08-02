@@ -111,8 +111,7 @@ impl Request {
         let correlation: CorrelationProbe<'_> =
             serde_json::from_slice(line).map_err(|_| malformed())?;
         let correlated = |failure: Failure| match correlation.request_id.filter(|request_id| {
-            !request_id.is_empty()
-                && request_id.len() <= crate::request_policy::MAX_IDENTIFIER_BYTES
+            !request_id.is_empty() && request_id.len() <= crate::contract::MAX_IDENTIFIER_BYTES
         }) {
             Some(request_id) => failure.for_request(request_id),
             None => failure,
@@ -351,7 +350,7 @@ impl AcquisitionReceipt {
                 if self
                     .root_id
                     .as_deref()
-                    .is_none_or(|root| !crate::request_policy::valid_identifier(root))
+                    .is_none_or(|root| !crate::contract::valid_identifier(root))
                     || self
                         .relative_path
                         .as_deref()
@@ -366,8 +365,7 @@ impl AcquisitionReceipt {
                 let Some(root_id) = self.root_id.as_deref() else {
                     return Err("process acquisition metadata is incomplete or contradictory");
                 };
-                if !crate::request_policy::valid_identifier(root_id) || self.relative_path.is_some()
-                {
+                if !crate::contract::valid_identifier(root_id) || self.relative_path.is_some() {
                     return Err("process acquisition metadata is incomplete or contradictory");
                 }
                 let process = self
@@ -420,13 +418,56 @@ impl AcquisitionReceipt {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ValidatedAcquisition {
+    receipt: AcquisitionReceipt,
+    source_bytes: u64,
+}
+
+impl ValidatedAcquisition {
+    pub(crate) fn new(
+        receipt: AcquisitionReceipt,
+        source_bytes: u64,
+    ) -> Result<Self, &'static str> {
+        receipt.validate(source_bytes)?;
+        Ok(Self {
+            receipt,
+            source_bytes,
+        })
+    }
+
+    pub(crate) fn as_receipt(&self) -> &AcquisitionReceipt {
+        &self.receipt
+    }
+
+    pub(crate) fn into_receipt(self) -> AcquisitionReceipt {
+        self.receipt
+    }
+
+    pub(crate) fn is_complete(&self) -> bool {
+        self.receipt.complete
+    }
+
+    pub(crate) fn source_bytes(&self) -> u64 {
+        self.source_bytes
+    }
+}
+
+impl std::ops::Deref for ValidatedAcquisition {
+    type Target = AcquisitionReceipt;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_receipt()
+    }
+}
+
 fn valid_path_summary(value: &str) -> bool {
     value
         .strip_prefix('<')
         .and_then(|value| value.strip_suffix(" path bytes>"))
         .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
         .and_then(|value| value.parse::<u64>().ok())
-        .is_some_and(|length| length <= crate::request_policy::MAX_PATH_BYTES as u64)
+        .is_some_and(|length| length <= crate::contract::MAX_PATH_BYTES as u64)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -904,7 +945,7 @@ mod tests {
                 AcquisitionReceipt {
                     relative_path: Some(format!(
                         "<{} path bytes>",
-                        crate::request_policy::MAX_PATH_BYTES as u64 + 1
+                        crate::contract::MAX_PATH_BYTES as u64 + 1
                     )),
                     ..file.clone()
                 },

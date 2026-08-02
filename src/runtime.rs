@@ -1,9 +1,12 @@
+#[cfg(test)]
+use crate::request_policy;
+#[cfg(test)]
+use crate::types::Source;
 use crate::{
-    request_policy,
-    request_policy::MAX_SOURCE_BYTES,
+    request_policy::{LocalSource, MAX_SOURCE_BYTES},
     types::{
         AcquisitionReceipt, ByteSpan, ByteString, EngineConfig, Failure, FailureCode,
-        ProcessReceipt, ProcessStream, Source, SourceVariant, StreamEvent,
+        ProcessReceipt, ProcessStream, SourceVariant, StreamEvent, ValidatedAcquisition,
     },
 };
 #[cfg(test)]
@@ -34,14 +37,15 @@ const PROCESS_REAP_TOLERANCE: Duration = Duration::from_millis(250);
 #[derive(Clone, Debug)]
 pub(crate) struct Acquired {
     pub bytes: Vec<u8>,
-    pub receipt: AcquisitionReceipt,
+    pub receipt: ValidatedAcquisition,
 }
 
 impl Acquired {
     fn validated(bytes: Vec<u8>, receipt: AcquisitionReceipt) -> Result<Self, AcquisitionError> {
-        receipt.validate(bytes.len() as u64).map_err(|message| {
-            AcquisitionError::clean(Failure::new(FailureCode::InvariantBreach, message))
-        })?;
+        let receipt =
+            ValidatedAcquisition::new(receipt, bytes.len() as u64).map_err(|message| {
+                AcquisitionError::clean(Failure::new(FailureCode::InvariantBreach, message))
+            })?;
         Ok(Self { bytes, receipt })
     }
 }
@@ -62,7 +66,7 @@ impl AcquisitionError {
 }
 
 pub(crate) trait LocalRuntime: Send + Sync {
-    fn acquire(&self, source: &Source) -> Result<Acquired, AcquisitionError>;
+    fn acquire(&self, source: &LocalSource) -> Result<Acquired, AcquisitionError>;
     fn now(&self) -> Result<u64, Failure>;
     fn random_id(&self) -> Result<String, Failure>;
 }
@@ -84,7 +88,7 @@ impl ProductionRuntime {
     pub(crate) fn new(config: &EngineConfig) -> Result<Self, Failure> {
         let mut roots = BTreeMap::new();
         for (id, path) in &config.roots {
-            if !request_policy::valid_identifier(id) {
+            if !crate::contract::valid_identifier(id) {
                 return Err(Failure::new(
                     FailureCode::InvalidRequest,
                     "root ID is invalid",
@@ -94,7 +98,7 @@ impl ProductionRuntime {
             roots.insert(id.clone(), root);
         }
         for (id, profile) in &config.environment_profiles {
-            if !request_policy::valid_identifier(id) {
+            if !crate::contract::valid_identifier(id) {
                 return Err(Failure::new(
                     FailureCode::InvalidRequest,
                     "environment profile ID is invalid",
@@ -127,12 +131,6 @@ impl ProductionRuntime {
     }
 
     fn acquire_inline(bytes: &ByteString) -> Result<Acquired, AcquisitionError> {
-        if bytes.0.len() > MAX_SOURCE_BYTES {
-            return Err(AcquisitionError::clean(Failure::new(
-                FailureCode::InputTooLarge,
-                "inline source exceeds the 10 MiB limit",
-            )));
-        }
         Acquired::validated(bytes.0.clone(), simple_receipt(SourceVariant::Inline))
     }
 
@@ -144,8 +142,8 @@ impl ProductionRuntime {
     ) -> Result<Acquired, AcquisitionError> {
         let root = self.roots.get(root_id).ok_or_else(|| {
             AcquisitionError::clean(Failure::new(
-                FailureCode::UnsafeRoot,
-                "file source names an unknown configured root",
+                FailureCode::InvariantBreach,
+                "validated file root is unavailable",
             ))
         })?;
         let mut file =
@@ -228,16 +226,13 @@ impl ProductionRuntime {
         argv: &[ByteString],
         cwd_root_id: &str,
         cwd_relative_path: &ByteString,
-        timeout_ms: Option<u64>,
+        timeout_ms: u64,
         environment_profile: Option<&str>,
     ) -> Result<Acquired, AcquisitionError> {
-        request_policy::validate_process(executable, argv, timeout_ms)
-            .map_err(AcquisitionError::clean)?;
-        let timeout_ms = timeout_ms.unwrap_or(request_policy::DEFAULT_PROCESS_TIMEOUT_MS);
         let root = self.roots.get(cwd_root_id).ok_or_else(|| {
             AcquisitionError::clean(Failure::new(
-                FailureCode::UnsafeRoot,
-                "process source names an unknown configured root",
+                FailureCode::InvariantBreach,
+                "validated process root is unavailable",
             ))
         })?;
         let cwd =
@@ -253,8 +248,8 @@ impl ProductionRuntime {
         let environment = match environment_profile {
             Some(id) => self.environment_profiles.get(id).ok_or_else(|| {
                 AcquisitionError::clean(Failure::new(
-                    FailureCode::InvalidRequest,
-                    "process source names an unknown environment profile",
+                    FailureCode::InvariantBreach,
+                    "validated environment profile is unavailable",
                 ))
             })?,
             None => &empty_environment,
@@ -329,19 +324,15 @@ impl ProductionRuntime {
 }
 
 impl LocalRuntime for ProductionRuntime {
-    fn acquire(&self, source: &Source) -> Result<Acquired, AcquisitionError> {
+    fn acquire(&self, source: &LocalSource) -> Result<Acquired, AcquisitionError> {
         match source {
-            Source::Inline { bytes, .. } => Self::acquire_inline(bytes),
-            Source::File {
+            LocalSource::Inline { bytes } => Self::acquire_inline(bytes),
+            LocalSource::File {
                 root_id,
                 relative_path,
-                binary_policy,
-            } => self.acquire_file(
-                root_id,
-                relative_path,
-                *binary_policy == crate::types::BinaryPolicy::Reject,
-            ),
-            Source::Process {
+                reject_binary,
+            } => self.acquire_file(root_id, relative_path, *reject_binary),
+            LocalSource::Process {
                 executable,
                 argv,
                 cwd_root_id,
@@ -356,10 +347,6 @@ impl LocalRuntime for ProductionRuntime {
                 *timeout_ms,
                 environment_profile.as_deref(),
             ),
-            Source::Artifact { .. } => Err(AcquisitionError::clean(Failure::new(
-                FailureCode::SourceUnsupported,
-                "artifact acquisition belongs to the artifact store",
-            ))),
         }
     }
 
@@ -390,6 +377,57 @@ impl LocalRuntime for ProductionRuntime {
 }
 
 #[cfg(test)]
+impl ProductionRuntime {
+    fn acquire(&self, source: &Source) -> Result<Acquired, AcquisitionError> {
+        let local = match source {
+            Source::Inline { bytes, .. } => {
+                if bytes.0.len() > MAX_SOURCE_BYTES {
+                    return Err(AcquisitionError::clean(Failure::new(
+                        FailureCode::InputTooLarge,
+                        "inline source exceeds the 10 MiB limit",
+                    )));
+                }
+                LocalSource::Inline {
+                    bytes: bytes.clone(),
+                }
+            }
+            Source::File {
+                root_id,
+                relative_path,
+                binary_policy,
+            } => LocalSource::File {
+                root_id: root_id.clone(),
+                relative_path: relative_path.clone(),
+                reject_binary: *binary_policy == crate::types::BinaryPolicy::Reject,
+            },
+            Source::Process {
+                executable,
+                argv,
+                cwd_root_id,
+                cwd_relative_path,
+                timeout_ms,
+                environment_profile,
+            } => LocalSource::Process {
+                executable: executable.clone(),
+                argv: argv.clone(),
+                cwd_root_id: cwd_root_id.clone(),
+                cwd_relative_path: cwd_relative_path.clone(),
+                timeout_ms: request_policy::validate_process(executable, argv, *timeout_ms)
+                    .map_err(AcquisitionError::clean)?,
+                environment_profile: environment_profile.clone(),
+            },
+            Source::Artifact { .. } => {
+                return Err(AcquisitionError::clean(Failure::new(
+                    FailureCode::SourceUnsupported,
+                    "artifact acquisition belongs to the artifact store",
+                )));
+            }
+        };
+        <Self as LocalRuntime>::acquire(self, &local)
+    }
+}
+
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct FixtureRuntime {
     now: u64,
@@ -408,9 +446,9 @@ impl FixtureRuntime {
 
 #[cfg(test)]
 impl LocalRuntime for FixtureRuntime {
-    fn acquire(&self, source: &Source) -> Result<Acquired, AcquisitionError> {
+    fn acquire(&self, source: &LocalSource) -> Result<Acquired, AcquisitionError> {
         match source {
-            Source::Inline { bytes, .. } => ProductionRuntime::acquire_inline(bytes),
+            LocalSource::Inline { bytes } => ProductionRuntime::acquire_inline(bytes),
             _ => Err(AcquisitionError::clean(Failure::new(
                 FailureCode::SourceUnsupported,
                 "deterministic fixture supports inline sources only",
@@ -442,13 +480,13 @@ fn simple_receipt(variant: SourceVariant) -> AcquisitionReceipt {
     }
 }
 
-pub(crate) fn failure_receipt(source: &Source) -> Result<AcquisitionReceipt, Failure> {
+pub(crate) fn failure_receipt(source: &LocalSource) -> Result<ValidatedAcquisition, Failure> {
     let receipt = match source {
-        Source::Inline { .. } => AcquisitionReceipt {
+        LocalSource::Inline { .. } => AcquisitionReceipt {
             complete: false,
             ..simple_receipt(SourceVariant::Inline)
         },
-        Source::File {
+        LocalSource::File {
             root_id,
             relative_path,
             ..
@@ -461,7 +499,7 @@ pub(crate) fn failure_receipt(source: &Source) -> Result<AcquisitionReceipt, Fai
             relative_path: Some(format!("<{} path bytes>", relative_path.0.len())),
             process: None,
         },
-        Source::Process {
+        LocalSource::Process {
             cwd_root_id,
             cwd_relative_path,
             ..
@@ -483,15 +521,9 @@ pub(crate) fn failure_receipt(source: &Source) -> Result<AcquisitionReceipt, Fai
                 ),
             }),
         },
-        Source::Artifact { .. } => AcquisitionReceipt {
-            complete: false,
-            ..simple_receipt(SourceVariant::Artifact)
-        },
     };
-    receipt
-        .validate(0)
-        .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))?;
-    Ok(receipt)
+    ValidatedAcquisition::new(receipt, 0)
+        .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))
 }
 
 fn validate_root(path: &Path) -> Result<ConfiguredRoot, Failure> {
@@ -1075,6 +1107,7 @@ mod tests {
             !acquired
                 .receipt
                 .relative_path
+                .as_ref()
                 .expect("safe path")
                 .contains("data.bin")
         );
@@ -1104,7 +1137,7 @@ mod tests {
                 .expect_err("unknown root")
                 .failure
                 .code,
-            FailureCode::UnsafeRoot
+            FailureCode::InvariantBreach
         );
 
         fs::create_dir(directory.path().join("directory")).expect("directory");
@@ -1284,7 +1317,7 @@ mod tests {
         assert!(text.contains("value with spaces"));
         assert!(text.contains(&injection));
         assert!(!marker.exists());
-        let process = acquired.receipt.process.expect("process receipt");
+        let process = acquired.receipt.process.as_ref().expect("process receipt");
         assert_eq!(process.exit_code, Some(0));
         assert_eq!(process.signal, None);
         assert!(!process.timed_out);
@@ -1306,7 +1339,7 @@ mod tests {
         assert_eq!(timed_out.failure.code, FailureCode::AcquisitionFailed);
         let partial = timed_out.partial.expect("timeout receipt");
         assert!(partial.receipt.partial);
-        assert!(partial.receipt.process.expect("process").timed_out);
+        assert!(partial.receipt.process.as_ref().expect("process").timed_out);
 
         let closed_streams = Source::Process {
             executable: ByteString::from_utf8(command_path(&["/bin/sh", "/usr/bin/sh"])),
@@ -1328,6 +1361,7 @@ mod tests {
                 .expect("closed stream receipt")
                 .receipt
                 .process
+                .as_ref()
                 .expect("process")
                 .timed_out
         );
@@ -1351,6 +1385,7 @@ mod tests {
                 .expect("signal receipt")
                 .receipt
                 .process
+                .as_ref()
                 .expect("process")
                 .signal
                 .is_some()
@@ -1419,7 +1454,7 @@ mod tests {
                 .expect_err("environment")
                 .failure
                 .code,
-            FailureCode::InvalidRequest
+            FailureCode::InvariantBreach
         );
     }
 

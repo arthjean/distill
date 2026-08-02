@@ -1,9 +1,12 @@
-use crate::types::{
-    ByteString, CONTRACT_VERSION, EngineConfig, Failure, FailureCode, Request, Retention, Source,
+use crate::{
+    contract::{MAX_PATH_BYTES, is_lower_hex, valid_correlation_id, valid_identifier},
+    projection::ProjectionSpec,
+    types::{
+        ArtifactRef, ByteString, CONTRACT_VERSION, EngineConfig, Failure, FailureCode, Request,
+        Retention, Source,
+    },
 };
 
-pub const MAX_IDENTIFIER_BYTES: usize = 128;
-pub const MAX_PATH_BYTES: usize = 4_096;
 pub const MAX_PROCESS_ARGUMENTS: usize = 4_096;
 pub const MAX_PROCESS_ARGUMENT_BYTES: usize = 1024 * 1024;
 pub const MAX_PROCESS_EXECUTABLE_BYTES: usize = 4_096;
@@ -12,10 +15,78 @@ pub const MIN_PROCESS_TIMEOUT_MS: u64 = 100;
 pub const MAX_PROCESS_TIMEOUT_MS: u64 = 300_000;
 pub(crate) const DEFAULT_PROCESS_TIMEOUT_MS: u64 = 30_000;
 
-pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), Failure> {
+#[derive(Clone, Debug)]
+pub(crate) struct ValidatedRequest {
+    pub request_id: String,
+    pub source: ValidatedSource,
+    pub projection: ProjectionSpec,
+    pub retention: ValidatedRetention,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ValidatedSource {
+    Local(LocalSource),
+    Artifact(ArtifactRef),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum LocalSource {
+    Inline {
+        bytes: ByteString,
+    },
+    File {
+        root_id: String,
+        relative_path: ByteString,
+        reject_binary: bool,
+    },
+    Process {
+        executable: ByteString,
+        argv: Vec<ByteString>,
+        cwd_root_id: String,
+        cwd_relative_path: ByteString,
+        timeout_ms: u64,
+        environment_profile: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ValidatedRetention {
+    Absolute(u64),
+    Ttl(u64),
+    Default,
+}
+
+impl ValidatedRetention {
+    pub(crate) fn resolve(self, now: u64, default_ttl: u64) -> Result<u64, Failure> {
+        match self {
+            Self::Absolute(expires_at) if expires_at > now => Ok(expires_at),
+            Self::Absolute(_) => Err(Failure::new(
+                FailureCode::InvalidRequest,
+                "artifact expiration must be in the future",
+            )),
+            Self::Ttl(ttl) => now.checked_add(ttl).ok_or_else(|| {
+                Failure::new(
+                    FailureCode::InvalidRequest,
+                    "artifact expiration overflows the supported clock",
+                )
+            }),
+            Self::Default => now.checked_add(default_ttl).ok_or_else(|| {
+                Failure::new(
+                    FailureCode::InvalidRequest,
+                    "default artifact expiration overflows the supported clock",
+                )
+            }),
+        }
+    }
+}
+
+pub(crate) fn prepare(
+    request: Request,
+    config: &EngineConfig,
+) -> Result<ValidatedRequest, Failure> {
     if request.contract_version != CONTRACT_VERSION {
         return Err(correlate(
-            request,
+            &request,
             Failure::new(
                 FailureCode::SchemaUnsupported,
                 "request contract version is unsupported",
@@ -32,20 +103,23 @@ pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), F
     let invalid = |message| {
         Failure::new(FailureCode::InvalidRequest, message).for_request(&request.request_id)
     };
-    match &request.source {
-        Source::Inline { bytes, .. } if bytes.0.len() > MAX_SOURCE_BYTES => {
-            return Err(Failure::new(
-                FailureCode::InputTooLarge,
-                "inline source exceeds the 10 MiB limit",
-            )
-            .for_request(&request.request_id));
+    let source = match request.source {
+        Source::Inline { bytes, .. } => {
+            if bytes.0.len() > MAX_SOURCE_BYTES {
+                return Err(Failure::new(
+                    FailureCode::InputTooLarge,
+                    "inline source exceeds the 10 MiB limit",
+                )
+                .for_request(&request.request_id));
+            }
+            ValidatedSource::Local(LocalSource::Inline { bytes })
         }
         Source::File {
             root_id,
             relative_path,
-            ..
+            binary_policy,
         } => {
-            if !valid_identifier(root_id)
+            if !valid_identifier(&root_id)
                 || relative_path.0.len() > MAX_PATH_BYTES
                 || relative_path.0.contains(&0)
             {
@@ -53,13 +127,18 @@ pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), F
                     "file source metadata is missing or exceeds its bounds",
                 ));
             }
-            if !config.roots.contains_key(root_id) {
+            if !config.roots.contains_key(&root_id) {
                 return Err(Failure::new(
                     FailureCode::UnsafeRoot,
                     "file source names an unknown root",
                 )
                 .for_request(&request.request_id));
             }
+            ValidatedSource::Local(LocalSource::File {
+                root_id,
+                relative_path,
+                reject_binary: binary_policy == crate::types::BinaryPolicy::Reject,
+            })
         }
         Source::Process {
             executable,
@@ -69,9 +148,9 @@ pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), F
             timeout_ms,
             environment_profile,
         } => {
-            validate_process(executable, argv, *timeout_ms)
+            let timeout_ms = validate_process(&executable, &argv, timeout_ms)
                 .map_err(|failure| failure.for_request(&request.request_id))?;
-            if !valid_identifier(cwd_root_id)
+            if !valid_identifier(&cwd_root_id)
                 || cwd_relative_path.0.len() > MAX_PATH_BYTES
                 || cwd_relative_path.0.contains(&0)
             {
@@ -79,14 +158,14 @@ pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), F
                     "process source metadata is missing or exceeds its bounds",
                 ));
             }
-            if !config.roots.contains_key(cwd_root_id) {
+            if !config.roots.contains_key(&cwd_root_id) {
                 return Err(Failure::new(
                     FailureCode::UnsafeRoot,
                     "process source names an unknown configured root",
                 )
                 .for_request(&request.request_id));
             }
-            if let Some(environment_profile) = environment_profile
+            if let Some(environment_profile) = environment_profile.as_deref()
                 && (!valid_identifier(environment_profile)
                     || !config
                         .environment_profiles
@@ -96,26 +175,48 @@ pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), F
                     "process source names an unknown environment profile",
                 ));
             }
+            ValidatedSource::Local(LocalSource::Process {
+                executable,
+                argv,
+                cwd_root_id,
+                cwd_relative_path,
+                timeout_ms,
+                environment_profile,
+            })
         }
-        Source::Artifact { artifact }
+        Source::Artifact { artifact } => {
             if artifact.id.len() != 32
                 || !artifact.id.bytes().all(is_lower_hex)
                 || artifact.source_sha256.len() != 64
-                || !artifact.source_sha256.bytes().all(is_lower_hex) =>
-        {
-            return Err(invalid("artifact reference metadata is invalid"));
+                || !artifact.source_sha256.bytes().all(is_lower_hex)
+            {
+                return Err(invalid("artifact reference metadata is invalid"));
+            }
+            ValidatedSource::Artifact(artifact)
         }
-        _ => {}
-    }
-    validate_retention_shape(&request.retention)
-        .map_err(|failure| failure.for_request(&request.request_id))
+    };
+    let retention = validate_retention_shape(&request.retention)
+        .map_err(|failure| failure.for_request(&request.request_id))?;
+    let projection = ProjectionSpec::new(&request.preservation_profile, &request.budget)
+        .map_err(|failure| failure.for_request(&request.request_id))?;
+    Ok(ValidatedRequest {
+        request_id: request.request_id,
+        source,
+        projection,
+        retention,
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), Failure> {
+    prepare(request.clone(), config).map(|_| ())
 }
 
 pub(crate) fn validate_process(
     executable: &ByteString,
     argv: &[ByteString],
     timeout_ms: Option<u64>,
-) -> Result<(), Failure> {
+) -> Result<u64, Failure> {
     let argument_bytes = argv.iter().try_fold(executable.0.len(), |total, argument| {
         total.checked_add(argument.0.len())
     });
@@ -144,41 +245,19 @@ pub(crate) fn validate_process(
             "process timeout must be from 100 ms through 300 seconds",
         ));
     }
-    Ok(())
+    Ok(timeout_ms)
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_expiration(
     retention: &Retention,
     now: u64,
     default_ttl: u64,
 ) -> Result<u64, Failure> {
-    validate_retention_shape(retention)?;
-    match (retention.expires_at, retention.ttl_seconds) {
-        (Some(expires_at), None) if expires_at > now => Ok(expires_at),
-        (Some(_), None) => Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "artifact expiration must be in the future",
-        )),
-        (None, Some(ttl)) => now.checked_add(ttl).ok_or_else(|| {
-            Failure::new(
-                FailureCode::InvalidRequest,
-                "artifact expiration overflows the supported clock",
-            )
-        }),
-        (None, None) => now.checked_add(default_ttl).ok_or_else(|| {
-            Failure::new(
-                FailureCode::InvalidRequest,
-                "default artifact expiration overflows the supported clock",
-            )
-        }),
-        (Some(_), Some(_)) => Err(Failure::new(
-            FailureCode::InvariantBreach,
-            "validated retention shape became inconsistent",
-        )),
-    }
+    validate_retention_shape(retention)?.resolve(now, default_ttl)
 }
 
-fn validate_retention_shape(retention: &Retention) -> Result<(), Failure> {
+fn validate_retention_shape(retention: &Retention) -> Result<ValidatedRetention, Failure> {
     match (retention.expires_at, retention.ttl_seconds) {
         (Some(_), Some(_)) => Err(Failure::new(
             FailureCode::InvalidRequest,
@@ -188,7 +267,9 @@ fn validate_retention_shape(retention: &Retention) -> Result<(), Failure> {
             FailureCode::InvalidRequest,
             "artifact retention must be positive",
         )),
-        _ => Ok(()),
+        (Some(expires_at), None) => Ok(ValidatedRetention::Absolute(expires_at)),
+        (None, Some(ttl)) => Ok(ValidatedRetention::Ttl(ttl)),
+        (None, None) => Ok(ValidatedRetention::Default),
     }
 }
 
@@ -200,24 +281,10 @@ fn correlate(request: &Request, failure: Failure) -> Failure {
     }
 }
 
-fn valid_correlation_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= MAX_IDENTIFIER_BYTES
-}
-
-pub(crate) fn valid_identifier(value: &str) -> bool {
-    valid_correlation_id(value)
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-}
-
-fn is_lower_hex(byte: u8) -> bool {
-    byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::MAX_IDENTIFIER_BYTES;
     use crate::types::{ARTIFACT_SCHEMA_VERSION, ArtifactRef, BinaryPolicy, Budget, CountUnit};
     use std::path::PathBuf;
 

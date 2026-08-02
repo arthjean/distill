@@ -4,14 +4,16 @@
 #![allow(clippy::result_large_err)]
 
 mod artifact;
+mod contract;
 mod projection;
 mod request_policy;
 mod runtime;
 mod types;
 
+pub use contract::{MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES};
 pub use request_policy::{
-    MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS,
-    MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS, MAX_SOURCE_BYTES, MIN_PROCESS_TIMEOUT_MS,
+    MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES,
+    MAX_PROCESS_TIMEOUT_MS, MAX_SOURCE_BYTES, MIN_PROCESS_TIMEOUT_MS,
 };
 pub use types::{
     ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ArtifactTrace, BinaryPolicy, Budget,
@@ -24,11 +26,12 @@ pub use types::{
 };
 
 use artifact::ArtifactStore;
-use projection::Projection;
+use projection::{Projection, ProjectionSpec};
 #[cfg(test)]
 use runtime::FixtureRuntime;
 use runtime::{Acquired, LocalRuntime, ProductionRuntime, failure_receipt};
 use std::{collections::BTreeMap, path::Component, sync::Arc};
+use types::ValidatedAcquisition;
 
 pub struct Engine {
     runtime: Arc<dyn LocalRuntime>,
@@ -79,7 +82,7 @@ impl Engine {
             schema_version: RESTORE_SCHEMA_VERSION.to_owned(),
             artifact: artifact.clone(),
             bytes: stored.bytes.into(),
-            acquisition: stored.acquisition,
+            acquisition: stored.acquisition.into_receipt(),
         })
     }
 
@@ -124,27 +127,24 @@ impl Engine {
     }
 
     fn handle_inner(&self, request: Request) -> Result<Outcome, Failure> {
-        request_policy::validate(&request, &self.config)?;
-        projection::validate_contract(&request.preservation_profile, &request.budget)
-            .map_err(|failure| failure.for_request(&request.request_id))?;
+        let request = request_policy::prepare(request, &self.config)?;
+        let projection_spec = request.projection;
         let now = self
             .runtime
             .now()
             .map_err(|failure| failure.for_request(&request.request_id))?;
-        let expires_at = request_policy::resolve_expiration(
-            &request.retention,
-            now,
-            self.config.default_ttl_seconds,
-        )
-        .map_err(|failure| failure.for_request(&request.request_id))?;
+        let expires_at = request
+            .retention
+            .resolve(now, self.config.default_ttl_seconds)
+            .map_err(|failure| failure.for_request(&request.request_id))?;
 
         let (acquired, artifact) = match &request.source {
-            Source::Artifact { artifact } => {
+            request_policy::ValidatedSource::Artifact(artifact) => {
                 let stored = self
                     .store
                     .retrieve(artifact, now)
                     .map_err(|failure| failure.for_request(&request.request_id))?;
-                if !stored.acquisition.complete {
+                if !stored.acquisition.is_complete() {
                     return Err(Failure {
                         code: FailureCode::AcquisitionFailed,
                         safe_message:
@@ -153,26 +153,34 @@ impl Engine {
                         request_id: Some(request.request_id.clone()),
                         details: BTreeMap::new(),
                         artifact: Some(artifact.clone()),
-                        acquisition: Some(stored.acquisition),
+                        acquisition: Some(stored.acquisition.into_receipt()),
                     });
                 }
+                let receipt = ValidatedAcquisition::new(
+                    AcquisitionReceipt {
+                        variant: SourceVariant::Artifact,
+                        complete: true,
+                        partial: false,
+                        truncated: false,
+                        root_id: None,
+                        relative_path: None,
+                        process: None,
+                    },
+                    stored.bytes.len() as u64,
+                )
+                .map_err(|message| {
+                    Failure::new(FailureCode::InvariantBreach, message)
+                        .for_request(&request.request_id)
+                })?;
                 (
                     Acquired {
                         bytes: stored.bytes,
-                        receipt: AcquisitionReceipt {
-                            variant: SourceVariant::Artifact,
-                            complete: true,
-                            partial: false,
-                            truncated: false,
-                            root_id: None,
-                            relative_path: None,
-                            process: None,
-                        },
+                        receipt,
                     },
                     artifact.clone(),
                 )
             }
-            source => {
+            request_policy::ValidatedSource::Local(source) => {
                 let acquired = match self.runtime.acquire(source) {
                     Ok(acquired) => acquired,
                     Err(mut acquisition_error) => {
@@ -181,7 +189,7 @@ impl Engine {
                             let acquisition = failure_receipt(source)
                                 .map_err(|failure| failure.for_request(&request.request_id))?;
                             return Err(Failure {
-                                acquisition: Some(acquisition),
+                                acquisition: Some(acquisition.into_receipt()),
                                 ..failure
                             });
                         };
@@ -189,7 +197,7 @@ impl Engine {
                             self.commit_source(&partial, now, expires_at, &request.request_id)?;
                         return Err(Failure {
                             artifact: Some(artifact),
-                            acquisition: Some(partial.receipt),
+                            acquisition: Some(partial.receipt.into_receipt()),
                             ..failure
                         });
                     }
@@ -200,20 +208,16 @@ impl Engine {
             }
         };
 
-        let projection = projection::project(
-            &acquired.bytes,
-            &request.budget,
-            &request.preservation_profile,
-        )
-        .map_err(|failure| {
-            let failure = failure.for_request(&request.request_id);
-            if failure.code == FailureCode::BudgetUnsatisfiable {
-                failure.with_artifact(artifact.clone())
-            } else {
-                failure
-            }
-        })?;
-        build_outcome(request, acquired, artifact, projection)
+        let projection =
+            projection::project_validated(&acquired.bytes, projection_spec).map_err(|failure| {
+                let failure = failure.for_request(&request.request_id);
+                if failure.code == FailureCode::BudgetUnsatisfiable {
+                    failure.with_artifact(artifact.clone())
+                } else {
+                    failure
+                }
+            })?;
+        build_outcome(request, acquired, artifact, projection, projection_spec)
     }
 
     fn commit_source(
@@ -228,14 +232,7 @@ impl Engine {
             .random_id()
             .map_err(|failure| failure.for_request(request_id))?;
         self.store
-            .commit(
-                &id,
-                &acquired.bytes,
-                &acquired.receipt,
-                now,
-                expires_at,
-                None,
-            )
+            .commit(&id, &acquired.bytes, &acquired.receipt, now, expires_at)
             .map_err(|failure| failure.for_request(request_id))
     }
 
@@ -258,10 +255,11 @@ impl Engine {
 }
 
 fn build_outcome(
-    request: Request,
+    request: request_policy::ValidatedRequest,
     acquired: Acquired,
     artifact: ArtifactRef,
     projection: Projection,
+    projection_spec: ProjectionSpec,
 ) -> Result<Outcome, Failure> {
     let receipt = Receipt {
         schema_version: RECEIPT_SCHEMA_VERSION.to_owned(),
@@ -270,18 +268,18 @@ fn build_outcome(
         artifact: artifact.clone(),
         projection_version: PROJECTION_VERSION.to_owned(),
         policy_version: POLICY_VERSION.to_owned(),
-        token_profile: request.budget.token_profile,
+        token_profile: projection_spec.token_profile(),
         original_count: projection.original_count,
         visible_count: projection.visible_count,
-        count_unit: request.budget.unit,
+        count_unit: projection_spec.unit(),
         fidelity: projection.fidelity,
         retained_spans: projection.retained_spans,
         omitted_spans: projection.omitted_spans,
         preservation: PreservationResult {
-            profile: request.preservation_profile,
+            profile: projection_spec.profile().to_owned(),
             mandatory_fact_ids: projection.mandatory_fact_ids,
         },
-        acquisition: acquired.receipt,
+        acquisition: acquired.receipt.into_receipt(),
     };
     receipt
         .acquisition
@@ -289,11 +287,7 @@ fn build_outcome(
         .map_err(|message| {
             Failure::new(FailureCode::InvariantBreach, message).for_request(&receipt.request_id)
         })?;
-    if receipt
-        .visible_count
-        .saturating_add(request.budget.reserved_envelope)
-        > request.budget.total_visible_limit
-    {
+    if !projection_spec.accounts_for(receipt.visible_count) {
         return Err(Failure::new(
             FailureCode::InvariantBreach,
             "receipt accounting exceeds the declared budget",

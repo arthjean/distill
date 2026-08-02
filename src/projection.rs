@@ -143,9 +143,108 @@ impl SpanPlan {
     }
 }
 
+#[cfg(test)]
 #[derive(Default)]
 struct PlanningMetrics {
     full_render_count_evaluations: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    static FULL_RENDER_COUNT_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn record_full_render_count_evaluation() {
+    FULL_RENDER_COUNT_EVALUATIONS.with(|count| count.set(count.get() + 1));
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Counter {
+    Bytes,
+    Cl100k,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ProjectionSpec {
+    policy: &'static Policy,
+    counter: Counter,
+    total_visible_limit: u64,
+    reserved_envelope: u64,
+}
+
+impl ProjectionSpec {
+    pub(crate) fn new(profile: &str, budget: &Budget) -> Result<Self, Failure> {
+        let policy = POLICIES
+            .iter()
+            .find(|candidate| candidate.id == profile)
+            .ok_or_else(|| {
+                Failure::new(
+                    FailureCode::InvalidRequest,
+                    "preservation profile is unsupported",
+                )
+            })?;
+        if budget.reserved_envelope > budget.total_visible_limit {
+            return Err(Failure::new(
+                FailureCode::InvalidRequest,
+                "reserved envelope exceeds the total visible limit",
+            ));
+        }
+        let counter = match budget.unit {
+            CountUnit::Bytes if budget.token_profile.is_none() => Counter::Bytes,
+            CountUnit::Bytes => {
+                return Err(Failure::new(
+                    FailureCode::InvalidRequest,
+                    "byte budgets must not name a token profile",
+                ));
+            }
+            CountUnit::Tokens if budget.token_profile.as_deref() == Some(CL100K_PROFILE) => {
+                Counter::Cl100k
+            }
+            CountUnit::Tokens => {
+                return Err(Failure::new(
+                    FailureCode::TokenProfileUnsupported,
+                    "token budget names an unsupported tokenizer",
+                ));
+            }
+        };
+        Ok(Self {
+            policy,
+            counter,
+            total_visible_limit: budget.total_visible_limit,
+            reserved_envelope: budget.reserved_envelope,
+        })
+    }
+
+    pub(crate) fn unit(self) -> CountUnit {
+        match self.counter {
+            Counter::Bytes => CountUnit::Bytes,
+            Counter::Cl100k => CountUnit::Tokens,
+        }
+    }
+
+    pub(crate) fn token_profile(self) -> Option<String> {
+        matches!(self.counter, Counter::Cl100k).then(|| CL100K_PROFILE.to_owned())
+    }
+
+    pub(crate) fn profile(self) -> &'static str {
+        self.policy.id
+    }
+
+    fn count(self, text: &str) -> u64 {
+        match self.counter {
+            Counter::Bytes => text.len() as u64,
+            Counter::Cl100k => cl100k_base_singleton().encode_ordinary(text).len() as u64,
+        }
+    }
+
+    fn payload_limit(self) -> u64 {
+        self.total_visible_limit - self.reserved_envelope
+    }
+
+    pub(crate) fn accounts_for(self, visible_count: u64) -> bool {
+        visible_count.saturating_add(self.reserved_envelope) <= self.total_visible_limit
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -159,31 +258,11 @@ pub(crate) struct Projection {
     pub mandatory_fact_ids: Vec<String>,
 }
 
-pub(crate) fn project(
+pub(crate) fn project_validated(
     source: &[u8],
-    budget: &Budget,
-    profile: &str,
+    spec: ProjectionSpec,
 ) -> Result<Projection, Failure> {
-    let mut metrics = PlanningMetrics::default();
-    project_with_metrics(source, budget, profile, &mut metrics)
-}
-
-fn project_with_metrics(
-    source: &[u8],
-    budget: &Budget,
-    profile: &str,
-    metrics: &mut PlanningMetrics,
-) -> Result<Projection, Failure> {
-    let policy = validated_policy(profile, budget)?;
-    let payload_limit = budget
-        .total_visible_limit
-        .checked_sub(budget.reserved_envelope)
-        .ok_or_else(|| {
-            Failure::new(
-                FailureCode::InvalidRequest,
-                "reserved envelope exceeds the total visible limit",
-            )
-        })?;
+    let payload_limit = spec.payload_limit();
     if payload_limit == 0 && !source.is_empty() {
         return Err(Failure::new(
             FailureCode::BudgetUnsatisfiable,
@@ -191,7 +270,7 @@ fn project_with_metrics(
         ));
     }
     if let Ok(text) = std::str::from_utf8(source) {
-        let original_count = count(text, budget)?;
+        let original_count = spec.count(text);
         if original_count <= payload_limit {
             return Ok(Projection {
                 visible: text.to_owned(),
@@ -203,78 +282,28 @@ fn project_with_metrics(
                     end: source.len() as u64,
                 }],
                 omitted_spans: Vec::new(),
-                mandatory_fact_ids: mandatory_spans(source, policy)?
+                mandatory_fact_ids: mandatory_spans(source, spec.policy)?
                     .into_iter()
-                    .map(|span| fact_id(policy.id, span))
+                    .map(|span| fact_id(spec.policy.id, span))
                     .collect(),
             });
         }
-        return project_text(
-            source,
-            text,
-            budget,
-            payload_limit,
-            policy,
-            original_count,
-            metrics,
-        );
+        return project_text(source, text, spec, payload_limit, original_count);
     }
-    project_binary(source, budget, payload_limit, policy)
-}
-
-pub(crate) fn validate_contract(profile: &str, budget: &Budget) -> Result<(), Failure> {
-    validated_policy(profile, budget).map(|_| ())
-}
-
-fn validated_policy(profile: &str, budget: &Budget) -> Result<&'static Policy, Failure> {
-    let policy = POLICIES
-        .iter()
-        .find(|candidate| candidate.id == profile)
-        .ok_or_else(|| {
-            Failure::new(
-                FailureCode::InvalidRequest,
-                "preservation profile is unsupported",
-            )
-        })?;
-    validate_budget(budget)?;
-    Ok(policy)
-}
-
-fn validate_budget(budget: &Budget) -> Result<(), Failure> {
-    if budget.reserved_envelope > budget.total_visible_limit {
-        return Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "reserved envelope exceeds the total visible limit",
-        ));
-    }
-    match budget.unit {
-        CountUnit::Bytes if budget.token_profile.is_some() => Err(Failure::new(
-            FailureCode::InvalidRequest,
-            "byte budgets must not name a token profile",
-        )),
-        CountUnit::Tokens if budget.token_profile.as_deref() != Some(CL100K_PROFILE) => {
-            Err(Failure::new(
-                FailureCode::TokenProfileUnsupported,
-                "token budget names an unsupported tokenizer",
-            ))
-        }
-        _ => Ok(()),
-    }
+    project_binary(source, spec, payload_limit)
 }
 
 fn project_text(
     source: &[u8],
     text: &str,
-    budget: &Budget,
+    spec: ProjectionSpec,
     payload_limit: u64,
-    policy: &Policy,
     original_count: u64,
-    metrics: &mut PlanningMetrics,
 ) -> Result<Projection, Failure> {
-    let analysis = analyze(source, policy)?;
+    let analysis = analyze(source, spec.policy)?;
     let mandatory = analysis.mandatory;
     let mut retained = SpanPlan::new(mandatory.clone());
-    if !plan_fits(source, &retained, budget, payload_limit, metrics)? {
+    if !plan_fits(source, &retained, spec, payload_limit)? {
         return Err(Failure::new(
             FailureCode::BudgetUnsatisfiable,
             "mandatory facts exceed the projection payload budget",
@@ -283,13 +312,13 @@ fn project_text(
 
     for candidate in analysis.candidates {
         let proposed = retained.with_candidate(candidate);
-        if plan_fits(source, &proposed, budget, payload_limit, metrics)? {
+        if plan_fits(source, &proposed, spec, payload_limit)? {
             retained = proposed;
         }
     }
 
     if retained.spans.is_empty() && payload_limit > 0 {
-        let prefix_end = fitting_prefix(text, budget, payload_limit)?;
+        let prefix_end = fitting_prefix_validated(text, spec, payload_limit);
         if prefix_end > 0 {
             retained = SpanPlan::new(vec![ByteSpan {
                 start: 0,
@@ -298,10 +327,11 @@ fn project_text(
         }
     }
     let visible = render(source, &retained.spans)?;
-    metrics.full_render_count_evaluations += 1;
-    let visible_count = count(&visible, budget)?;
+    #[cfg(test)]
+    record_full_render_count_evaluation();
+    let visible_count = spec.count(&visible);
     if visible_count > payload_limit
-        || visible_count.saturating_add(budget.reserved_envelope) > budget.total_visible_limit
+        || visible_count.saturating_add(spec.reserved_envelope) > spec.total_visible_limit
     {
         return Err(Failure::new(
             FailureCode::InvariantBreach,
@@ -317,21 +347,20 @@ fn project_text(
         omitted_spans: complement(source.len(), &retained.spans),
         mandatory_fact_ids: mandatory
             .iter()
-            .map(|span| fact_id(policy.id, *span))
+            .map(|span| fact_id(spec.policy.id, *span))
             .collect(),
     })
 }
 
 fn project_binary(
     source: &[u8],
-    budget: &Budget,
+    spec: ProjectionSpec,
     payload_limit: u64,
-    policy: &Policy,
 ) -> Result<Projection, Failure> {
     let encoded = encode_binary(source);
-    let mandatory = mandatory_spans(source, policy)?;
-    let encoded_count = count(&encoded, budget)?;
-    let original_count = match budget.unit {
+    let mandatory = mandatory_spans(source, spec.policy)?;
+    let encoded_count = spec.count(&encoded);
+    let original_count = match spec.unit() {
         CountUnit::Bytes => source.len() as u64,
         CountUnit::Tokens => encoded_count,
     };
@@ -348,7 +377,7 @@ fn project_binary(
             }],
             mandatory_fact_ids: mandatory
                 .iter()
-                .map(|span| fact_id(policy.id, *span))
+                .map(|span| fact_id(spec.policy.id, *span))
                 .collect(),
         });
     }
@@ -359,7 +388,7 @@ fn project_binary(
         ));
     }
     let metadata = format!("[binary source: {} bytes]", source.len());
-    let visible_count = count(&metadata, budget)?;
+    let visible_count = spec.count(&metadata);
     if visible_count > payload_limit {
         return Err(Failure::new(
             FailureCode::BudgetUnsatisfiable,
@@ -378,22 +407,6 @@ fn project_binary(
         }],
         mandatory_fact_ids: Vec::new(),
     })
-}
-
-fn count(text: &str, budget: &Budget) -> Result<u64, Failure> {
-    match budget.unit {
-        CountUnit::Bytes => Ok(text.len() as u64),
-        CountUnit::Tokens => {
-            if budget.token_profile.as_deref() != Some(CL100K_PROFILE) {
-                return Err(Failure::new(
-                    FailureCode::TokenProfileUnsupported,
-                    "token budget names an unsupported tokenizer",
-                ));
-            }
-            let tokenizer = cl100k_base_singleton();
-            Ok(tokenizer.encode_ordinary(text).len() as u64)
-        }
-    }
 }
 
 fn mandatory_spans(source: &[u8], policy: &Policy) -> Result<Vec<ByteSpan>, Failure> {
@@ -455,11 +468,10 @@ fn analyze(source: &[u8], policy: &Policy) -> Result<Analysis, Failure> {
 fn plan_fits(
     source: &[u8],
     plan: &SpanPlan,
-    budget: &Budget,
+    spec: ProjectionSpec,
     payload_limit: u64,
-    metrics: &mut PlanningMetrics,
 ) -> Result<bool, Failure> {
-    match budget.unit {
+    match spec.unit() {
         CountUnit::Bytes => Ok(plan.byte_count <= payload_limit),
         CountUnit::Tokens => {
             // Every ordinary cl100k token consumes at least one UTF-8 byte, so
@@ -467,8 +479,9 @@ fn plan_fits(
             if plan.byte_count <= payload_limit {
                 return Ok(true);
             }
-            metrics.full_render_count_evaluations += 1;
-            Ok(count(&render(source, &plan.spans)?, budget)? <= payload_limit)
+            #[cfg(test)]
+            record_full_render_count_evaluation();
+            Ok(spec.count(&render(source, &plan.spans)?) <= payload_limit)
         }
     }
 }
@@ -552,11 +565,11 @@ fn complement(source_len: usize, retained: &[ByteSpan]) -> Vec<ByteSpan> {
     omitted
 }
 
-fn fitting_prefix(text: &str, budget: &Budget, limit: u64) -> Result<usize, Failure> {
+fn fitting_prefix_validated(text: &str, spec: ProjectionSpec, limit: u64) -> usize {
     let mut low = 0_usize;
     let mut high = text.len();
-    if count(text, budget)? <= limit {
-        return Ok(high);
+    if spec.count(text) <= limit {
+        return high;
     }
     while low + 1 < high {
         let mut middle = low + (high - low) / 2;
@@ -565,20 +578,20 @@ fn fitting_prefix(text: &str, budget: &Budget, limit: u64) -> Result<usize, Fail
         }
         if middle == low {
             let Some(next) = text[low..].chars().next() else {
-                return Ok(low);
+                return low;
             };
             middle = low + next.len_utf8();
             if middle >= high {
-                return Ok(low);
+                return low;
             }
         }
-        if count(&text[..middle], budget)? <= limit {
+        if spec.count(&text[..middle]) <= limit {
             low = middle;
         } else {
             high = middle;
         }
     }
-    Ok(low)
+    low
 }
 
 fn encode_binary(source: &[u8]) -> String {
@@ -608,7 +621,8 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
         reserved_envelope: 0,
         token_profile: None,
     };
-    let result = project(data, &budget, "plain-text/v1");
+    let result = ProjectionSpec::new("plain-text/v1", &budget)
+        .and_then(|spec| project_validated(data, spec));
     if matches!(
         result,
         Err(Failure {
@@ -622,6 +636,41 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
     let mut spans = line_spans(data).take(MAX_REDUCER_SPANS).collect();
     normalize_spans(&mut spans);
     let _omitted = complement(data.len(), &spans);
+}
+
+#[cfg(test)]
+fn validated_policy(profile: &str, budget: &Budget) -> Result<&'static Policy, Failure> {
+    ProjectionSpec::new(profile, budget).map(|spec| spec.policy)
+}
+
+#[cfg(test)]
+fn count(text: &str, budget: &Budget) -> Result<u64, Failure> {
+    ProjectionSpec::new("plain-text/v1", budget).map(|spec| spec.count(text))
+}
+
+#[cfg(test)]
+fn fitting_prefix(text: &str, budget: &Budget, limit: u64) -> Result<usize, Failure> {
+    ProjectionSpec::new("plain-text/v1", budget)
+        .map(|spec| fitting_prefix_validated(text, spec, limit))
+}
+
+#[cfg(test)]
+fn project(source: &[u8], budget: &Budget, profile: &str) -> Result<Projection, Failure> {
+    ProjectionSpec::new(profile, budget).and_then(|spec| project_validated(source, spec))
+}
+
+#[cfg(test)]
+fn project_with_metrics(
+    source: &[u8],
+    budget: &Budget,
+    profile: &str,
+    metrics: &mut PlanningMetrics,
+) -> Result<Projection, Failure> {
+    FULL_RENDER_COUNT_EVALUATIONS.with(|count| count.set(0));
+    let result = project(source, budget, profile);
+    metrics.full_render_count_evaluations =
+        FULL_RENDER_COUNT_EVALUATIONS.with(std::cell::Cell::get);
+    result
 }
 
 #[cfg(test)]
