@@ -425,8 +425,63 @@ pub(crate) struct ValidatedAcquisition {
     source_bytes: u64,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ProcessTermination {
+    Exit(i32),
+    Signal(i32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ProcessPartialReason {
+    TimedOut,
+    Truncated,
+    CaptureFailed,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ProcessAcquisition {
+    Failed,
+    Complete {
+        events: Vec<StreamEvent>,
+        exit_code: i32,
+    },
+    Partial {
+        events: Vec<StreamEvent>,
+        termination: ProcessTermination,
+        reason: ProcessPartialReason,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PathSummary {
+    bytes: u64,
+}
+
+impl PathSummary {
+    fn from_bytes(bytes: &ByteString) -> Result<Self, &'static str> {
+        let bytes = u64::try_from(bytes.0.len()).map_err(|_| "path summary is too large")?;
+        if bytes > crate::contract::MAX_PATH_BYTES as u64 {
+            return Err("path summary is too large");
+        }
+        Ok(Self { bytes })
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        let value = value.strip_prefix('<')?.strip_suffix(" path bytes>")?;
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let bytes = value.parse::<u64>().ok()?;
+        (bytes <= crate::contract::MAX_PATH_BYTES as u64).then_some(Self { bytes })
+    }
+
+    fn render(self) -> String {
+        format!("<{} path bytes>", self.bytes)
+    }
+}
+
 impl ValidatedAcquisition {
-    pub(crate) fn new(
+    pub(crate) fn from_wire(
         receipt: AcquisitionReceipt,
         source_bytes: u64,
     ) -> Result<Self, &'static str> {
@@ -435,6 +490,152 @@ impl ValidatedAcquisition {
             receipt,
             source_bytes,
         })
+    }
+
+    pub(crate) fn inline_complete(source_bytes: u64) -> Self {
+        Self::trusted(
+            AcquisitionReceipt {
+                variant: SourceVariant::Inline,
+                complete: true,
+                partial: false,
+                truncated: false,
+                root_id: None,
+                relative_path: None,
+                process: None,
+            },
+            source_bytes,
+        )
+    }
+
+    pub(crate) fn inline_failed() -> Self {
+        Self::trusted(
+            AcquisitionReceipt {
+                variant: SourceVariant::Inline,
+                complete: false,
+                partial: false,
+                truncated: false,
+                root_id: None,
+                relative_path: None,
+                process: None,
+            },
+            0,
+        )
+    }
+
+    pub(crate) fn artifact_replay(source_bytes: u64) -> Self {
+        Self::trusted(
+            AcquisitionReceipt {
+                variant: SourceVariant::Artifact,
+                complete: true,
+                partial: false,
+                truncated: false,
+                root_id: None,
+                relative_path: None,
+                process: None,
+            },
+            source_bytes,
+        )
+    }
+
+    pub(crate) fn file_complete(
+        root_id: &str,
+        relative_path: &ByteString,
+        source_bytes: u64,
+    ) -> Result<Self, &'static str> {
+        Self::file(root_id, relative_path, true, source_bytes)
+    }
+
+    pub(crate) fn file_failed(
+        root_id: &str,
+        relative_path: &ByteString,
+    ) -> Result<Self, &'static str> {
+        Self::file(root_id, relative_path, false, 0)
+    }
+
+    fn file(
+        root_id: &str,
+        relative_path: &ByteString,
+        complete: bool,
+        source_bytes: u64,
+    ) -> Result<Self, &'static str> {
+        let relative_path = PathSummary::from_bytes(relative_path)?.render();
+        Self::checked(
+            AcquisitionReceipt {
+                variant: SourceVariant::File,
+                complete,
+                partial: false,
+                truncated: false,
+                root_id: Some(root_id.to_owned()),
+                relative_path: Some(relative_path),
+                process: None,
+            },
+            source_bytes,
+        )
+    }
+
+    pub(crate) fn process(
+        root_id: &str,
+        working_directory: &ByteString,
+        acquisition: ProcessAcquisition,
+        source_bytes: u64,
+    ) -> Result<Self, &'static str> {
+        let working_directory = format!(
+            "{root_id}:{}",
+            PathSummary::from_bytes(working_directory)?.render()
+        );
+        let (complete, partial, truncated, events, exit_code, signal, timed_out) = match acquisition
+        {
+            ProcessAcquisition::Failed => (false, false, false, Vec::new(), None, None, false),
+            ProcessAcquisition::Complete { events, exit_code } => {
+                (true, false, false, events, Some(exit_code), None, false)
+            }
+            ProcessAcquisition::Partial {
+                events,
+                termination,
+                reason,
+            } => {
+                let (exit_code, signal) = match termination {
+                    ProcessTermination::Exit(code) => (Some(code), None),
+                    ProcessTermination::Signal(signal) => (None, Some(signal)),
+                };
+                let (timed_out, truncated) = match reason {
+                    ProcessPartialReason::TimedOut => (true, false),
+                    ProcessPartialReason::Truncated => (false, true),
+                    ProcessPartialReason::CaptureFailed => (false, false),
+                };
+                (false, true, truncated, events, exit_code, signal, timed_out)
+            }
+        };
+        Self::checked(
+            AcquisitionReceipt {
+                variant: SourceVariant::Process,
+                complete,
+                partial,
+                truncated,
+                root_id: Some(root_id.to_owned()),
+                relative_path: None,
+                process: Some(ProcessReceipt {
+                    events,
+                    exit_code,
+                    signal,
+                    timed_out,
+                    working_directory,
+                }),
+            },
+            source_bytes,
+        )
+    }
+
+    fn checked(receipt: AcquisitionReceipt, source_bytes: u64) -> Result<Self, &'static str> {
+        Self::from_wire(receipt, source_bytes)
+    }
+
+    fn trusted(receipt: AcquisitionReceipt, source_bytes: u64) -> Self {
+        debug_assert!(receipt.validate(source_bytes).is_ok());
+        Self {
+            receipt,
+            source_bytes,
+        }
     }
 
     pub(crate) fn as_receipt(&self) -> &AcquisitionReceipt {
@@ -454,21 +655,8 @@ impl ValidatedAcquisition {
     }
 }
 
-impl std::ops::Deref for ValidatedAcquisition {
-    type Target = AcquisitionReceipt;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_receipt()
-    }
-}
-
 fn valid_path_summary(value: &str) -> bool {
-    value
-        .strip_prefix('<')
-        .and_then(|value| value.strip_suffix(" path bytes>"))
-        .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
-        .and_then(|value| value.parse::<u64>().ok())
-        .is_some_and(|length| length <= crate::contract::MAX_PATH_BYTES as u64)
+    PathSummary::parse(value).is_some()
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

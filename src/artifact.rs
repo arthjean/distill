@@ -128,7 +128,7 @@ impl ArtifactStore {
         expires_at: u64,
         fault: Option<CommitFault>,
     ) -> Result<ArtifactRef, Failure> {
-        let acquisition = ValidatedAcquisition::new(acquisition.clone(), bytes.len() as u64)
+        let acquisition = ValidatedAcquisition::from_wire(acquisition.clone(), bytes.len() as u64)
             .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))?;
         self.commit_inner(id, bytes, &acquisition, created_at, expires_at, fault)
     }
@@ -967,7 +967,7 @@ fn read_artifact(
             )
             .with_artifact(stored_reference.clone())
         })?;
-    let acquisition = ValidatedAcquisition::new(acquisition, source_bytes).map_err(|_| {
+    let acquisition = ValidatedAcquisition::from_wire(acquisition, source_bytes).map_err(|_| {
         Failure::new(
             FailureCode::ArtifactCorrupt,
             "artifact acquisition metadata is semantically corrupt",
@@ -1094,7 +1094,7 @@ mod tests {
                 .code,
             FailureCode::InvariantBreach
         );
-        let mismatched = ValidatedAcquisition::new(receipt(), 0).expect("validated receipt");
+        let mismatched = ValidatedAcquisition::from_wire(receipt(), 0).expect("validated receipt");
         assert_eq!(
             store
                 .commit(&"2".repeat(32), b"x", &mismatched, 1, 2)

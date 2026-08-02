@@ -1,12 +1,14 @@
 #[cfg(test)]
 use crate::request_policy;
 #[cfg(test)]
-use crate::types::Source;
+use crate::types::{Budget, CONTRACT_VERSION, CountUnit, Retention, Source};
+
+mod process;
 use crate::{
-    request_policy::{LocalSource, MAX_SOURCE_BYTES},
+    request_policy::{LocalSource, MAX_SOURCE_BYTES, ProcessSource},
     types::{
-        AcquisitionReceipt, ByteSpan, ByteString, EngineConfig, Failure, FailureCode,
-        ProcessReceipt, ProcessStream, SourceVariant, StreamEvent, ValidatedAcquisition,
+        ByteString, EngineConfig, Failure, FailureCode, ProcessAcquisition, ProcessPartialReason,
+        ProcessTermination, ValidatedAcquisition,
     },
 };
 #[cfg(test)]
@@ -25,14 +27,10 @@ use std::{
         },
     },
     path::{Component, Path, PathBuf},
-    process::{Child, ChildStderr, ChildStdout, Command, Stdio},
+    process::{Command, Stdio},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-
-const READ_CHUNK_BYTES: usize = 8 * 1024;
-const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(10);
-const PROCESS_REAP_TOLERANCE: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Debug)]
 pub(crate) struct Acquired {
@@ -41,11 +39,13 @@ pub(crate) struct Acquired {
 }
 
 impl Acquired {
-    fn validated(bytes: Vec<u8>, receipt: AcquisitionReceipt) -> Result<Self, AcquisitionError> {
-        let receipt =
-            ValidatedAcquisition::new(receipt, bytes.len() as u64).map_err(|message| {
-                AcquisitionError::clean(Failure::new(FailureCode::InvariantBreach, message))
-            })?;
+    fn checked(
+        bytes: Vec<u8>,
+        receipt: Result<ValidatedAcquisition, &'static str>,
+    ) -> Result<Self, AcquisitionError> {
+        let receipt = receipt.map_err(|message| {
+            AcquisitionError::clean(Failure::new(FailureCode::InvariantBreach, message))
+        })?;
         Ok(Self { bytes, receipt })
     }
 }
@@ -82,6 +82,8 @@ struct ConfiguredRoot {
 pub(crate) struct ProductionRuntime {
     roots: Arc<BTreeMap<String, ConfiguredRoot>>,
     environment_profiles: Arc<BTreeMap<String, BTreeMap<String, String>>>,
+    #[cfg(test)]
+    request_config: EngineConfig,
 }
 
 impl ProductionRuntime {
@@ -127,11 +129,15 @@ impl ProductionRuntime {
         Ok(Self {
             roots: Arc::new(roots),
             environment_profiles: Arc::new(config.environment_profiles.clone()),
+            #[cfg(test)]
+            request_config: config.clone(),
         })
     }
 
     fn acquire_inline(bytes: &ByteString) -> Result<Acquired, AcquisitionError> {
-        Acquired::validated(bytes.0.clone(), simple_receipt(SourceVariant::Inline))
+        let bytes = bytes.0.clone();
+        let receipt = ValidatedAcquisition::inline_complete(bytes.len() as u64);
+        Ok(Acquired { bytes, receipt })
     }
 
     fn acquire_file(
@@ -205,47 +211,30 @@ impl ProductionRuntime {
                 "binary file rejected by policy",
             )));
         }
-        Acquired::validated(
-            bytes,
-            AcquisitionReceipt {
-                variant: SourceVariant::File,
-                complete: true,
-                partial: false,
-                truncated: false,
-                root_id: Some(root_id.to_owned()),
-                relative_path: Some(format!("<{} path bytes>", relative_path.0.len())),
-                process: None,
-            },
-        )
+        let source_bytes = bytes.len() as u64;
+        let receipt = ValidatedAcquisition::file_complete(root_id, relative_path, source_bytes);
+        Acquired::checked(bytes, receipt)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn acquire_process(
-        &self,
-        executable: &ByteString,
-        argv: &[ByteString],
-        cwd_root_id: &str,
-        cwd_relative_path: &ByteString,
-        timeout_ms: u64,
-        environment_profile: Option<&str>,
-    ) -> Result<Acquired, AcquisitionError> {
-        let root = self.roots.get(cwd_root_id).ok_or_else(|| {
+    fn acquire_process(&self, source: &ProcessSource) -> Result<Acquired, AcquisitionError> {
+        let root = self.roots.get(&source.cwd_root_id).ok_or_else(|| {
             AcquisitionError::clean(Failure::new(
                 FailureCode::InvariantBreach,
                 "validated process root is unavailable",
             ))
         })?;
-        let cwd =
-            open_beneath(root, &cwd_relative_path.0, true).map_err(AcquisitionError::clean)?;
+        let cwd = open_beneath(root, &source.cwd_relative_path.0, true)
+            .map_err(AcquisitionError::clean)?;
 
-        let executable = os_string(&executable.0).map_err(AcquisitionError::clean)?;
-        let arguments = argv
+        let executable = os_string(&source.executable.0).map_err(AcquisitionError::clean)?;
+        let arguments = source
+            .argv
             .iter()
             .map(|argument| os_string(&argument.0))
             .collect::<Result<Vec<_>, _>>()
             .map_err(AcquisitionError::clean)?;
         let empty_environment = BTreeMap::new();
-        let environment = match environment_profile {
+        let environment = match source.environment_profile.as_deref() {
             Some(id) => self.environment_profiles.get(id).ok_or_else(|| {
                 AcquisitionError::clean(Failure::new(
                     FailureCode::InvariantBreach,
@@ -284,35 +273,56 @@ impl ProductionRuntime {
                 "process spawn failed",
             ))
         })?;
-        let deadline = started + Duration::from_millis(timeout_ms);
-        let capture = ProcessLifecycle::new(child, deadline)?.capture()?;
-        let status = capture.status;
-        let signal = process_signal(&status);
-        let terminal_failure = capture.failure;
-        let partial = terminal_failure.is_some();
-        let acquired = Acquired::validated(
-            capture.bytes,
-            AcquisitionReceipt {
-                variant: SourceVariant::Process,
-                complete: !partial,
-                partial,
-                truncated: terminal_failure
-                    .as_ref()
-                    .is_some_and(|failure| failure.code == FailureCode::ResourceExhausted),
-                root_id: Some(cwd_root_id.to_owned()),
-                relative_path: None,
-                process: Some(ProcessReceipt {
-                    events: capture.events,
-                    exit_code: status.code(),
-                    signal,
-                    timed_out: capture.timed_out,
-                    working_directory: format!(
-                        "{cwd_root_id}:<{} path bytes>",
-                        cwd_relative_path.0.len()
-                    ),
-                }),
-            },
-        )?;
+        let deadline = started + Duration::from_millis(source.timeout_ms);
+        let capture = process::capture(child, deadline)?;
+        let process::ProcessCapture {
+            bytes,
+            events,
+            status,
+            failure: terminal_failure,
+            timed_out,
+        } = capture;
+        let signal = process::signal(&status);
+        let acquisition = if let Some(failure) = terminal_failure.as_ref() {
+            let termination = match (status.code(), signal) {
+                (Some(code), None) => ProcessTermination::Exit(code),
+                (None, Some(signal)) => ProcessTermination::Signal(signal),
+                _ => {
+                    return Err(AcquisitionError::clean(Failure::new(
+                        FailureCode::InvariantBreach,
+                        "process capture returned an invalid terminal state",
+                    )));
+                }
+            };
+            let reason = if timed_out {
+                ProcessPartialReason::TimedOut
+            } else if failure.code == FailureCode::ResourceExhausted {
+                ProcessPartialReason::Truncated
+            } else {
+                ProcessPartialReason::CaptureFailed
+            };
+            ProcessAcquisition::Partial {
+                events,
+                termination,
+                reason,
+            }
+        } else {
+            let exit_code = status.code().ok_or_else(|| {
+                AcquisitionError::clean(Failure::new(
+                    FailureCode::InvariantBreach,
+                    "complete process capture did not return an exit code",
+                ))
+            })?;
+            ProcessAcquisition::Complete { events, exit_code }
+        };
+        let source_bytes = bytes.len() as u64;
+        let receipt = ValidatedAcquisition::process(
+            &source.cwd_root_id,
+            &source.cwd_relative_path,
+            acquisition,
+            source_bytes,
+        );
+        let acquired = Acquired::checked(bytes, receipt)?;
         if let Some(failure) = terminal_failure {
             return Err(AcquisitionError {
                 failure,
@@ -332,21 +342,7 @@ impl LocalRuntime for ProductionRuntime {
                 relative_path,
                 reject_binary,
             } => self.acquire_file(root_id, relative_path, *reject_binary),
-            LocalSource::Process {
-                executable,
-                argv,
-                cwd_root_id,
-                cwd_relative_path,
-                timeout_ms,
-                environment_profile,
-            } => self.acquire_process(
-                executable,
-                argv,
-                cwd_root_id,
-                cwd_relative_path,
-                *timeout_ms,
-                environment_profile.as_deref(),
-            ),
+            LocalSource::Process(source) => self.acquire_process(source),
         }
     }
 
@@ -378,50 +374,27 @@ impl LocalRuntime for ProductionRuntime {
 
 #[cfg(test)]
 impl ProductionRuntime {
-    fn acquire(&self, source: &Source) -> Result<Acquired, AcquisitionError> {
-        let local = match source {
-            Source::Inline { bytes, .. } => {
-                if bytes.0.len() > MAX_SOURCE_BYTES {
-                    return Err(AcquisitionError::clean(Failure::new(
-                        FailureCode::InputTooLarge,
-                        "inline source exceeds the 10 MiB limit",
-                    )));
-                }
-                LocalSource::Inline {
-                    bytes: bytes.clone(),
-                }
-            }
-            Source::File {
-                root_id,
-                relative_path,
-                binary_policy,
-            } => LocalSource::File {
-                root_id: root_id.clone(),
-                relative_path: relative_path.clone(),
-                reject_binary: *binary_policy == crate::types::BinaryPolicy::Reject,
+    fn acquire_source(&self, source: &Source) -> Result<Acquired, AcquisitionError> {
+        let request = crate::types::Request {
+            contract_version: CONTRACT_VERSION.to_owned(),
+            request_id: "runtime-test".to_owned(),
+            source: source.clone(),
+            budget: Budget {
+                unit: CountUnit::Bytes,
+                total_visible_limit: 1,
+                reserved_envelope: 0,
+                token_profile: None,
             },
-            Source::Process {
-                executable,
-                argv,
-                cwd_root_id,
-                cwd_relative_path,
-                timeout_ms,
-                environment_profile,
-            } => LocalSource::Process {
-                executable: executable.clone(),
-                argv: argv.clone(),
-                cwd_root_id: cwd_root_id.clone(),
-                cwd_relative_path: cwd_relative_path.clone(),
-                timeout_ms: request_policy::validate_process(executable, argv, *timeout_ms)
-                    .map_err(AcquisitionError::clean)?,
-                environment_profile: environment_profile.clone(),
-            },
-            Source::Artifact { .. } => {
-                return Err(AcquisitionError::clean(Failure::new(
-                    FailureCode::SourceUnsupported,
-                    "artifact acquisition belongs to the artifact store",
-                )));
-            }
+            preservation_profile: "plain-text/v1".to_owned(),
+            retention: Retention::default(),
+        };
+        let prepared = request_policy::prepare(request, &self.request_config)
+            .map_err(AcquisitionError::clean)?;
+        let request_policy::ValidatedSource::Local(local) = prepared.source else {
+            return Err(AcquisitionError::clean(Failure::new(
+                FailureCode::SourceUnsupported,
+                "artifact acquisition belongs to the artifact store",
+            )));
         };
         <Self as LocalRuntime>::acquire(self, &local)
     }
@@ -468,62 +441,22 @@ impl LocalRuntime for FixtureRuntime {
     }
 }
 
-fn simple_receipt(variant: SourceVariant) -> AcquisitionReceipt {
-    AcquisitionReceipt {
-        variant,
-        complete: true,
-        partial: false,
-        truncated: false,
-        root_id: None,
-        relative_path: None,
-        process: None,
-    }
-}
-
 pub(crate) fn failure_receipt(source: &LocalSource) -> Result<ValidatedAcquisition, Failure> {
     let receipt = match source {
-        LocalSource::Inline { .. } => AcquisitionReceipt {
-            complete: false,
-            ..simple_receipt(SourceVariant::Inline)
-        },
+        LocalSource::Inline { .. } => Ok(ValidatedAcquisition::inline_failed()),
         LocalSource::File {
             root_id,
             relative_path,
             ..
-        } => AcquisitionReceipt {
-            variant: SourceVariant::File,
-            complete: false,
-            partial: false,
-            truncated: false,
-            root_id: Some(root_id.clone()),
-            relative_path: Some(format!("<{} path bytes>", relative_path.0.len())),
-            process: None,
-        },
-        LocalSource::Process {
-            cwd_root_id,
-            cwd_relative_path,
-            ..
-        } => AcquisitionReceipt {
-            variant: SourceVariant::Process,
-            complete: false,
-            partial: false,
-            truncated: false,
-            root_id: Some(cwd_root_id.clone()),
-            relative_path: None,
-            process: Some(ProcessReceipt {
-                events: Vec::new(),
-                exit_code: None,
-                signal: None,
-                timed_out: false,
-                working_directory: format!(
-                    "{cwd_root_id}:<{} path bytes>",
-                    cwd_relative_path.0.len()
-                ),
-            }),
-        },
+        } => ValidatedAcquisition::file_failed(root_id, relative_path),
+        LocalSource::Process(source) => ValidatedAcquisition::process(
+            &source.cwd_root_id,
+            &source.cwd_relative_path,
+            ProcessAcquisition::Failed,
+            0,
+        ),
     };
-    ValidatedAcquisition::new(receipt, 0)
-        .map_err(|message| Failure::new(FailureCode::InvariantBreach, message))
+    receipt.map_err(|message| Failure::new(FailureCode::InvariantBreach, message))
 }
 
 fn validate_root(path: &Path) -> Result<ConfiguredRoot, Failure> {
@@ -679,308 +612,6 @@ fn os_string(bytes: &[u8]) -> Result<OsString, Failure> {
     Ok(OsString::from_vec(bytes.to_vec()))
 }
 
-struct ProcessCapture {
-    bytes: Vec<u8>,
-    events: Vec<StreamEvent>,
-    status: std::process::ExitStatus,
-    failure: Option<Failure>,
-    timed_out: bool,
-}
-
-struct ProcessLifecycle {
-    child: Child,
-    process_group: u32,
-    stdout: Option<ChildStdout>,
-    stderr: Option<ChildStderr>,
-    timeout_at: Instant,
-    deadline: Instant,
-}
-
-impl ProcessLifecycle {
-    fn new(mut child: Child, timeout_at: Instant) -> Result<Self, AcquisitionError> {
-        let process_group = child.id();
-        let deadline = timeout_at + PROCESS_REAP_TOLERANCE;
-        let setup = (|| {
-            let stdout = child.stdout.take().ok_or_else(|| {
-                Failure::new(
-                    FailureCode::InvariantBreach,
-                    "process stdout pipe was not created",
-                )
-            })?;
-            let stderr = child.stderr.take().ok_or_else(|| {
-                Failure::new(
-                    FailureCode::InvariantBreach,
-                    "process stderr pipe was not created",
-                )
-            })?;
-            set_nonblocking(stdout.as_raw_fd())?;
-            set_nonblocking(stderr.as_raw_fd())?;
-            Ok((stdout, stderr))
-        })();
-        let (stdout, stderr) = match setup {
-            Ok(pipes) => pipes,
-            Err(failure) => {
-                terminate_process_group(&mut child, process_group);
-                if reap_child_until(&mut child, deadline).is_err() {
-                    return Err(AcquisitionError::clean(Failure::new(
-                        FailureCode::InvariantBreach,
-                        "spawned process could not be reaped after capture setup failed",
-                    )));
-                }
-                return Err(AcquisitionError::clean(failure));
-            }
-        };
-        Ok(Self {
-            child,
-            process_group,
-            stdout: Some(stdout),
-            stderr: Some(stderr),
-            timeout_at,
-            deadline,
-        })
-    }
-
-    fn capture(mut self) -> Result<ProcessCapture, AcquisitionError> {
-        let mut bytes = Vec::new();
-        let mut events = Vec::new();
-        let mut status = None;
-        let mut failure = None;
-        let mut timed_out = false;
-
-        while failure.is_none()
-            && (status.is_none() || self.stdout.is_some() || self.stderr.is_some())
-        {
-            if Instant::now() >= self.timeout_at {
-                timed_out = true;
-                failure = Some(Failure::new(
-                    FailureCode::AcquisitionFailed,
-                    "process exceeded its wall timeout",
-                ));
-                break;
-            }
-            if let Some(capture_failure) = self.drain_ready_streams(&mut bytes, &mut events) {
-                failure = Some(capture_failure);
-                break;
-            }
-            if status.is_none() {
-                match self.child.try_wait() {
-                    Ok(child_status) => {
-                        status = child_status;
-                    }
-                    Err(_) => {
-                        failure = Some(Failure::new(
-                            FailureCode::AcquisitionFailed,
-                            "process status could not be inspected",
-                        ));
-                        break;
-                    }
-                }
-            }
-            if status.is_some() && self.stdout.is_none() && self.stderr.is_none() {
-                break;
-            }
-            if let Err(poll_failure) =
-                poll_streams(self.stdout.as_ref(), self.stderr.as_ref(), self.deadline)
-            {
-                failure = Some(poll_failure);
-                break;
-            }
-        }
-
-        if failure.is_some() {
-            // Dropping both read ends releases reader completion even when a
-            // descendant escaped the owned process group with inherited writes.
-            self.stdout.take();
-            self.stderr.take();
-            terminate_process_group(&mut self.child, self.process_group);
-        }
-        let status = match status {
-            Some(status) => status,
-            None => {
-                reap_child_until(&mut self.child, self.deadline).map_err(AcquisitionError::clean)?
-            }
-        };
-        let signal = process_signal(&status);
-        if failure.is_none() && signal.is_some() {
-            failure = Some(Failure::new(
-                FailureCode::AcquisitionFailed,
-                "process terminated by signal",
-            ));
-        }
-        Ok(ProcessCapture {
-            bytes,
-            events,
-            status,
-            failure,
-            timed_out,
-        })
-    }
-
-    fn drain_ready_streams(
-        &mut self,
-        bytes: &mut Vec<u8>,
-        events: &mut Vec<StreamEvent>,
-    ) -> Option<Failure> {
-        if let Some(failure) = read_stream(&mut self.stdout, ProcessStream::Stdout, bytes, events) {
-            return Some(failure);
-        }
-        read_stream(&mut self.stderr, ProcessStream::Stderr, bytes, events)
-    }
-}
-
-fn read_stream<R>(
-    reader: &mut Option<R>,
-    stream: ProcessStream,
-    bytes: &mut Vec<u8>,
-    events: &mut Vec<StreamEvent>,
-) -> Option<Failure>
-where
-    R: Read,
-{
-    let pipe = reader.as_mut()?;
-    let mut buffer = [0_u8; READ_CHUNK_BYTES];
-    match pipe.read(&mut buffer) {
-        Ok(0) => {
-            *reader = None;
-            None
-        }
-        Ok(count) => {
-            let remaining = MAX_SOURCE_BYTES.saturating_sub(bytes.len());
-            let accepted = count.min(remaining);
-            if accepted > 0 {
-                let start = bytes.len();
-                bytes.extend_from_slice(&buffer[..accepted]);
-                events.push(StreamEvent {
-                    order: events.len() as u64,
-                    stream,
-                    span: ByteSpan {
-                        start: start as u64,
-                        end: bytes.len() as u64,
-                    },
-                });
-            }
-            if accepted < count {
-                Some(Failure::new(
-                    FailureCode::ResourceExhausted,
-                    "process output exceeded the 10 MiB limit",
-                ))
-            } else {
-                None
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::WouldBlock => None,
-        Err(error) if error.kind() == io::ErrorKind::Interrupted => None,
-        Err(_) => Some(Failure::new(
-            FailureCode::AcquisitionFailed,
-            "process output capture failed",
-        )),
-    }
-}
-
-fn set_nonblocking(descriptor: libc::c_int) -> Result<(), Failure> {
-    // SAFETY: fcntl reads flags from the live child pipe descriptor.
-    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFL) };
-    if flags < 0 {
-        return Err(Failure::new(
-            FailureCode::AcquisitionFailed,
-            "nonblocking process capture is unavailable",
-        ));
-    }
-    // SAFETY: the same live descriptor remains owned by ChildStdout or
-    // ChildStderr, and O_NONBLOCK changes only its file status flags.
-    if unsafe { libc::fcntl(descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-        return Err(Failure::new(
-            FailureCode::AcquisitionFailed,
-            "nonblocking process capture is unavailable",
-        ));
-    }
-    Ok(())
-}
-
-fn poll_streams(
-    stdout: Option<&ChildStdout>,
-    stderr: Option<&ChildStderr>,
-    deadline: Instant,
-) -> Result<(), Failure> {
-    let mut descriptors = [
-        libc::pollfd {
-            fd: stdout.map_or(-1, AsRawFd::as_raw_fd),
-            events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: stderr.map_or(-1, AsRawFd::as_raw_fd),
-            events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
-            revents: 0,
-        },
-    ];
-    let timeout = poll_timeout(deadline);
-    // SAFETY: descriptors points to two initialized pollfd values for the
-    // duration of poll, and negative descriptors are ignored by POSIX poll.
-    let result = unsafe { libc::poll(descriptors.as_mut_ptr(), descriptors.len() as _, timeout) };
-    if result >= 0 || io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-        Ok(())
-    } else {
-        Err(Failure::new(
-            FailureCode::AcquisitionFailed,
-            "process output readiness could not be inspected",
-        ))
-    }
-}
-
-fn poll_timeout(deadline: Instant) -> libc::c_int {
-    let wait = deadline
-        .saturating_duration_since(Instant::now())
-        .min(PROCESS_POLL_INTERVAL);
-    if wait.is_zero() {
-        return 0;
-    }
-    let milliseconds = wait.as_millis().max(1);
-    libc::c_int::try_from(milliseconds).unwrap_or(libc::c_int::MAX)
-}
-
-fn reap_child_until(
-    child: &mut Child,
-    deadline: Instant,
-) -> Result<std::process::ExitStatus, Failure> {
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(status),
-            Ok(None) if Instant::now() < deadline => {
-                poll_streams(None, None, deadline)?;
-            }
-            Ok(None) => {
-                return Err(Failure::new(
-                    FailureCode::InvariantBreach,
-                    "process could not be reaped before its lifecycle deadline",
-                ));
-            }
-            Err(_) => {
-                return Err(Failure::new(
-                    FailureCode::AcquisitionFailed,
-                    "process wait failed",
-                ));
-            }
-        }
-    }
-}
-
-fn terminate_process_group(child: &mut Child, process_group: u32) {
-    if let Ok(group) = i32::try_from(process_group) {
-        // SAFETY: the child starts in a fresh process group. Negating its PID
-        // targets only that acquisition tree, never the Distill process group.
-        unsafe {
-            libc::kill(-group, libc::SIGKILL);
-        }
-    }
-    let _killed = child.kill();
-}
-
-fn process_signal(status: &std::process::ExitStatus) -> Option<i32> {
-    use std::os::unix::process::ExitStatusExt;
-    status.signal()
-}
-
 fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut value = String::with_capacity(bytes.len() * 2);
@@ -1073,7 +704,7 @@ mod tests {
             bytes: ByteString::from(&[0, 0xff, b'x'][..]),
             media_type: None,
         };
-        let acquired = runtime.acquire(&source).expect("inline");
+        let acquired = runtime.acquire_source(&source).expect("inline");
         assert_eq!(acquired.bytes, [0, 0xff, b'x']);
 
         let oversized = Source::Inline {
@@ -1082,7 +713,7 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&oversized)
+                .acquire_source(&oversized)
                 .expect_err("oversized")
                 .failure
                 .code,
@@ -1100,12 +731,16 @@ mod tests {
             relative_path: ByteString::from_utf8("nested/data.bin"),
             binary_policy: BinaryPolicy::Accept,
         };
-        let acquired = runtime.acquire(&source).expect("file");
+        let acquired = runtime.acquire_source(&source).expect("file");
         assert_eq!(acquired.bytes, [0, 0xff, b'x']);
-        assert_eq!(acquired.receipt.root_id.as_deref(), Some("workspace"));
+        assert_eq!(
+            acquired.receipt.as_receipt().root_id.as_deref(),
+            Some("workspace")
+        );
         assert!(
             !acquired
                 .receipt
+                .as_receipt()
                 .relative_path
                 .as_ref()
                 .expect("safe path")
@@ -1117,7 +752,11 @@ mod tests {
             *binary_policy = BinaryPolicy::Reject;
         }
         assert_eq!(
-            runtime.acquire(&rejected).expect_err("binary").failure.code,
+            runtime
+                .acquire_source(&rejected)
+                .expect_err("binary")
+                .failure
+                .code,
             FailureCode::AcquisitionFailed
         );
     }
@@ -1133,11 +772,11 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&unknown)
+                .acquire_source(&unknown)
                 .expect_err("unknown root")
                 .failure
                 .code,
-            FailureCode::InvariantBreach
+            FailureCode::UnsafeRoot
         );
 
         fs::create_dir(directory.path().join("directory")).expect("directory");
@@ -1148,7 +787,7 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&non_regular)
+                .acquire_source(&non_regular)
                 .expect_err("non-regular source")
                 .failure
                 .code,
@@ -1167,7 +806,7 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&oversized_source)
+                .acquire_source(&oversized_source)
                 .expect_err("oversized source")
                 .failure
                 .code,
@@ -1182,7 +821,7 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&invalid_utf8)
+                .acquire_source(&invalid_utf8)
                 .expect_err("invalid UTF-8")
                 .failure
                 .code,
@@ -1191,7 +830,7 @@ mod tests {
 
         assert_eq!(
             runtime
-                .acquire(&Source::Artifact {
+                .acquire_source(&Source::Artifact {
                     artifact: crate::types::ArtifactRef {
                         schema_version: crate::types::ARTIFACT_SCHEMA_VERSION.to_owned(),
                         id: "a".repeat(32),
@@ -1224,11 +863,17 @@ mod tests {
                 relative_path: path,
                 binary_policy: BinaryPolicy::Accept,
             };
-            let code = runtime.acquire(&source).expect_err("unsafe").failure.code;
+            let code = runtime
+                .acquire_source(&source)
+                .expect_err("unsafe")
+                .failure
+                .code;
             assert!(
                 matches!(
                     code,
-                    FailureCode::UnsafeRoot | FailureCode::AcquisitionFailed
+                    FailureCode::InvalidRequest
+                        | FailureCode::UnsafeRoot
+                        | FailureCode::AcquisitionFailed
                 ),
                 "unexpected code: {code:?}"
             );
@@ -1256,19 +901,26 @@ mod tests {
             binary_policy: BinaryPolicy::Accept,
         };
         assert_eq!(
-            runtime.acquire(&source).expect_err("swapped").failure.code,
+            runtime
+                .acquire_source(&source)
+                .expect_err("swapped")
+                .failure
+                .code,
             FailureCode::UnsafeRoot
         );
 
         fs::remove_file(allowed.join("nested")).expect("remove symlink");
         fs::rename(allowed.join("nested-original"), allowed.join("nested")).expect("restore");
-        assert_eq!(runtime.acquire(&source).expect("safe").bytes, b"safe");
+        assert_eq!(
+            runtime.acquire_source(&source).expect("safe").bytes,
+            b"safe"
+        );
 
         fs::rename(&allowed, parent.path().join("allowed-original")).expect("move root");
         symlink(&outside, &allowed).expect("root swap");
         assert_eq!(
             runtime
-                .acquire(&source)
+                .acquire_source(&source)
                 .expect_err("root replaced")
                 .failure
                 .code,
@@ -1311,13 +963,18 @@ mod tests {
             timeout_ms: Some(2_000),
             environment_profile: Some("safe".to_owned()),
         };
-        let acquired = runtime.acquire(&source).expect("process");
+        let acquired = runtime.acquire_source(&source).expect("process");
         let text = String::from_utf8(acquired.bytes).expect("utf8");
         assert!(text.contains("--literal"));
         assert!(text.contains("value with spaces"));
         assert!(text.contains(&injection));
         assert!(!marker.exists());
-        let process = acquired.receipt.process.as_ref().expect("process receipt");
+        let process = acquired
+            .receipt
+            .as_receipt()
+            .process
+            .as_ref()
+            .expect("process receipt");
         assert_eq!(process.exit_code, Some(0));
         assert_eq!(process.signal, None);
         assert!(!process.timed_out);
@@ -1335,11 +992,19 @@ mod tests {
             timeout_ms: Some(100),
             environment_profile: None,
         };
-        let timed_out = runtime.acquire(&timeout).expect_err("timeout");
+        let timed_out = runtime.acquire_source(&timeout).expect_err("timeout");
         assert_eq!(timed_out.failure.code, FailureCode::AcquisitionFailed);
         let partial = timed_out.partial.expect("timeout receipt");
-        assert!(partial.receipt.partial);
-        assert!(partial.receipt.process.as_ref().expect("process").timed_out);
+        assert!(partial.receipt.as_receipt().partial);
+        assert!(
+            partial
+                .receipt
+                .as_receipt()
+                .process
+                .as_ref()
+                .expect("process")
+                .timed_out
+        );
 
         let closed_streams = Source::Process {
             executable: ByteString::from_utf8(command_path(&["/bin/sh", "/usr/bin/sh"])),
@@ -1353,13 +1018,14 @@ mod tests {
             environment_profile: None,
         };
         let timed_out = runtime
-            .acquire(&closed_streams)
+            .acquire_source(&closed_streams)
             .expect_err("closed streams still obey timeout");
         assert!(
             timed_out
                 .partial
                 .expect("closed stream receipt")
                 .receipt
+                .as_receipt()
                 .process
                 .as_ref()
                 .expect("process")
@@ -1377,13 +1043,14 @@ mod tests {
             timeout_ms: Some(2_000),
             environment_profile: None,
         };
-        let killed = runtime.acquire(&signaled).expect_err("signal");
+        let killed = runtime.acquire_source(&signaled).expect_err("signal");
         assert_eq!(killed.failure.code, FailureCode::AcquisitionFailed);
         assert!(
             killed
                 .partial
                 .expect("signal receipt")
                 .receipt
+                .as_receipt()
                 .process
                 .as_ref()
                 .expect("process")
@@ -1399,12 +1066,12 @@ mod tests {
             timeout_ms: Some(5_000),
             environment_profile: None,
         };
-        let exhausted = runtime.acquire(&chatter).expect_err("output cap");
+        let exhausted = runtime.acquire_source(&chatter).expect_err("output cap");
         assert_eq!(exhausted.failure.code, FailureCode::ResourceExhausted);
         let partial = exhausted.partial.expect("partial output");
         assert_eq!(partial.bytes.len(), MAX_SOURCE_BYTES);
-        assert!(partial.receipt.truncated);
-        assert!(!partial.receipt.complete);
+        assert!(partial.receipt.as_receipt().truncated);
+        assert!(!partial.receipt.as_receipt().complete);
     }
 
     #[test]
@@ -1420,7 +1087,7 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&invalid_timeout)
+                .acquire_source(&invalid_timeout)
                 .expect_err("timeout range")
                 .failure
                 .code,
@@ -1436,7 +1103,7 @@ mod tests {
             environment_profile: None,
         };
         assert_eq!(
-            runtime.acquire(&nul).expect_err("nul").failure.code,
+            runtime.acquire_source(&nul).expect_err("nul").failure.code,
             FailureCode::InvalidRequest
         );
 
@@ -1450,11 +1117,11 @@ mod tests {
         };
         assert_eq!(
             runtime
-                .acquire(&unknown_environment)
+                .acquire_source(&unknown_environment)
                 .expect_err("environment")
                 .failure
                 .code,
-            FailureCode::InvariantBreach
+            FailureCode::InvalidRequest
         );
     }
 

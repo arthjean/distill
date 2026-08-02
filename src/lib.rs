@@ -156,22 +156,7 @@ impl Engine {
                         acquisition: Some(stored.acquisition.into_receipt()),
                     });
                 }
-                let receipt = ValidatedAcquisition::new(
-                    AcquisitionReceipt {
-                        variant: SourceVariant::Artifact,
-                        complete: true,
-                        partial: false,
-                        truncated: false,
-                        root_id: None,
-                        relative_path: None,
-                        process: None,
-                    },
-                    stored.bytes.len() as u64,
-                )
-                .map_err(|message| {
-                    Failure::new(FailureCode::InvariantBreach, message)
-                        .for_request(&request.request_id)
-                })?;
+                let receipt = ValidatedAcquisition::artifact_replay(stored.bytes.len() as u64);
                 (
                     Acquired {
                         bytes: stored.bytes,

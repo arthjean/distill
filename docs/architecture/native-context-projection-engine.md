@@ -97,7 +97,8 @@ parsers, or executable user projection code.
 
 ## Acquisition
 
-`src/runtime.rs` owns bounded local acquisition:
+`src/runtime.rs` owns bounded local acquisition. Process-pipe polling and child
+lifecycle mechanics are isolated in `src/runtime/process.rs`:
 
 - file reads require an explicit root and resist traversal and symlink
   replacement;

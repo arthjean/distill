@@ -39,14 +39,17 @@ pub(crate) enum LocalSource {
         relative_path: ByteString,
         reject_binary: bool,
     },
-    Process {
-        executable: ByteString,
-        argv: Vec<ByteString>,
-        cwd_root_id: String,
-        cwd_relative_path: ByteString,
-        timeout_ms: u64,
-        environment_profile: Option<String>,
-    },
+    Process(ProcessSource),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ProcessSource {
+    pub executable: ByteString,
+    pub argv: Vec<ByteString>,
+    pub cwd_root_id: String,
+    pub cwd_relative_path: ByteString,
+    pub timeout_ms: u64,
+    pub environment_profile: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -178,14 +181,14 @@ pub(crate) fn prepare(
                     "process source names an unknown environment profile",
                 ));
             }
-            ValidatedSource::Local(LocalSource::Process {
+            ValidatedSource::Local(LocalSource::Process(ProcessSource {
                 executable,
                 argv,
                 cwd_root_id,
                 cwd_relative_path,
                 timeout_ms,
                 environment_profile,
-            })
+            }))
         }
         Source::Artifact { artifact } => {
             if artifact.id.len() != 32
