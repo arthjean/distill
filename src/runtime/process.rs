@@ -2,8 +2,8 @@ use super::AcquisitionError;
 use crate::{
     request_policy::MAX_SOURCE_BYTES,
     types::{
-        ByteSpan, Failure, FailureCode, ProcessAcquisition, ProcessPartialReason, ProcessStream,
-        ProcessTermination, StreamEvent,
+        ByteSpan, Failure, FailureCode, ProcessPartialReason, ProcessStream, ProcessTermination,
+        StreamEvent,
     },
 };
 use std::{
@@ -17,46 +17,19 @@ const READ_CHUNK_BYTES: usize = 8 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const REAP_TOLERANCE: Duration = Duration::from_millis(250);
 
-pub(super) struct ProcessCapture {
-    pub bytes: Vec<u8>,
-    pub events: Vec<StreamEvent>,
-    pub terminal: ProcessTerminal,
-}
-
-pub(super) enum ProcessTerminal {
+pub(super) enum ProcessCapture {
     Complete {
+        bytes: Vec<u8>,
+        events: Vec<StreamEvent>,
         exit_code: i32,
     },
     Partial {
+        bytes: Vec<u8>,
+        events: Vec<StreamEvent>,
         failure: Box<Failure>,
         termination: ProcessTermination,
         reason: ProcessPartialReason,
     },
-}
-
-impl ProcessTerminal {
-    pub(super) fn into_acquisition(
-        self,
-        events: Vec<StreamEvent>,
-    ) -> (ProcessAcquisition, Option<Failure>) {
-        match self {
-            Self::Complete { exit_code } => {
-                (ProcessAcquisition::Complete { events, exit_code }, None)
-            }
-            Self::Partial {
-                failure,
-                termination,
-                reason,
-            } => (
-                ProcessAcquisition::Partial {
-                    events,
-                    termination,
-                    reason,
-                },
-                Some(*failure),
-            ),
-        }
-    }
 }
 
 struct CaptureFailure {
@@ -207,7 +180,7 @@ impl ProcessLifecycle {
                 ProcessPartialReason::CaptureFailed,
             ));
         }
-        let terminal = match failure {
+        match failure {
             Some(CaptureFailure { failure, reason }) => {
                 let termination = match (status.code(), signal(&status)) {
                     (Some(code), None) => ProcessTermination::Exit(code),
@@ -219,11 +192,13 @@ impl ProcessLifecycle {
                         )));
                     }
                 };
-                ProcessTerminal::Partial {
+                Ok(ProcessCapture::Partial {
+                    bytes,
+                    events,
                     failure: Box::new(failure),
                     termination,
                     reason,
-                }
+                })
             }
             None => {
                 let exit_code = status.code().ok_or_else(|| {
@@ -232,14 +207,13 @@ impl ProcessLifecycle {
                         "complete process capture did not return an exit code",
                     ))
                 })?;
-                ProcessTerminal::Complete { exit_code }
+                Ok(ProcessCapture::Complete {
+                    bytes,
+                    events,
+                    exit_code,
+                })
             }
-        };
-        Ok(ProcessCapture {
-            bytes,
-            events,
-            terminal,
-        })
+        }
     }
 
     fn drain_ready_streams(

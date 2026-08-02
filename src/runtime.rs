@@ -6,9 +6,7 @@ use crate::types::{Budget, CONTRACT_VERSION, CountUnit, Retention, Source};
 mod process;
 use crate::{
     request_policy::{LocalSource, MAX_SOURCE_BYTES, ProcessSource},
-    types::{
-        ByteString, EngineConfig, Failure, FailureCode, ProcessAcquisition, ValidatedAcquisition,
-    },
+    types::{ByteString, EngineConfig, Failure, FailureCode, ValidatedAcquisition},
 };
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -273,28 +271,45 @@ impl ProductionRuntime {
             ))
         })?;
         let deadline = started + Duration::from_millis(source.timeout_ms);
-        let capture = process::capture(child, deadline)?;
-        let process::ProcessCapture {
-            bytes,
-            events,
-            terminal,
-        } = capture;
-        let (acquisition, terminal_failure) = terminal.into_acquisition(events);
-        let source_bytes = bytes.len() as u64;
-        let receipt = ValidatedAcquisition::process(
-            &source.cwd_root_id,
-            &source.cwd_relative_path,
-            acquisition,
-            source_bytes,
-        );
-        let acquired = Acquired::checked(bytes, receipt)?;
-        if let Some(failure) = terminal_failure {
-            return Err(AcquisitionError {
+        match process::capture(child, deadline)? {
+            process::ProcessCapture::Complete {
+                bytes,
+                events,
+                exit_code,
+            } => {
+                let source_bytes = bytes.len() as u64;
+                let receipt = ValidatedAcquisition::process_complete(
+                    &source.cwd_root_id,
+                    &source.cwd_relative_path,
+                    events,
+                    exit_code,
+                    source_bytes,
+                );
+                Acquired::checked(bytes, receipt)
+            }
+            process::ProcessCapture::Partial {
+                bytes,
+                events,
                 failure,
-                partial: Some(acquired),
-            });
+                termination,
+                reason,
+            } => {
+                let source_bytes = bytes.len() as u64;
+                let receipt = ValidatedAcquisition::process_partial(
+                    &source.cwd_root_id,
+                    &source.cwd_relative_path,
+                    events,
+                    termination,
+                    reason,
+                    source_bytes,
+                );
+                let acquired = Acquired::checked(bytes, receipt)?;
+                Err(AcquisitionError {
+                    failure: *failure,
+                    partial: Some(acquired),
+                })
+            }
         }
-        Ok(acquired)
     }
 }
 
@@ -414,12 +429,9 @@ pub(crate) fn failure_receipt(source: &LocalSource) -> Result<ValidatedAcquisiti
             relative_path,
             ..
         } => ValidatedAcquisition::file_failed(root_id, relative_path),
-        LocalSource::Process(source) => ValidatedAcquisition::process(
-            &source.cwd_root_id,
-            &source.cwd_relative_path,
-            ProcessAcquisition::Failed,
-            0,
-        ),
+        LocalSource::Process(source) => {
+            ValidatedAcquisition::process_failed(&source.cwd_root_id, &source.cwd_relative_path)
+        }
     };
     receipt.map_err(|message| Failure::new(FailureCode::InvariantBreach, message))
 }

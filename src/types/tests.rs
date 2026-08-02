@@ -190,6 +190,51 @@ fn acquisition_semantics_cover_runtime_states_and_reject_contradictions() {
 }
 
 #[test]
+fn validated_acquisition_preserves_wire_path_spelling() {
+    let file = AcquisitionReceipt {
+        variant: SourceVariant::File,
+        complete: true,
+        partial: false,
+        truncated: false,
+        root_id: Some("workspace".to_owned()),
+        relative_path: Some("<0004 path bytes>".to_owned()),
+        process: None,
+    };
+    assert_eq!(
+        ValidatedAcquisition::from_wire(file.clone(), 3)
+            .expect("validated file")
+            .to_receipt(),
+        file
+    );
+
+    let process = AcquisitionReceipt {
+        variant: SourceVariant::Process,
+        complete: true,
+        partial: false,
+        truncated: false,
+        root_id: Some("workspace".to_owned()),
+        relative_path: None,
+        process: Some(ProcessReceipt {
+            events: vec![StreamEvent {
+                order: 0,
+                stream: ProcessStream::Stdout,
+                span: ByteSpan { start: 0, end: 3 },
+            }],
+            exit_code: Some(0),
+            signal: None,
+            timed_out: false,
+            working_directory: "workspace:<000 path bytes>".to_owned(),
+        }),
+    };
+    assert_eq!(
+        ValidatedAcquisition::from_wire(process.clone(), 3)
+            .expect("validated process")
+            .to_receipt(),
+        process
+    );
+}
+
+#[test]
 fn acquisition_semantics_reject_each_invalid_metadata_shape() {
     let inline = AcquisitionReceipt {
         variant: SourceVariant::Inline,

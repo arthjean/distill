@@ -107,14 +107,10 @@ fn file_capture_is_descriptor_relative_and_binary_aware() {
     };
     let acquired = runtime.acquire_source(&source).expect("file");
     assert_eq!(acquired.bytes, [0, 0xff, b'x']);
-    assert_eq!(
-        acquired.receipt.as_receipt().root_id.as_deref(),
-        Some("workspace")
-    );
+    let receipt = acquired.receipt.to_receipt();
+    assert_eq!(receipt.root_id.as_deref(), Some("workspace"));
     assert!(
-        !acquired
-            .receipt
-            .as_receipt()
+        !receipt
             .relative_path
             .as_ref()
             .expect("safe path")
@@ -343,12 +339,8 @@ fn argv_is_literal_environment_is_allowlisted_and_no_shell_is_inferred() {
     assert!(text.contains("value with spaces"));
     assert!(text.contains(&injection));
     assert!(!marker.exists());
-    let process = acquired
-        .receipt
-        .as_receipt()
-        .process
-        .as_ref()
-        .expect("process receipt");
+    let receipt = acquired.receipt.to_receipt();
+    let process = receipt.process.as_ref().expect("process receipt");
     assert_eq!(process.exit_code, Some(0));
     assert_eq!(process.signal, None);
     assert!(!process.timed_out);
@@ -369,16 +361,9 @@ fn timeout_signal_and_output_limit_return_partial_typed_failures() {
     let timed_out = runtime.acquire_source(&timeout).expect_err("timeout");
     assert_eq!(timed_out.failure.code, FailureCode::AcquisitionFailed);
     let partial = timed_out.partial.expect("timeout receipt");
-    assert!(partial.receipt.as_receipt().partial);
-    assert!(
-        partial
-            .receipt
-            .as_receipt()
-            .process
-            .as_ref()
-            .expect("process")
-            .timed_out
-    );
+    let receipt = partial.receipt.to_receipt();
+    assert!(receipt.partial);
+    assert!(receipt.process.as_ref().expect("process").timed_out);
 
     let closed_streams = Source::Process {
         executable: ByteString::from_utf8(command_path(&["/bin/sh", "/usr/bin/sh"])),
@@ -399,7 +384,7 @@ fn timeout_signal_and_output_limit_return_partial_typed_failures() {
             .partial
             .expect("closed stream receipt")
             .receipt
-            .as_receipt()
+            .to_receipt()
             .process
             .as_ref()
             .expect("process")
@@ -424,7 +409,7 @@ fn timeout_signal_and_output_limit_return_partial_typed_failures() {
             .partial
             .expect("signal receipt")
             .receipt
-            .as_receipt()
+            .to_receipt()
             .process
             .as_ref()
             .expect("process")
@@ -444,8 +429,9 @@ fn timeout_signal_and_output_limit_return_partial_typed_failures() {
     assert_eq!(exhausted.failure.code, FailureCode::ResourceExhausted);
     let partial = exhausted.partial.expect("partial output");
     assert_eq!(partial.bytes.len(), MAX_SOURCE_BYTES);
-    assert!(partial.receipt.as_receipt().truncated);
-    assert!(!partial.receipt.as_receipt().complete);
+    let receipt = partial.receipt.to_receipt();
+    assert!(receipt.truncated);
+    assert!(!receipt.complete);
 }
 
 #[test]

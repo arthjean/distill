@@ -253,7 +253,7 @@ fn restart_recovery_is_byte_exact_and_private() {
     );
     let recovered = restarted.retrieve(&artifact, 101).expect("recover");
     assert_eq!(recovered.bytes, b"\0source\xff");
-    assert_eq!(recovered.acquisition.as_receipt(), &receipt());
+    assert_eq!(recovered.acquisition.to_receipt(), receipt());
 
     let directory_mode = fs::metadata(store.path.parent().expect("parent"))
         .expect("directory metadata")

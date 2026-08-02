@@ -220,7 +220,7 @@ impl ArtifactStore {
             ));
         }
         let digest = sha256_hex(bytes);
-        let acquisition_json = serde_json::to_vec(acquisition.as_receipt()).map_err(|_| {
+        let acquisition_json = serde_json::to_vec(&acquisition.to_receipt()).map_err(|_| {
             Failure::new(
                 FailureCode::InvariantBreach,
                 "acquisition metadata cannot be serialized",
