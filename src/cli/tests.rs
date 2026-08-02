@@ -1,4 +1,5 @@
 use super::*;
+use distill::CL100K_PROFILE;
 use std::fs;
 use tempfile::TempDir;
 

@@ -1,11 +1,13 @@
 use crate::{
     codex, mcp, setup,
-    surface::{BROKEN_PIPE_EXIT, SurfaceError, write_json_line},
+    surface::{
+        BROKEN_PIPE_EXIT, DEFAULT_PRESERVATION_PROFILE, SurfaceError, adapter_failure, budget_for,
+        normalize_root_relative, write_json_line,
+    },
 };
 use distill::{
-    ArtifactRef, BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit,
-    Engine, EngineConfig, Failure, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention,
-    Source,
+    ArtifactRef, BinaryPolicy, Budget, ByteString, CONTRACT_VERSION, CountUnit, Engine,
+    EngineConfig, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention, Source,
 };
 use serde::Serialize;
 #[cfg(test)]
@@ -91,7 +93,7 @@ impl ProjectionParser {
             total: None,
             reserve: 0,
             unit: CountUnit::Bytes,
-            profile: "plain-text/v1".to_owned(),
+            profile: DEFAULT_PRESERVATION_PROFILE.to_owned(),
             ttl_seconds: None,
             json: false,
         }
@@ -139,12 +141,7 @@ impl ProjectionParser {
             .total
             .ok_or_else(|| SurfaceError::invalid("--budget is required"))?;
         Ok(ProjectionOptions {
-            budget: Budget {
-                unit: self.unit,
-                total_visible_limit,
-                reserved_envelope: self.reserve,
-                token_profile: (self.unit == CountUnit::Tokens).then(|| CL100K_PROFILE.to_owned()),
-            },
+            budget: budget_for(self.unit, total_visible_limit, self.reserve),
             profile: self.profile,
             retention: Retention {
                 expires_at: None,
@@ -552,14 +549,11 @@ fn read_bounded<R: Read>(input: &mut R, limit: usize) -> Result<Vec<u8>, Surface
         .read_to_end(&mut bytes)
         .map_err(|_| SurfaceError::invalid("cannot read stdin"))?;
     if bytes.len() > limit {
-        return Err(SurfaceError::from(Failure {
-            code: FailureCode::InputTooLarge,
-            safe_message: "stdin exceeds the 10 MiB limit".to_owned(),
-            request_id: None,
-            details: BTreeMap::new(),
-            artifact: None,
-            acquisition: None,
-        }));
+        return Err(SurfaceError::from(adapter_failure(
+            FailureCode::InputTooLarge,
+            "stdin exceeds the 10 MiB limit",
+            None,
+        )));
     }
     Ok(bytes)
 }
@@ -573,10 +567,6 @@ fn parse_u64(value: &str, flag: &str) -> Result<u64, SurfaceError> {
     value
         .parse()
         .map_err(|_| SurfaceError::invalid(format!("{flag} requires an unsigned integer")))
-}
-
-fn normalize_root_relative(path: String) -> String {
-    if path == "." { String::new() } else { path }
 }
 
 fn remove_flag(args: &mut VecDeque<String>, flag: &str) -> bool {

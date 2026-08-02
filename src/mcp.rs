@@ -1,17 +1,15 @@
-use crate::surface::{SurfaceError, bounded_correlation_id};
+use crate::surface::{
+    SurfaceError, adapter_failure, bounded_correlation_id, budget_for, count_visible,
+    default_request, mcp_error_envelope, normalize_root_relative, projection_envelope,
+};
 use distill::{
-    BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
-    EngineConfig, Failure, FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
-    MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES,
-    MAX_PROCESS_TIMEOUT_MS, MIN_PROCESS_TIMEOUT_MS, Outcome, Request, Retention, Source,
+    BinaryPolicy, Budget, ByteString, CountUnit, Engine, EngineConfig, Failure, FailureCode,
+    MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS,
+    MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS, MIN_PROCESS_TIMEOUT_MS, Outcome, Source,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    io::{BufRead, BufReader, Read, Write},
-};
-use tiktoken_rs::cl100k_base_singleton;
+use std::io::{BufRead, BufReader, Read, Write};
 
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MCP_ADAPTER_VERSION: &str = "distill.mcp/v1";
@@ -25,6 +23,25 @@ struct JsonRpcRequest {
     method: String,
     #[serde(default)]
     params: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolCallParams {
+    name: String,
+    #[serde(default = "empty_arguments")]
+    arguments: Value,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProtocolError {
+    code: i64,
+    message: &'static str,
+}
+
+impl ProtocolError {
+    const fn new(code: i64, message: &'static str) -> Self {
+        Self { code, message }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -42,12 +59,11 @@ impl McpBudget {
             CountUnit::Bytes => 1_024,
             CountUnit::Tokens => 400,
         };
-        Budget {
-            unit: self.unit,
-            total_visible_limit: self.total_visible_limit,
-            reserved_envelope: self.reserved_envelope.unwrap_or(default_reserve),
-            token_profile: (self.unit == CountUnit::Tokens).then(|| CL100K_PROFILE.to_owned()),
-        }
+        budget_for(
+            self.unit,
+            self.total_visible_limit,
+            self.reserved_envelope.unwrap_or(default_reserve),
+        )
     }
 }
 
@@ -100,7 +116,7 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
             }
             continue;
         }
-        let request: JsonRpcRequest = match serde_json::from_slice(&line) {
+        let mut request: JsonRpcRequest = match serde_json::from_slice(&line) {
             Ok(request) => request,
             Err(_) => {
                 write_protocol_error(output, Value::Null, -32700, "invalid JSON")?;
@@ -129,15 +145,19 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
             )?;
             continue;
         }
-        let id = request.id.clone();
-        if id.is_none() {
+        if matches!(
+            request.method.as_str(),
+            "notifications/initialized" | "notifications/cancelled"
+        ) {
             continue;
         }
-        if let Some(response) = dispatch(&engine, request) {
-            let id = id.unwrap_or(Value::Null);
-            match response {
-                Ok(result) => write_result(output, id, result)?,
-                Err((code, message)) => write_protocol_error(output, id, code, message)?,
+        let Some(id) = request.id.take() else {
+            continue;
+        };
+        match dispatch(&engine, &id, &request.method, request.params) {
+            Ok(result) => write_result(output, id, result)?,
+            Err(error) => {
+                write_protocol_error(output, id, error.code, error.message)?;
             }
         }
     }
@@ -145,66 +165,55 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
 
 fn dispatch(
     engine: &Engine,
-    request: JsonRpcRequest,
-) -> Option<Result<Value, (i64, &'static str)>> {
-    match request.method.as_str() {
-        "notifications/initialized" | "notifications/cancelled" => None,
-        "initialize" => Some(Ok(json!({
+    id: &Value,
+    method: &str,
+    params: Value,
+) -> Result<Value, ProtocolError> {
+    match method {
+        "initialize" => Ok(json!({
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": false}},
             "serverInfo": {"name": "distill", "version": env!("CARGO_PKG_VERSION")},
             "instructions": "Use distill_read and distill_run for explicit projected acquisition. This server does not intercept Claude native Read or Bash.",
-        }))),
-        "ping" => Some(Ok(json!({}))),
-        "tools/list" => Some(Ok(json!({"tools": tool_definitions()}))),
-        "tools/call" => Some(call_tool(engine, request.id.as_ref(), request.params)),
-        _ => Some(Err((-32601, "method not found"))),
+        })),
+        "ping" => Ok(json!({})),
+        "tools/list" => Ok(json!({"tools": tool_definitions()})),
+        "tools/call" => call_tool(engine, id, params),
+        _ => Err(ProtocolError::new(-32601, "method not found")),
     }
 }
 
-fn call_tool(
-    engine: &Engine,
-    id: Option<&Value>,
-    params: Value,
-) -> Result<Value, (i64, &'static str)> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or((-32602, "tools/call requires a tool name"))?;
-    let arguments = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, ProtocolError> {
+    let params: ToolCallParams = serde_json::from_value(params)
+        .map_err(|_| ProtocolError::new(-32602, "tools/call requires a tool name"))?;
+    let name = params.name;
+    let arguments = params.arguments;
     let request_id = format_request_id(id);
-    let handled = match name {
+    let handled = match name.as_str() {
         "distill_read" => {
             let arguments: ReadArguments = serde_json::from_value(arguments)
-                .map_err(|_| (-32602, "invalid distill_read arguments"))?;
+                .map_err(|_| ProtocolError::new(-32602, "invalid distill_read arguments"))?;
             let budget = arguments.budget.clone();
-            let request = Request {
-                contract_version: CONTRACT_VERSION.to_owned(),
+            let request = default_request(
                 request_id,
-                source: Source::File {
+                Source::File {
                     root_id: arguments.root_id,
                     relative_path: ByteString::from_utf8(arguments.path),
                     binary_policy: arguments.binary_policy.unwrap_or(BinaryPolicy::Accept),
                 },
-                budget: budget.engine_budget(),
-                preservation_profile: "plain-text/v1".to_owned(),
-                retention: Retention::default(),
-            };
+                budget.engine_budget(),
+            );
             engine
                 .handle(request)
                 .and_then(|outcome| render_outcome(outcome, &budget))
         }
         "distill_run" => {
             let arguments: RunArguments = serde_json::from_value(arguments)
-                .map_err(|_| (-32602, "invalid distill_run arguments"))?;
+                .map_err(|_| ProtocolError::new(-32602, "invalid distill_run arguments"))?;
             let budget = arguments.budget.clone();
-            let request = Request {
-                contract_version: CONTRACT_VERSION.to_owned(),
+            let request = default_request(
                 request_id,
-                source: Source::Process {
+                Source::Process {
                     executable: ByteString::from_utf8(arguments.executable),
                     argv: arguments
                         .argv
@@ -218,10 +227,8 @@ fn call_tool(
                     timeout_ms: arguments.timeout_ms,
                     environment_profile: arguments.environment_profile,
                 },
-                budget: budget.engine_budget(),
-                preservation_profile: "plain-text/v1".to_owned(),
-                retention: Retention::default(),
-            };
+                budget.engine_budget(),
+            );
             engine
                 .handle(request)
                 .and_then(|outcome| render_outcome(outcome, &budget))
@@ -245,43 +252,11 @@ fn call_tool(
 }
 
 fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failure> {
-    let process = outcome.receipt.acquisition.process.as_ref().map(|process| {
-        json!({
-            "exit_code": process.exit_code,
-            "signal": process.signal,
-            "timed_out": process.timed_out,
-            "working_directory": process.working_directory,
-        })
-    });
-    let envelope = serde_json::to_string(&json!({
-        "schema_version": MCP_ADAPTER_VERSION,
-        "source_is_untrusted": true,
-        "projection": outcome.visible.bytes,
-        "artifact": outcome.artifact,
-        "fidelity": outcome.receipt.fidelity,
-        "accounting": {
-            "original": outcome.receipt.original_count,
-            "visible": outcome.receipt.visible_count,
-            "unit": outcome.receipt.count_unit,
-            "token_profile": outcome.receipt.token_profile,
-        },
-        "receipt": {
-            "schema_version": outcome.receipt.schema_version,
-            "source_sha256": outcome.receipt.source_sha256,
-            "projection_version": outcome.receipt.projection_version,
-            "policy_version": outcome.receipt.policy_version,
-        },
-        "source": {
-            "variant": outcome.receipt.acquisition.variant,
-            "complete": outcome.receipt.acquisition.complete,
-            "partial": outcome.receipt.acquisition.partial,
-            "truncated": outcome.receipt.acquisition.truncated,
-            "root_id": outcome.receipt.acquisition.root_id,
-            "relative_path": outcome.receipt.acquisition.relative_path,
-            "process": process,
-        },
-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
-    }))
+    let envelope = serde_json::to_string(&projection_envelope(
+        MCP_ADAPTER_VERSION,
+        &outcome,
+        Some(&outcome.receipt.acquisition),
+    ))
     .map_err(|_| {
         adapter_failure(
             FailureCode::InvariantBreach,
@@ -289,7 +264,7 @@ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failur
             None,
         )
     })?;
-    if count(&envelope, budget) > budget.total_visible_limit {
+    if count_visible(&envelope, budget.unit) > budget.total_visible_limit {
         return Err(adapter_failure(
             FailureCode::BudgetUnsatisfiable,
             "MCP adapter envelope exceeds the declared total visible budget",
@@ -299,40 +274,8 @@ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failur
     Ok(envelope)
 }
 
-fn adapter_failure(
-    code: FailureCode,
-    message: &str,
-    artifact: Option<distill::ArtifactRef>,
-) -> Failure {
-    Failure {
-        code,
-        safe_message: message.to_owned(),
-        request_id: None,
-        details: BTreeMap::new(),
-        artifact,
-        acquisition: None,
-    }
-}
-
-fn count(text: &str, budget: &McpBudget) -> u64 {
-    match budget.unit {
-        CountUnit::Bytes => text.len() as u64,
-        CountUnit::Tokens => cl100k_base_singleton().encode_ordinary(text).len() as u64,
-    }
-}
-
 fn tool_error(code: &str, message: &str, artifact: Option<&distill::ArtifactRef>) -> Value {
-    let text = serde_json::to_string(&json!({
-        "schema_version": MCP_ADAPTER_VERSION,
-        "error": {
-            "code": code,
-            "message": message.chars().take(512).collect::<String>(),
-            "artifact": artifact,
-        },
-        "raw_content_included": false,
-        "recovery": artifact.map(|value| format!("distill artifact get {}", value.id)),
-    }))
-    .unwrap_or_else(|_| "{\"error\":{\"code\":\"invariant_breach\"}}".to_owned());
+    let text = mcp_error_envelope(MCP_ADAPTER_VERSION, code, message, artifact);
     json!({
         "content": [{"type": "text", "text": text}],
         "isError": true,
@@ -402,15 +345,12 @@ fn budget_schema() -> Value {
     })
 }
 
-fn normalize_root_relative(path: String) -> String {
-    if path == "." { String::new() } else { path }
+fn format_request_id(id: &Value) -> String {
+    bounded_correlation_id(format!("mcp:{id}"))
 }
 
-fn format_request_id(id: Option<&Value>) -> String {
-    let suffix = id
-        .map(Value::to_string)
-        .unwrap_or_else(|| "notification".to_owned());
-    bounded_correlation_id(format!("mcp:{suffix}"))
+fn empty_arguments() -> Value {
+    json!({})
 }
 
 fn write_result<W: Write>(output: &mut W, id: Value, result: Value) -> Result<(), SurfaceError> {

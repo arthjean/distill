@@ -1,16 +1,17 @@
-use crate::surface::{SurfaceError, bounded_correlation_id, write_json_line};
+use crate::surface::{
+    SurfaceError, adapter_failure, bounded_correlation_id, budget_for, codex_error_envelope,
+    count_visible, default_request, projection_envelope, write_json_line,
+};
 use distill::{
-    Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Failure,
-    FailureCode, Fidelity, Outcome, Request, Retention, Source,
+    ByteString, CountUnit, Engine, EngineConfig, Failure, FailureCode, Fidelity, Outcome, Source,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     io::{Read, Write},
     panic::{AssertUnwindSafe, catch_unwind},
 };
-use tiktoken_rs::cl100k_base_singleton;
 
 pub(crate) const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v2";
 const PROJECTION_SCHEMA_VERSION: &str = "distill.codex-projection/v1";
@@ -149,22 +150,14 @@ pub(crate) fn run<R: Read, W: Write>(
         Ok(engine) => engine,
         Err(failure) => return write_mode_failure(output, mode, &failure),
     };
-    let request = Request {
-        contract_version: CONTRACT_VERSION.to_owned(),
-        request_id: bounded_request_id(&event),
-        source: Source::Inline {
+    let request = default_request(
+        bounded_request_id(&event),
+        Source::Inline {
             bytes: ByteString::from(source),
             media_type: Some("application/json".to_owned()),
         },
-        budget: Budget {
-            unit: CountUnit::Tokens,
-            total_visible_limit: total_tokens,
-            reserved_envelope: reserved_tokens,
-            token_profile: Some(CL100K_PROFILE.to_owned()),
-        },
-        preservation_profile: "plain-text/v1".to_owned(),
-        retention: Retention::default(),
-    };
+        budget_for(CountUnit::Tokens, total_tokens, reserved_tokens),
+    );
     let handled = catch_unwind(AssertUnwindSafe(|| engine.handle(request)));
     let outcome = match handled {
         Ok(Ok(outcome)) => outcome,
@@ -267,13 +260,12 @@ fn response_bytes(response: &Value) -> Result<Vec<u8>, Failure> {
     if let Some(text) = response.as_str() {
         return Ok(text.as_bytes().to_vec());
     }
-    serde_json::to_vec(response).map_err(|_| Failure {
-        code: FailureCode::InvariantBreach,
-        safe_message: "Codex tool response cannot be serialized".to_owned(),
-        request_id: None,
-        details: BTreeMap::new(),
-        artifact: None,
-        acquisition: None,
+    serde_json::to_vec(response).map_err(|_| {
+        adapter_failure(
+            FailureCode::InvariantBreach,
+            "Codex tool response cannot be serialized",
+            None,
+        )
     })
 }
 
@@ -289,26 +281,11 @@ fn bounded_request_id(event: &PostToolUseEvent) -> String {
 }
 
 fn render_projection(outcome: &Outcome) -> String {
-    serde_json::to_string(&json!({
-        "schema_version": PROJECTION_SCHEMA_VERSION,
-        "source_is_untrusted": true,
-        "projection": outcome.visible.bytes,
-        "artifact": outcome.artifact,
-        "fidelity": outcome.receipt.fidelity,
-        "accounting": {
-            "original": outcome.receipt.original_count,
-            "visible": outcome.receipt.visible_count,
-            "unit": outcome.receipt.count_unit,
-            "token_profile": outcome.receipt.token_profile,
-        },
-        "receipt": {
-            "schema_version": outcome.receipt.schema_version,
-            "source_sha256": outcome.receipt.source_sha256,
-            "projection_version": outcome.receipt.projection_version,
-            "policy_version": outcome.receipt.policy_version,
-        },
-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
-    }))
+    serde_json::to_string(&projection_envelope(
+        PROJECTION_SCHEMA_VERSION,
+        outcome,
+        None,
+    ))
     .unwrap_or_else(|_| {
         compact_feedback(
             FailureCode::InvariantBreach,
@@ -343,17 +320,7 @@ fn compact_feedback(
     message: &str,
     artifact: Option<&distill::ArtifactRef>,
 ) -> String {
-    serde_json::to_string(&json!({
-        "schema_version": PROJECTION_SCHEMA_VERSION,
-        "error": {
-            "code": code.as_str(),
-            "message": message.chars().take(512).collect::<String>(),
-            "artifact": artifact,
-        },
-        "raw_output_forwarded_as_projected": false,
-        "recovery": artifact.map(|value| format!("distill artifact get {}", value.id)),
-    }))
-    .unwrap_or_else(|_| "{\"error\":{\"code\":\"invariant_breach\"}}".to_owned())
+    codex_error_envelope(PROJECTION_SCHEMA_VERSION, code.as_str(), message, artifact)
 }
 
 fn write_feedback<W: Write>(output: &mut W, feedback: &str) -> Result<(), SurfaceError> {
@@ -383,7 +350,7 @@ fn write_observe_diagnostic<W: Write>(
 }
 
 fn token_count(text: &str) -> u64 {
-    cl100k_base_singleton().encode_ordinary(text).len() as u64
+    count_visible(text, CountUnit::Tokens)
 }
 
 fn parse_u64(value: Option<String>, flag: &str) -> Result<u64, SurfaceError> {
