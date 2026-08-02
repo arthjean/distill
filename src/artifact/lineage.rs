@@ -1,21 +1,65 @@
-use super::row::{GarbageCollectionRow, LineageShapeRow};
 use super::{
-    GcReport, LINEAGE_DIGEST_DOMAIN, MAX_RECEIPT_SPANS, TOMBSTONE_TTL_SECONDS, map_read_error,
-    map_write_error, nonnegative_u64, sha256_hex,
+    LINEAGE_DIGEST_DOMAIN, MAX_RECEIPT_SPANS, map_read_error, map_write_error, nonnegative_u64,
+    sha256_hex,
 };
 use crate::types::{
     ArtifactRef, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity,
     MAX_ARTIFACT_LINEAGE_BYTES, POLICY_VERSION, PROJECTION_VERSION, RECEIPT_SCHEMA_VERSION,
     Receipt,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
+
+struct LineageShapeRow {
+    count: i64,
+    bytes: i64,
+    minimum: i64,
+    maximum: i64,
+    distinct: i64,
+}
 
 #[derive(Debug)]
 pub(super) struct LineageShape {
     pub count: u64,
     pub bytes: u64,
     pub last_chain: Option<String>,
+}
+
+#[derive(Debug)]
+pub(super) struct VerifiedLineage {
+    pub count: u64,
+    pub bytes: u64,
+    pub head: String,
+}
+
+pub(super) fn verify_lineage(
+    connection: &Connection,
+    reference: &ArtifactRef,
+    claimed_count: i64,
+    claimed_bytes: i64,
+    claimed_head: String,
+) -> Result<VerifiedLineage, Failure> {
+    let claimed_count = nonnegative_u64(claimed_count, "claimed receipt count")?;
+    let claimed_bytes = nonnegative_u64(claimed_bytes, "claimed lineage usage")?;
+    let shape = lineage_shape(connection, reference)?;
+    if shape.count != claimed_count
+        || shape.bytes != claimed_bytes
+        || shape.bytes > MAX_ARTIFACT_LINEAGE_BYTES
+        || !valid_sha256(&claimed_head)
+        || (shape.count == 0 && claimed_head != super::EMPTY_LINEAGE_SHA256)
+        || (shape.count > 0 && shape.last_chain.as_deref() != Some(claimed_head.as_str()))
+    {
+        return Err(Failure::new(
+            FailureCode::ArtifactCorrupt,
+            "artifact receipt lineage commitment is corrupt",
+        )
+        .with_artifact(reference.clone()));
+    }
+    Ok(VerifiedLineage {
+        count: shape.count,
+        bytes: shape.bytes,
+        head: claimed_head,
+    })
 }
 
 pub(super) fn lineage_shape(
@@ -123,17 +167,6 @@ pub(super) fn validate_lineage_bounds_connection(
     Ok(())
 }
 
-pub(super) fn store_usage(transaction: &Transaction<'_>) -> Result<u64, Failure> {
-    let used: i64 = transaction
-        .query_row(
-            "SELECT COALESCE(SUM(source_bytes), 0) FROM artifacts",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(map_write_error)?;
-    nonnegative_u64(used, "store usage")
-}
-
 pub(super) fn lineage_usage(transaction: &Transaction<'_>) -> Result<u64, Failure> {
     let used: i64 = transaction
         .query_row(
@@ -156,77 +189,6 @@ pub(super) fn lineage_usage_connection(connection: &Connection) -> Result<u64, F
         )
         .map_err(map_read_error)?;
     nonnegative_u64(used, "lineage usage")
-}
-
-pub(super) fn collect_in_transaction(
-    transaction: &Transaction<'_>,
-    now: u64,
-) -> Result<GcReport, Failure> {
-    let now_sql = i64::try_from(now).map_err(|_| {
-        Failure::new(
-            FailureCode::InvalidRequest,
-            "garbage collection time exceeds SQLite limits",
-        )
-    })?;
-    let row: GarbageCollectionRow = transaction
-        .query_row(
-            "SELECT COUNT(*), COALESCE(SUM(source_bytes), 0)
-             FROM artifacts WHERE expires_at <= ?1",
-            [now_sql],
-            |row| {
-                Ok(GarbageCollectionRow {
-                    records: row.get(0)?,
-                    bytes: row.get(1)?,
-                })
-            },
-        )
-        .map_err(map_write_error)?;
-    let lineage_bytes: i64 = transaction
-        .query_row(
-            "SELECT COALESCE(SUM(length(receipt_metadata)), 0)
-             FROM artifact_receipts
-             WHERE artifact_id IN (
-                 SELECT id FROM artifacts WHERE expires_at <= ?1
-             )",
-            [now_sql],
-            |row| row.get(0),
-        )
-        .map_err(map_write_error)?;
-    let purge_at = now.saturating_add(TOMBSTONE_TTL_SECONDS);
-    let purge_at_sql = i64::try_from(purge_at).map_err(|_| {
-        Failure::new(
-            FailureCode::InvalidRequest,
-            "tombstone expiration exceeds SQLite limits",
-        )
-    })?;
-    transaction
-        .execute(
-            "INSERT INTO tombstones
-                (id, schema_version, expired_at, purge_at, failure_code)
-             SELECT id, 'distill.tombstone/v1', expires_at, ?2, 'artifact_expired'
-             FROM artifacts WHERE expires_at <= ?1
-             ON CONFLICT(id) DO UPDATE SET
-                schema_version = excluded.schema_version,
-                expired_at = excluded.expired_at,
-                purge_at = excluded.purge_at,
-                failure_code = excluded.failure_code",
-            params![now_sql, purge_at_sql],
-        )
-        .map_err(map_write_error)?;
-    transaction
-        .execute("DELETE FROM artifacts WHERE expires_at <= ?1", [now_sql])
-        .map_err(map_write_error)?;
-    transaction
-        .execute("DELETE FROM tombstones WHERE purge_at <= ?1", [now_sql])
-        .map_err(map_write_error)?;
-    Ok(GcReport {
-        reclaimed_bytes: nonnegative_u64(row.bytes, "garbage collection bytes")?,
-        reclaimed_lineage_bytes: nonnegative_u64(
-            lineage_bytes,
-            "garbage collection lineage bytes",
-        )?,
-        reclaimed_records: nonnegative_u64(row.records, "garbage collection records")?,
-    })
 }
 
 pub(super) fn verify_exact_digest(

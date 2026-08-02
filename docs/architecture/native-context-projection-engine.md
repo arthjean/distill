@@ -48,8 +48,9 @@ boundary.
 
 ## Persistence and recovery
 
-`src/artifact.rs` uses SQLite WAL for both source bytes and
-metadata. The store:
+`src/artifact.rs` and its `src/artifact/` modules use SQLite WAL for both source
+bytes and metadata. Connection and schema management, receipt lineage, store
+lifecycle, migration, and permissions have separate ownership. The store:
 
 - creates directories with mode `0700` and data with mode `0600` where POSIX
   enforcement is supported;

@@ -1,4 +1,3 @@
-use super::row::LegacyReceiptRow;
 use super::{
     EMPTY_LINEAGE_SHA256, lineage_chain_sha256, lineage_usage, map_read_error, map_write_error,
     nonnegative_u64, sha256_hex, validate_receipt,
@@ -27,6 +26,13 @@ struct LegacyArtifactRow {
     acquisition_json: Vec<u8>,
     created_at: i64,
     expires_at: i64,
+}
+
+struct LegacyReceiptRow {
+    sequence: i64,
+    artifact_id: String,
+    request_id: String,
+    receipt_json: Vec<u8>,
 }
 
 pub(super) fn migrate_v2_to_v3(
