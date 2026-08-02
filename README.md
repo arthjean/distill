@@ -14,10 +14,10 @@ explicit budget. Every reduced result carries a durable artifact reference and
 a receipt describing what was retained or omitted.
 
 The native v0.1.0 package is qualified on Linux x86_64 GNU and macOS arm64 from
-one source tree. Its npm tarball embeds the exact receipt-bound executables and
-is ready for authenticated registry publication. The retired TypeScript
-MCP-first implementation remains recoverable through the recorded pre-US-020
-ref, while its historical evidence stays in the repository.
+one source tree and published as `@arthjean/distill@0.1.0`. Its npm tarball
+embeds the exact receipt-bound executables. The retired TypeScript MCP-first
+implementation remains recoverable through the recorded pre-US-020 ref, while
+its historical evidence stays in the repository.
 
 ## Product contract
 
@@ -67,7 +67,7 @@ No static or musl compatibility is claimed.
 
 ## npm package
 
-The release candidate for the native distribution is `@arthjean/distill`:
+The native distribution is published as `@arthjean/distill`:
 
 ```bash
 npm install --global @arthjean/distill
@@ -76,8 +76,7 @@ distill --help
 
 The package embeds both qualified native executables. It performs no
 installation-time download. npm rejects other operating systems, while the
-launcher rejects unsupported architectures and Linux runtimes. Registry
-publication remains a separate authenticated action.
+launcher rejects unsupported architectures and Linux runtimes.
 
 ## CLI
 
@@ -187,8 +186,8 @@ to the pre-root-layout native tree
 corpus fixtures, recovery, concurrency, latency, memory, fuzzing, and
 zero-network behavior. The US-018 v5 paired gate scored 50/50 for raw and 50/50
 for projected conditions with a 0 point delta. Those receipts remain historical
-evidence and do not qualify the current source tree. No qualification action
-published an asset, tag, or version.
+evidence and do not qualify the current source tree. The qualification gates
+did not themselves publish an asset, tag, or version.
 
 ## Development
 

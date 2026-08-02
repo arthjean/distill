@@ -2,9 +2,12 @@
 
 ## Supported versions
 
-No native release has been published yet. Until a separately authorized release
-exists, security fixes land on `dev` and reports must identify the exact source
-commit or native archive SHA-256 being tested.
+| Version | Supported |
+| ------- | --------- |
+| `0.1.0` | Yes       |
+
+Security fixes land on `dev`. Reports must identify the package version,
+source commit or native archive SHA-256 being tested.
 
 ## Reporting a vulnerability
 

@@ -5,7 +5,7 @@
   "current_source_tree": "952711e440754621080d45f8870c55c3b3ce17c3",
   "current_engine_source_tree": "4fd63a6a4ef6e87f3e05134183477e5831dc67f5",
   "current_status": "qualified",
-  "release_performed": false,
+  "release_performed": true,
   "version_changed": true,
   "checksum_scope": "native archive SHA-256, npm tarball SHA-256 and SHA-512 integrity, and npm registry ECDSA signatures; no GitHub provenance attestation is claimed",
   "qualification": {
@@ -42,7 +42,13 @@
     "version": "0.1.0",
     "tarball_sha256": "2950421b29fcf6eead9dd55b994b786066e47b9da935a887576612fdca4b40a0",
     "package_record_sha256": "6ea392af8d8ccb89c0075e7d9065022e5847b13dd56b1ee59d7eeb96c4849377",
-    "status": "ready-to-publish",
+    "status": "published",
+    "registry_url": "https://www.npmjs.com/package/@arthjean/distill/v/0.1.0",
+    "published_at": "2026-08-02T12:14:38.348Z",
+    "registry_shasum": "ad828815d72ae255baafd9b535366f49a58e54a6",
+    "registry_integrity": "sha512-LLcqmKWDjm/ci8rjVKvIP13fmR/Av6My555wv9Vf3GhddkAFZL8C2Rw6A8Ry995q/lhK1VOFTmx6YRfNgNcQxw==",
+    "registry_signature_verified": true,
+    "github_provenance": false,
     "reason": "A current npm installation requirement now justifies a package surface. One package keeps publication atomic, performs no installation-time download, and uses a POSIX launcher rather than a Node runtime to select the exact qualified OS and architecture pair.",
     "legacy_package": "distill-mcp@0.11.2 was retired by the separately authorized US-020 migration; @arthjean/distill distributes only the replacement native engine"
   },
