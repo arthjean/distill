@@ -75,6 +75,86 @@ struct ProjectionOptions {
     json: bool,
 }
 
+#[derive(Debug)]
+struct ProjectionParser {
+    total: Option<u64>,
+    reserve: u64,
+    unit: CountUnit,
+    profile: String,
+    ttl_seconds: Option<u64>,
+    json: bool,
+}
+
+impl ProjectionParser {
+    fn new() -> Self {
+        Self {
+            total: None,
+            reserve: 0,
+            unit: CountUnit::Bytes,
+            profile: "plain-text/v1".to_owned(),
+            ttl_seconds: None,
+            json: false,
+        }
+    }
+
+    fn consume(
+        &mut self,
+        argument: &str,
+        args: &mut VecDeque<String>,
+        json_mode: &mut bool,
+    ) -> Result<(), SurfaceError> {
+        match argument {
+            "--budget" => {
+                self.total = Some(parse_u64(&take(args, "--budget")?, "--budget")?);
+            }
+            "--reserve" => {
+                self.reserve = parse_u64(&take(args, "--reserve")?, "--reserve")?;
+            }
+            "--unit" => {
+                self.unit = match take(args, "--unit")?.as_str() {
+                    "bytes" => CountUnit::Bytes,
+                    "tokens" => CountUnit::Tokens,
+                    _ => return Err(SurfaceError::invalid("--unit must be bytes or tokens")),
+                };
+            }
+            "--profile" => self.profile = take(args, "--profile")?,
+            "--ttl" => {
+                self.ttl_seconds = Some(parse_u64(&take(args, "--ttl")?, "--ttl")?);
+            }
+            "--json" => {
+                self.json = true;
+                *json_mode = true;
+            }
+            _ => {
+                return Err(SurfaceError::invalid(format!(
+                    "unexpected argument '{argument}'"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<ProjectionOptions, SurfaceError> {
+        let total_visible_limit = self
+            .total
+            .ok_or_else(|| SurfaceError::invalid("--budget is required"))?;
+        Ok(ProjectionOptions {
+            budget: Budget {
+                unit: self.unit,
+                total_visible_limit,
+                reserved_envelope: self.reserve,
+                token_profile: (self.unit == CountUnit::Tokens).then(|| CL100K_PROFILE.to_owned()),
+            },
+            profile: self.profile,
+            retention: Retention {
+                expires_at: None,
+                ttl_seconds: self.ttl_seconds,
+            },
+            json: self.json,
+        })
+    }
+}
+
 pub(crate) fn run<R: Read, W: Write, E: Write>(
     raw_args: Vec<OsString>,
     mut input: R,
@@ -239,63 +319,11 @@ fn parse_projection(
     args: &mut VecDeque<String>,
     json_mode: &mut bool,
 ) -> Result<ProjectionOptions, SurfaceError> {
-    let mut total = None;
-    let mut reserve = 0_u64;
-    let mut unit = CountUnit::Bytes;
-    let mut profile = "plain-text/v1".to_owned();
-    let mut ttl_seconds = None;
-    let mut json = false;
-    while let Some(argument) = args.front().cloned() {
-        match argument.as_str() {
-            "--budget" => {
-                args.pop_front();
-                total = Some(parse_u64(&take(args, "--budget")?, "--budget")?);
-            }
-            "--reserve" => {
-                args.pop_front();
-                reserve = parse_u64(&take(args, "--reserve")?, "--reserve")?;
-            }
-            "--unit" => {
-                args.pop_front();
-                unit = match take(args, "--unit")?.as_str() {
-                    "bytes" => CountUnit::Bytes,
-                    "tokens" => CountUnit::Tokens,
-                    _ => {
-                        return Err(SurfaceError::invalid("--unit must be bytes or tokens"));
-                    }
-                };
-            }
-            "--profile" => {
-                args.pop_front();
-                profile = take(args, "--profile")?;
-            }
-            "--ttl" => {
-                args.pop_front();
-                ttl_seconds = Some(parse_u64(&take(args, "--ttl")?, "--ttl")?);
-            }
-            "--json" => {
-                args.pop_front();
-                json = true;
-                *json_mode = true;
-            }
-            _ => break,
-        }
+    let mut parser = ProjectionParser::new();
+    while let Some(argument) = args.pop_front() {
+        parser.consume(&argument, args, json_mode)?;
     }
-    let total_visible_limit = total.ok_or_else(|| SurfaceError::invalid("--budget is required"))?;
-    Ok(ProjectionOptions {
-        budget: Budget {
-            unit,
-            total_visible_limit,
-            reserved_envelope: reserve,
-            token_profile: (unit == CountUnit::Tokens).then(|| CL100K_PROFILE.to_owned()),
-        },
-        profile,
-        retention: Retention {
-            expires_at: None,
-            ttl_seconds,
-        },
-        json,
-    })
+    parser.finish()
 }
 
 fn project<R: Read, W: Write, E: Write>(
@@ -331,21 +359,16 @@ fn read_file<W: Write, E: Write>(
     let mut root_id = None;
     let mut path = None;
     let mut binary_policy = BinaryPolicy::Accept;
-    let mut projection_args = VecDeque::new();
+    let mut projection = ProjectionParser::new();
     while let Some(argument) = args.pop_front() {
         match argument.as_str() {
             "--root-id" => root_id = Some(take(&mut args, "--root-id")?),
             "--path" => path = Some(take(&mut args, "--path")?),
             "--reject-binary" => binary_policy = BinaryPolicy::Reject,
-            _ => {
-                projection_args.push_back(argument);
-                projection_args.extend(args);
-                break;
-            }
+            _ => projection.consume(&argument, &mut args, json_mode)?,
         }
     }
-    let options = parse_projection(&mut projection_args, json_mode)?;
-    ensure_empty(&projection_args)?;
+    let options = projection.finish()?;
     let root_id = root_id.ok_or_else(|| SurfaceError::invalid("--root-id is required"))?;
     if !global.roots.contains_key(&root_id) {
         return Err(SurfaceError::invalid(
@@ -377,7 +400,7 @@ fn run_process<W: Write, E: Write>(
     let mut cwd = None;
     let mut timeout_ms = None;
     let mut environment_profile = None;
-    let mut projection_args = VecDeque::new();
+    let mut projection = ProjectionParser::new();
     let mut executable = None;
     let mut argv = Vec::new();
     while let Some(argument) = args.pop_front() {
@@ -393,11 +416,10 @@ fn run_process<W: Write, E: Write>(
                 argv.extend(args);
                 break;
             }
-            _ => projection_args.push_back(argument),
+            _ => projection.consume(&argument, &mut args, json_mode)?,
         }
     }
-    let options = parse_projection(&mut projection_args, json_mode)?;
-    ensure_empty(&projection_args)?;
+    let options = projection.finish()?;
     let cwd_root_id = cwd_root.ok_or_else(|| SurfaceError::invalid("--cwd-root is required"))?;
     if !global.roots.contains_key(&cwd_root_id) {
         return Err(SurfaceError::invalid(
@@ -587,335 +609,5 @@ fn ensure_empty(args: &VecDeque<String>) -> Result<(), SurfaceError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    fn store(temp: &TempDir) -> PathBuf {
-        temp.path().join("store/artifacts.db")
-    }
-
-    fn run_args(arguments: &[&str], stdin: &[u8]) -> (i32, Vec<u8>, String) {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = run(
-            arguments.iter().map(OsString::from).collect(),
-            stdin,
-            &mut stdout,
-            &mut stderr,
-        );
-        (code, stdout, String::from_utf8(stderr).expect("stderr"))
-    }
-
-    #[test]
-    fn project_restore_trace_status_and_gc_are_versioned() {
-        let temp = TempDir::new().expect("temp");
-        let store = store(&temp);
-        let store_text = store.to_string_lossy();
-        let (code, output, stderr) = run_args(
-            &["--store", &store_text, "project", "--budget", "8", "--json"],
-            b"first\nmiddle\nlast\n",
-        );
-        assert_eq!(code, 0, "{stderr}");
-        let value: Value = serde_json::from_slice(&output).expect("projection JSON");
-        assert_eq!(value["schema_version"], CLI_SCHEMA_VERSION);
-        let id = value["result"]["artifact"]["id"]
-            .as_str()
-            .expect("artifact ID");
-
-        for action in ["trace", "get"] {
-            let (code, body, error) = run_args(
-                &["--store", &store_text, "artifact", action, id, "--json"],
-                b"",
-            );
-            assert_eq!(code, 0, "{error}");
-            let body: Value = serde_json::from_slice(&body).expect("artifact JSON");
-            assert_eq!(body["ok"], true);
-            if action == "trace" {
-                assert_eq!(
-                    body["result"]["receipts"]
-                        .as_array()
-                        .expect("receipt lineage")
-                        .len(),
-                    1
-                );
-            }
-        }
-        for command in ["status", "gc"] {
-            let (code, body, error) = run_args(&["--store", &store_text, command, "--json"], b"");
-            assert_eq!(code, 0, "{error}");
-            assert_eq!(
-                serde_json::from_slice::<Value>(&body).expect("status JSON")["ok"],
-                true
-            );
-        }
-    }
-
-    #[test]
-    fn read_and_run_use_configured_roots_without_shell_parsing() {
-        let temp = TempDir::new().expect("temp");
-        let workspace = temp.path().join("workspace");
-        fs::create_dir(&workspace).expect("workspace");
-        fs::write(workspace.join("sample.txt"), b"safe file").expect("file");
-        let store = store(&temp);
-        let store_text = store.to_string_lossy();
-        let root = format!("workspace={}", workspace.display());
-
-        let (read_code, read_output, read_error) = run_args(
-            &[
-                "--store",
-                &store_text,
-                "--root",
-                &root,
-                "read",
-                "--root-id",
-                "workspace",
-                "--path",
-                "sample.txt",
-                "--budget",
-                "64",
-                "--json",
-            ],
-            b"",
-        );
-        assert_eq!(read_code, 0, "{read_error}");
-        assert_eq!(
-            serde_json::from_slice::<Value>(&read_output).expect("read JSON")["ok"],
-            true
-        );
-
-        let (run_code, run_output, run_error) = run_args(
-            &[
-                "--store",
-                &store_text,
-                "--root",
-                &root,
-                "run",
-                "--cwd-root",
-                "workspace",
-                "--cwd",
-                ".",
-                "--budget",
-                "64",
-                "--",
-                "/usr/bin/printf",
-                "%s%s",
-                "$(not-a-shell)",
-                "--json",
-            ],
-            b"",
-        );
-        assert_eq!(run_code, 0, "{run_error}");
-        assert_eq!(
-            String::from_utf8(run_output).expect("process output"),
-            "$(not-a-shell)--json"
-        );
-    }
-
-    #[test]
-    fn errors_are_safe_versioned_and_stable() {
-        let temp = TempDir::new().expect("temp");
-        let store = store(&temp);
-        let store_text = store.to_string_lossy();
-        let (code, output, stderr) = run_args(
-            &["--store", &store_text, "project", "--budget", "0", "--json"],
-            b"not empty",
-        );
-        assert_eq!(code, 3);
-        assert!(stderr.is_empty());
-        let value: Value = serde_json::from_slice(&output).expect("error JSON");
-        assert_eq!(value["error"]["code"], "budget_unsatisfiable");
-        assert!(value["error"]["artifact"].is_object());
-
-        let (code, output, stderr) = run_args(
-            &["--store", &store_text, "project", "--budget", "0"],
-            b"not empty",
-        );
-        assert_eq!(code, 3);
-        assert!(output.is_empty());
-        assert!(stderr.contains("artifact="));
-
-        let (code, output, stderr) =
-            run_args(&["--store", &store_text, "artifact", "get", "bad"], b"");
-        assert_eq!(code, 2);
-        assert!(output.is_empty());
-        assert!(!stderr.contains("stack"));
-
-        let (code, output, stderr) = run_args(&["project", "--json"], b"");
-        assert_eq!(code, 2);
-        assert_eq!(
-            serde_json::from_slice::<Value>(&output).expect("invalid JSON")["ok"],
-            false
-        );
-        assert!(stderr.is_empty());
-
-        let (code, output, stderr) = run_args(&["--json", "unknown"], b"");
-        assert_eq!(code, 2);
-        assert!(output.is_empty());
-        assert!(stderr.contains("unknown command '--json'"));
-    }
-
-    #[test]
-    fn child_options_after_process_delimiter_cannot_select_json_mode() {
-        let temp = TempDir::new().expect("temp");
-        let workspace = temp.path().join("workspace");
-        fs::create_dir(&workspace).expect("workspace");
-        let root = format!("workspace={}", workspace.display());
-        let store = store(&temp);
-        let store_text = store.to_string_lossy();
-        let (code, output, stderr) = run_args(
-            &[
-                "--store",
-                &store_text,
-                "--root",
-                &root,
-                "run",
-                "--cwd-root",
-                "workspace",
-                "--cwd",
-                ".",
-                "--budget",
-                "64",
-                "--",
-                "/definitely/missing/distill-command",
-                "--json",
-                "--budget",
-            ],
-            b"",
-        );
-
-        assert_eq!(code, 6);
-        assert!(output.is_empty());
-        assert!(stderr.contains("acquisition_failed"));
-    }
-
-    #[test]
-    fn empty_input_help_and_argument_validation_are_noninteractive() {
-        let temp = TempDir::new().expect("temp");
-        let store = store(&temp);
-        let store_text = store.to_string_lossy();
-        let (code, output, _) = run_args(&[], b"");
-        assert_eq!(code, 0);
-        assert!(
-            String::from_utf8(output)
-                .expect("help")
-                .contains("non-interactive")
-        );
-
-        let (code, output, error) = run_args(
-            &["--store", &store_text, "project", "--budget", "1", "--json"],
-            b"",
-        );
-        assert_eq!(code, 0, "{error}");
-        assert_eq!(
-            serde_json::from_slice::<Value>(&output).expect("empty JSON")["result"]["visible"]["bytes"],
-            ""
-        );
-
-        let (code, _, _) = run_args(&["--store", &store_text, "project", "--budget", "nan"], b"");
-        assert_eq!(code, 2);
-    }
-
-    #[test]
-    fn global_and_projection_parsers_enforce_every_budget_boundary() {
-        let mut projection = VecDeque::from([
-            "--budget".to_owned(),
-            "900".to_owned(),
-            "--reserve".to_owned(),
-            "300".to_owned(),
-            "--unit".to_owned(),
-            "tokens".to_owned(),
-            "--profile".to_owned(),
-            "diagnostic/v1".to_owned(),
-            "--ttl".to_owned(),
-            "60".to_owned(),
-            "--json".to_owned(),
-        ]);
-        let mut json_mode = false;
-        let parsed =
-            parse_projection(&mut projection, &mut json_mode).expect("complete projection");
-        assert_eq!(parsed.budget.unit, CountUnit::Tokens);
-        assert_eq!(parsed.budget.total_visible_limit, 900);
-        assert_eq!(parsed.budget.reserved_envelope, 300);
-        assert_eq!(parsed.budget.token_profile.as_deref(), Some(CL100K_PROFILE));
-        assert_eq!(parsed.profile, "diagnostic/v1");
-        assert_eq!(parsed.retention.ttl_seconds, Some(60));
-        assert!(parsed.json);
-        assert!(json_mode);
-        assert!(projection.is_empty());
-
-        let mut invalid_unit = VecDeque::from([
-            "--budget".to_owned(),
-            "1".to_owned(),
-            "--unit".to_owned(),
-            "words".to_owned(),
-        ]);
-        assert!(parse_projection(&mut invalid_unit, &mut false).is_err());
-
-        let mut duplicate_root = VecDeque::from([
-            "--store".to_owned(),
-            "/tmp/store.db".to_owned(),
-            "--root".to_owned(),
-            "workspace=/tmp/one".to_owned(),
-            "--root".to_owned(),
-            "workspace=/tmp/two".to_owned(),
-        ]);
-        assert!(parse_global(&mut duplicate_root).is_err());
-
-        let mut malformed_root = VecDeque::from(["--root".to_owned(), "workspace".to_owned()]);
-        assert!(parse_global(&mut malformed_root).is_err());
-
-        let mut empty_root = VecDeque::from(["--root".to_owned(), "=/tmp/workspace".to_owned()]);
-        assert!(parse_global(&mut empty_root).is_err());
-    }
-
-    struct ClosedPipe;
-
-    impl Write for ClosedPipe {
-        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
-            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn closed_output_pipe_has_documented_exit_without_stack_trace() {
-        let code = run(
-            vec![OsString::from("--help")],
-            b"".as_slice(),
-            ClosedPipe,
-            Vec::new(),
-        );
-        assert_eq!(code, BROKEN_PIPE_EXIT);
-    }
-
-    #[test]
-    fn output_and_argument_helpers_cover_both_outcomes() {
-        let output_error = SurfaceError::output(io::Error::other("write failed"));
-        assert_eq!(output_error.exit_code, 70);
-        assert_eq!(output_error.code, "output_failure");
-        assert_eq!(output_error.message, "cannot write command output");
-
-        assert_eq!(normalize_root_relative(".".to_owned()), "");
-        assert_eq!(
-            normalize_root_relative("nested".to_owned()),
-            "nested".to_owned()
-        );
-
-        let mut args = VecDeque::from(["--json".to_owned()]);
-        assert!(remove_flag(&mut args, "--json"));
-        assert!(!remove_flag(&mut args, "--json"));
-        ensure_empty(&args).expect("empty arguments");
-        args.push_back("unexpected".to_owned());
-        assert_eq!(
-            ensure_empty(&args)
-                .expect_err("unexpected argument")
-                .exit_code,
-            2
-        );
-    }
-}
+#[path = "cli/tests.rs"]
+mod tests;
