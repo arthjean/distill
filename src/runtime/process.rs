@@ -1,7 +1,10 @@
 use super::AcquisitionError;
 use crate::{
     request_policy::MAX_SOURCE_BYTES,
-    types::{ByteSpan, Failure, FailureCode, ProcessStream, StreamEvent},
+    types::{
+        ByteSpan, Failure, FailureCode, ProcessAcquisition, ProcessPartialReason, ProcessStream,
+        ProcessTermination, StreamEvent,
+    },
 };
 use std::{
     io::{self, Read},
@@ -17,9 +20,54 @@ const REAP_TOLERANCE: Duration = Duration::from_millis(250);
 pub(super) struct ProcessCapture {
     pub bytes: Vec<u8>,
     pub events: Vec<StreamEvent>,
-    pub status: std::process::ExitStatus,
-    pub failure: Option<Failure>,
-    pub timed_out: bool,
+    pub terminal: ProcessTerminal,
+}
+
+pub(super) enum ProcessTerminal {
+    Complete {
+        exit_code: i32,
+    },
+    Partial {
+        failure: Box<Failure>,
+        termination: ProcessTermination,
+        reason: ProcessPartialReason,
+    },
+}
+
+impl ProcessTerminal {
+    pub(super) fn into_acquisition(
+        self,
+        events: Vec<StreamEvent>,
+    ) -> (ProcessAcquisition, Option<Failure>) {
+        match self {
+            Self::Complete { exit_code } => {
+                (ProcessAcquisition::Complete { events, exit_code }, None)
+            }
+            Self::Partial {
+                failure,
+                termination,
+                reason,
+            } => (
+                ProcessAcquisition::Partial {
+                    events,
+                    termination,
+                    reason,
+                },
+                Some(*failure),
+            ),
+        }
+    }
+}
+
+struct CaptureFailure {
+    failure: Failure,
+    reason: ProcessPartialReason,
+}
+
+impl CaptureFailure {
+    fn new(failure: Failure, reason: ProcessPartialReason) -> Self {
+        Self { failure, reason }
+    }
 }
 
 pub(super) fn capture(
@@ -29,7 +77,7 @@ pub(super) fn capture(
     ProcessLifecycle::new(child, timeout_at)?.capture()
 }
 
-pub(super) fn signal(status: &std::process::ExitStatus) -> Option<i32> {
+fn signal(status: &std::process::ExitStatus) -> Option<i32> {
     use std::os::unix::process::ExitStatusExt;
     status.signal()
 }
@@ -92,16 +140,17 @@ impl ProcessLifecycle {
         let mut events = Vec::new();
         let mut status = None;
         let mut failure = None;
-        let mut timed_out = false;
 
         while failure.is_none()
             && (status.is_none() || self.stdout.is_some() || self.stderr.is_some())
         {
             if Instant::now() >= self.timeout_at {
-                timed_out = true;
-                failure = Some(Failure::new(
-                    FailureCode::AcquisitionFailed,
-                    "process exceeded its wall timeout",
+                failure = Some(CaptureFailure::new(
+                    Failure::new(
+                        FailureCode::AcquisitionFailed,
+                        "process exceeded its wall timeout",
+                    ),
+                    ProcessPartialReason::TimedOut,
                 ));
                 break;
             }
@@ -113,9 +162,12 @@ impl ProcessLifecycle {
                 match self.child.try_wait() {
                     Ok(child_status) => status = child_status,
                     Err(_) => {
-                        failure = Some(Failure::new(
-                            FailureCode::AcquisitionFailed,
-                            "process status could not be inspected",
+                        failure = Some(CaptureFailure::new(
+                            Failure::new(
+                                FailureCode::AcquisitionFailed,
+                                "process status could not be inspected",
+                            ),
+                            ProcessPartialReason::CaptureFailed,
                         ));
                         break;
                     }
@@ -127,7 +179,10 @@ impl ProcessLifecycle {
             if let Err(poll_failure) =
                 poll_streams(self.stdout.as_ref(), self.stderr.as_ref(), self.deadline)
             {
-                failure = Some(poll_failure);
+                failure = Some(CaptureFailure::new(
+                    poll_failure,
+                    ProcessPartialReason::CaptureFailed,
+                ));
                 break;
             }
         }
@@ -144,17 +199,46 @@ impl ProcessLifecycle {
             }
         };
         if failure.is_none() && signal(&status).is_some() {
-            failure = Some(Failure::new(
-                FailureCode::AcquisitionFailed,
-                "process terminated by signal",
+            failure = Some(CaptureFailure::new(
+                Failure::new(
+                    FailureCode::AcquisitionFailed,
+                    "process terminated by signal",
+                ),
+                ProcessPartialReason::CaptureFailed,
             ));
         }
+        let terminal = match failure {
+            Some(CaptureFailure { failure, reason }) => {
+                let termination = match (status.code(), signal(&status)) {
+                    (Some(code), None) => ProcessTermination::Exit(code),
+                    (None, Some(signal)) => ProcessTermination::Signal(signal),
+                    _ => {
+                        return Err(AcquisitionError::clean(Failure::new(
+                            FailureCode::InvariantBreach,
+                            "process capture returned an invalid terminal state",
+                        )));
+                    }
+                };
+                ProcessTerminal::Partial {
+                    failure: Box::new(failure),
+                    termination,
+                    reason,
+                }
+            }
+            None => {
+                let exit_code = status.code().ok_or_else(|| {
+                    AcquisitionError::clean(Failure::new(
+                        FailureCode::InvariantBreach,
+                        "complete process capture did not return an exit code",
+                    ))
+                })?;
+                ProcessTerminal::Complete { exit_code }
+            }
+        };
         Ok(ProcessCapture {
             bytes,
             events,
-            status,
-            failure,
-            timed_out,
+            terminal,
         })
     }
 
@@ -162,7 +246,7 @@ impl ProcessLifecycle {
         &mut self,
         bytes: &mut Vec<u8>,
         events: &mut Vec<StreamEvent>,
-    ) -> Option<Failure> {
+    ) -> Option<CaptureFailure> {
         if let Some(failure) = read_stream(&mut self.stdout, ProcessStream::Stdout, bytes, events) {
             return Some(failure);
         }
@@ -175,7 +259,7 @@ fn read_stream<R>(
     stream: ProcessStream,
     bytes: &mut Vec<u8>,
     events: &mut Vec<StreamEvent>,
-) -> Option<Failure>
+) -> Option<CaptureFailure>
 where
     R: Read,
 {
@@ -202,9 +286,12 @@ where
                 });
             }
             if accepted < count {
-                Some(Failure::new(
-                    FailureCode::ResourceExhausted,
-                    "process output exceeded the 10 MiB limit",
+                Some(CaptureFailure::new(
+                    Failure::new(
+                        FailureCode::ResourceExhausted,
+                        "process output exceeded the 10 MiB limit",
+                    ),
+                    ProcessPartialReason::Truncated,
                 ))
             } else {
                 None
@@ -212,9 +299,12 @@ where
         }
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => None,
         Err(error) if error.kind() == io::ErrorKind::Interrupted => None,
-        Err(_) => Some(Failure::new(
-            FailureCode::AcquisitionFailed,
-            "process output capture failed",
+        Err(_) => Some(CaptureFailure::new(
+            Failure::new(
+                FailureCode::AcquisitionFailed,
+                "process output capture failed",
+            ),
+            ProcessPartialReason::CaptureFailed,
         )),
     }
 }
