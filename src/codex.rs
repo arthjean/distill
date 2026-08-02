@@ -19,19 +19,20 @@ pub(crate) const SAFE_OUTPUT_CAP_TOKENS: u64 = HOST_OUTPUT_CAP_TOKENS * 9 / 10;
 pub(crate) const SETUP_MATCHER: &str = "*";
 pub(crate) const SETUP_TIMEOUT_SECONDS: u64 = 30;
 pub(crate) const SETUP_STATUS_MESSAGE: &str = "Distill context projection v1";
+#[cfg(test)]
 pub(crate) const SUPPORTED_MODES: &[&str] = &["off", "observe", "active"];
 const DEFAULT_RESERVED_TOKENS: u64 = 450;
 const MAX_HOOK_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Mode {
+pub(crate) enum Mode {
     Off,
     Observe,
     Active,
 }
 
 impl Mode {
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "off" => Some(Self::Off),
             "observe" => Some(Self::Observe),
@@ -39,19 +40,21 @@ impl Mode {
             _ => None,
         }
     }
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Observe => "observe",
+            Self::Active => "active",
+        }
+    }
 }
 
-pub(crate) fn supports_mode(value: &str) -> bool {
-    let supported = Mode::parse(value).is_some();
-    debug_assert_eq!(SUPPORTED_MODES.contains(&value), supported);
-    supported
-}
-
-pub(crate) fn setup_hook_arguments(mode: &str) -> Vec<String> {
+pub(crate) fn setup_hook_arguments(mode: Mode) -> Vec<String> {
     vec![
         "codex-hook".to_owned(),
         "--mode".to_owned(),
-        mode.to_owned(),
+        mode.as_str().to_owned(),
     ]
 }
 

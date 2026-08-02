@@ -13,6 +13,21 @@ use std::{
 const SETUP_SCHEMA_VERSION: &str = "distill.setup/v1";
 const ABSENT_MARKER: &[u8] = b"configuration did not exist before Distill setup\n";
 
+#[derive(Debug)]
+enum TargetOptions {
+    Codex { mode: codex::Mode },
+    Claude { roots: Vec<String> },
+}
+
+impl TargetOptions {
+    fn kind(&self) -> Target {
+        match self {
+            Self::Codex { .. } => Target::Codex,
+            Self::Claude { .. } => Target::Claude,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Target {
     Codex,
@@ -20,15 +35,17 @@ enum Target {
 }
 
 #[derive(Debug)]
+enum SetupAction {
+    Install { command: String, dry_run: bool },
+    Restore,
+}
+
+#[derive(Debug)]
 struct Options {
-    target: Target,
+    target: TargetOptions,
     config_path: PathBuf,
-    command: Option<String>,
     store_path: Option<PathBuf>,
-    roots: Vec<String>,
-    mode: Option<String>,
-    dry_run: bool,
-    restore: bool,
+    action: SetupAction,
 }
 
 pub(crate) fn run<W: Write>(
@@ -68,31 +85,64 @@ pub(crate) fn run<W: Write>(
             "--dry-run and --restore are mutually exclusive",
         ));
     }
+    let config_path = config_path.ok_or_else(|| SurfaceError::invalid("--config is required"))?;
+    let target = match target {
+        Target::Codex => {
+            if !roots.is_empty() {
+                return Err(SurfaceError::invalid(
+                    "--root does not apply to Codex setup",
+                ));
+            }
+            let mode = match mode.as_deref() {
+                Some(mode) => codex::Mode::parse(mode).ok_or_else(|| {
+                    SurfaceError::invalid("--mode requires off, observe, or active")
+                })?,
+                None => codex::Mode::Active,
+            };
+            TargetOptions::Codex { mode }
+        }
+        Target::Claude => {
+            if mode.is_some() {
+                return Err(SurfaceError::invalid(
+                    "--mode does not apply to Claude setup",
+                ));
+            }
+            let mut ids = BTreeSet::new();
+            for root in &roots {
+                let id = validate_root_spec(root)?;
+                if !ids.insert(id) {
+                    return Err(SurfaceError::invalid(
+                        "Claude setup root IDs must be unique",
+                    ));
+                }
+            }
+            TargetOptions::Claude { roots }
+        }
+    };
+    validate_path(&config_path)?;
+    let action = if restore {
+        SetupAction::Restore
+    } else {
+        SetupAction::Install {
+            command: command
+                .ok_or_else(|| SurfaceError::invalid("--command is required for installation"))?,
+            dry_run,
+        }
+    };
     let options = Options {
         target,
-        config_path: config_path.ok_or_else(|| SurfaceError::invalid("--config is required"))?,
-        command,
+        config_path,
         store_path,
-        roots,
-        mode,
-        dry_run,
-        restore,
+        action,
     };
-    validate_target_options(&options)?;
-    validate_path(&options.config_path)?;
-    let receipt = if options.restore {
-        restore_backup(&options)?
-    } else {
-        install(&options)?
+    let receipt = match &options.action {
+        SetupAction::Restore => restore_backup(&options)?,
+        SetupAction::Install { command, dry_run } => install(&options, command, *dry_run)?,
     };
     write_json_line(output, &receipt)
 }
 
-fn install(options: &Options) -> Result<Value, SurfaceError> {
-    let command = options
-        .command
-        .as_ref()
-        .ok_or_else(|| SurfaceError::invalid("--command is required for installation"))?;
+fn install(options: &Options, command: &str, dry_run: bool) -> Result<Value, SurfaceError> {
     let original = read_existing(&options.config_path)?;
     let mut document = match original.as_deref() {
         Some(bytes) => serde_json::from_slice::<Value>(bytes)
@@ -104,13 +154,17 @@ fn install(options: &Options) -> Result<Value, SurfaceError> {
             "configuration root must be a JSON object",
         ));
     }
-    let changed = match options.target {
-        Target::Codex => install_codex(&mut document, options, command)?,
-        Target::Claude => install_claude(&mut document, options, command)?,
+    let changed = match &options.target {
+        TargetOptions::Codex { mode } => {
+            install_codex(&mut document, &options.store_path, command, *mode)?
+        }
+        TargetOptions::Claude { roots } => {
+            install_claude(&mut document, &options.store_path, command, roots)?
+        }
     };
     let action = if !changed {
         "unchanged"
-    } else if options.dry_run {
+    } else if dry_run {
         "dry_run"
     } else {
         create_backup(&options.config_path, original.as_deref())?;
@@ -119,7 +173,7 @@ fn install(options: &Options) -> Result<Value, SurfaceError> {
         atomic_write(&options.config_path, &bytes)?;
         "installed"
     };
-    let managed_entry = match options.target {
+    let managed_entry = match options.target.kind() {
         Target::Codex => document
             .pointer("/hooks/PostToolUse")
             .and_then(Value::as_array)
@@ -140,7 +194,7 @@ fn install(options: &Options) -> Result<Value, SurfaceError> {
     };
     Ok(json!({
         "schema_version": SETUP_SCHEMA_VERSION,
-        "target": target_name(options.target),
+        "target": target_name(options.target.kind()),
         "action": action,
         "config_path": options.config_path,
         "backup_path": backup_path(&options.config_path),
@@ -150,15 +204,16 @@ fn install(options: &Options) -> Result<Value, SurfaceError> {
 
 fn install_codex(
     document: &mut Value,
-    options: &Options,
+    store_path: &Option<PathBuf>,
     binary: &str,
+    mode: codex::Mode,
 ) -> Result<bool, SurfaceError> {
     let root = document
         .as_object_mut()
         .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
     let hooks = object_entry(root, "hooks")?;
     let groups = array_entry(hooks, "PostToolUse")?;
-    let command = hook_command(binary, options);
+    let command = hook_command(binary, store_path.as_deref(), mode);
     let managed_count = groups
         .iter()
         .filter(|group| {
@@ -200,19 +255,20 @@ fn install_codex(
 
 fn install_claude(
     document: &mut Value,
-    options: &Options,
+    store_path: &Option<PathBuf>,
     binary: &str,
+    roots: &[String],
 ) -> Result<bool, SurfaceError> {
     let root = document
         .as_object_mut()
         .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
     let servers = object_entry(root, "mcpServers")?;
     let mut args = Vec::new();
-    if let Some(path) = &options.store_path {
+    if let Some(path) = store_path {
         args.push("--store".to_owned());
         args.push(path.to_string_lossy().into_owned());
     }
-    for root in &options.roots {
+    for root in roots {
         args.push("--root".to_owned());
         args.push(root.clone());
     }
@@ -228,15 +284,13 @@ fn install_claude(
     Ok(true)
 }
 
-fn hook_command(binary: &str, options: &Options) -> String {
+fn hook_command(binary: &str, store_path: Option<&Path>, mode: codex::Mode) -> String {
     let mut parts = vec![binary.to_owned()];
-    if let Some(path) = &options.store_path {
+    if let Some(path) = store_path {
         parts.push("--store".to_owned());
         parts.push(path.to_string_lossy().into_owned());
     }
-    parts.extend(codex::setup_hook_arguments(
-        options.mode.as_deref().unwrap_or("active"),
-    ));
+    parts.extend(codex::setup_hook_arguments(mode));
     parts
         .iter()
         .map(|part| shell_quote(part))
@@ -275,7 +329,7 @@ fn restore_backup(options: &Options) -> Result<Value, SurfaceError> {
     };
     Ok(json!({
         "schema_version": SETUP_SCHEMA_VERSION,
-        "target": target_name(options.target),
+        "target": target_name(options.target.kind()),
         "action": action,
         "config_path": options.config_path,
         "backup_path": backup,
@@ -403,44 +457,6 @@ fn validate_root_spec(root: &str) -> Result<&str, SurfaceError> {
     Ok(id)
 }
 
-fn validate_target_options(options: &Options) -> Result<(), SurfaceError> {
-    match options.target {
-        Target::Codex => {
-            if !options.roots.is_empty() {
-                return Err(SurfaceError::invalid(
-                    "--root does not apply to Codex setup",
-                ));
-            }
-            if options
-                .mode
-                .as_deref()
-                .is_some_and(|mode| !codex::supports_mode(mode))
-            {
-                return Err(SurfaceError::invalid(
-                    "--mode requires off, observe, or active",
-                ));
-            }
-        }
-        Target::Claude => {
-            if options.mode.is_some() {
-                return Err(SurfaceError::invalid(
-                    "--mode does not apply to Claude setup",
-                ));
-            }
-            let mut ids = BTreeSet::new();
-            for root in &options.roots {
-                let id = validate_root_spec(root)?;
-                if !ids.insert(id) {
-                    return Err(SurfaceError::invalid(
-                        "Claude setup root IDs must be unique",
-                    ));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 fn object_entry<'a>(
     object: &'a mut Map<String, Value>,
     key: &str,
@@ -539,7 +555,7 @@ mod tests {
         );
         assert_eq!(
             fixture["setup"]["command_arguments"],
-            json!(codex::setup_hook_arguments("active"))
+            json!(codex::setup_hook_arguments(codex::Mode::Active))
         );
         let fixture_modes = fixture["modes"]
             .as_object()
@@ -767,6 +783,22 @@ mod tests {
     fn setup_rejects_invalid_shapes_and_updates_only_owned_entries() {
         let temp = TempDir::new().expect("temp");
         assert!(invoke(vec!["other".to_owned()]).is_err());
+
+        let error = invoke(vec![
+            "codex".to_owned(),
+            "--mode".to_owned(),
+            "automatic".to_owned(),
+        ])
+        .expect_err("config validation precedes target validation");
+        assert_eq!(error.message, "--config is required");
+
+        let error = invoke(vec![
+            "codex".to_owned(),
+            "--config".to_owned(),
+            "relative.json".to_owned(),
+        ])
+        .expect_err("path validation precedes command validation");
+        assert_eq!(error.message, "--config must be a normalized absolute path");
 
         let config = temp.path().join("invalid-mode.json");
         assert!(
