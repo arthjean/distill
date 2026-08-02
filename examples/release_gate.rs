@@ -684,7 +684,7 @@ fn measure_projection(
 
 fn hook_event(tool: &str, tool_use_id: &str, response: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(serde_json::to_vec(&json!({
-        "schema_version": "codex.post-tool-use/v1",
+        "schema_version": "codex.post-tool-use/v2",
         "session_id": "release-gate",
         "turn_id": "turn-1",
         "cwd": "/tmp",

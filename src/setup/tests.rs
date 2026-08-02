@@ -12,7 +12,7 @@ fn invoke(arguments: Vec<String>) -> Result<Value, SurfaceError> {
 #[test]
 fn codex_setup_conforms_to_adapter_and_versioned_fixture() {
     let fixture: Value = serde_json::from_str(include_str!(
-        "../../docs/integrations/codex-hook-conformance-v1.json"
+        "../../docs/integrations/codex-hook-conformance-v2.json"
     ))
     .expect("conformance fixture");
     assert_eq!(fixture["adapter_input_version"], codex::HOOK_SCHEMA_VERSION);

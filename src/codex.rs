@@ -12,7 +12,7 @@ use std::{
 };
 use tiktoken_rs::cl100k_base_singleton;
 
-pub(crate) const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v1";
+pub(crate) const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v2";
 const PROJECTION_SCHEMA_VERSION: &str = "distill.codex-projection/v1";
 pub(crate) const HOST_OUTPUT_CAP_TOKENS: u64 = 2_500;
 pub(crate) const SAFE_OUTPUT_CAP_TOKENS: u64 = HOST_OUTPUT_CAP_TOKENS * 9 / 10;
@@ -278,15 +278,10 @@ fn response_bytes(response: &Value) -> Result<Vec<u8>, Failure> {
 }
 
 pub(crate) fn is_unsupported_surface(tool_name: &str) -> bool {
-    matches!(
+    !matches!(
         tool_name,
-        "WebSearch"
-            | "WebFetch"
-            | "ImageSearch"
-            | "ComputerUse"
-            | "BrowserUse"
-            | "hosted_web_search"
-    )
+        "Bash" | "apply_patch" | "Edit" | "Write" | "update_plan" | "Agent"
+    ) && !tool_name.starts_with("mcp__")
 }
 
 fn bounded_request_id(event: &PostToolUseEvent) -> String {
@@ -507,6 +502,19 @@ mod tests {
             &event("WebSearch", json!("hosted")),
         );
         let response: Value = serde_json::from_slice(&output).expect("unsupported response");
+        assert!(
+            response["systemMessage"]
+                .as_str()
+                .expect("message")
+                .contains("unsupported_surface")
+        );
+
+        let (_, output) = invoke(
+            config(&temp),
+            "active",
+            &event("FutureHostedTool", json!("hosted")),
+        );
+        let response: Value = serde_json::from_slice(&output).expect("unknown surface response");
         assert!(
             response["systemMessage"]
                 .as_str()
