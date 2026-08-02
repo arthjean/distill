@@ -104,7 +104,7 @@ pub(crate) fn prepare(
         Failure::new(FailureCode::InvalidRequest, message).for_request(&request.request_id)
     };
     let source = match request.source {
-        Source::Inline { bytes, .. } => {
+        Source::Inline { bytes, media_type } => {
             if bytes.0.len() > MAX_SOURCE_BYTES {
                 return Err(Failure::new(
                     FailureCode::InputTooLarge,
@@ -112,6 +112,9 @@ pub(crate) fn prepare(
                 )
                 .for_request(&request.request_id));
             }
+            // Contract v2 accepts source media type as advisory metadata only. Projection
+            // remains deterministic from bytes and always emits `text/plain`.
+            drop(media_type);
             ValidatedSource::Local(LocalSource::Inline { bytes })
         }
         Source::File {
@@ -581,5 +584,26 @@ mod tests {
             .code,
             FailureCode::InvalidRequest
         );
+    }
+
+    #[test]
+    fn inline_media_type_is_advisory_in_contract_v2() {
+        let config = EngineConfig::local(PathBuf::from("store.sqlite"));
+        let prepared = prepare(
+            request(Source::Inline {
+                bytes: ByteString::from_utf8("same bytes"),
+                media_type: Some("application/octet-stream".to_owned()),
+            }),
+            &config,
+        )
+        .expect("advisory media type");
+
+        assert!(matches!(
+            &prepared.source,
+            ValidatedSource::Local(LocalSource::Inline { .. })
+        ));
+        if let ValidatedSource::Local(LocalSource::Inline { bytes }) = prepared.source {
+            assert_eq!(bytes, ByteString::from_utf8("same bytes"));
+        }
     }
 }

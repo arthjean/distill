@@ -98,6 +98,9 @@ Source =
 ```
 
 - `inline` captures the supplied byte sequence without requiring valid UTF-8.
+  `media_type` is advisory source metadata in v2: it is not persisted and does
+  not alter byte acquisition, projection policy, or the `text/plain` output
+  media type. Giving it behavioral semantics requires a new contract version.
 - `file` acquires one file beneath a configured local root. A root is resolved
   from local engine configuration, not accepted as an arbitrary request path.
 - `process` launches one executable with an argv vector. It never implies a

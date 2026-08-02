@@ -144,6 +144,7 @@ impl Request {
 pub enum Source {
     Inline {
         bytes: ByteString,
+        /// Advisory source metadata in contract v2. It does not alter projection semantics.
         media_type: Option<String>,
     },
     File {
