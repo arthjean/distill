@@ -1,5 +1,5 @@
 use super::sqlite_errors::map_write_error;
-use super::{GcReport, TOMBSTONE_TTL_SECONDS, nonnegative_u64};
+use super::{GcReport, TOMBSTONE_TTL_SECONDS, integrity::nonnegative_u64};
 use crate::types::{Failure, FailureCode};
 use rusqlite::{Transaction, params};
 

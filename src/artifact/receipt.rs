@@ -1,11 +1,12 @@
 use super::{
-    ArtifactStore, EMPTY_LINEAGE_SHA256, StoredTrace, nonnegative_u64, read_artifact, sha256_hex,
-};
-use super::{
-    lineage::{
-        lineage_chain_sha256, lineage_usage, validate_receipt, verify_exact_digest, verify_lineage,
+    ArtifactStore, StoredTrace,
+    integrity::{
+        EMPTY_LINEAGE_SHA256, lineage_chain_sha256, nonnegative_u64, sha256_hex,
+        verify_exact_digest,
     },
+    lineage::{lineage_usage, validate_receipt, verify_lineage},
     permissions::enforce_store_modes,
+    record::read_artifact,
     sqlite_errors::{map_read_error, map_write_error},
 };
 use crate::types::{ArtifactRef, Failure, FailureCode, MAX_ARTIFACT_LINEAGE_BYTES, Receipt};

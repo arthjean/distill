@@ -1,14 +1,14 @@
 use super::{
-    LINEAGE_DIGEST_DOMAIN, MAX_RECEIPT_SPANS, map_read_error, map_write_error, nonnegative_u64,
-    sha256_hex,
+    integrity::{EMPTY_LINEAGE_SHA256, nonnegative_u64, valid_sha256},
+    sqlite_errors::{map_read_error, map_write_error},
 };
+use crate::contract::MAX_RECEIPT_SPANS;
 use crate::types::{
     ArtifactRef, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity,
     MAX_ARTIFACT_LINEAGE_BYTES, POLICY_VERSION, PROJECTION_VERSION, RECEIPT_SCHEMA_VERSION,
     Receipt,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction};
-use sha2::{Digest, Sha256};
 
 struct LineageShapeRow {
     count: i64,
@@ -46,7 +46,7 @@ pub(super) fn verify_lineage(
         || shape.bytes != claimed_bytes
         || shape.bytes > MAX_ARTIFACT_LINEAGE_BYTES
         || !valid_sha256(&claimed_head)
-        || (shape.count == 0 && claimed_head != super::EMPTY_LINEAGE_SHA256)
+        || (shape.count == 0 && claimed_head != EMPTY_LINEAGE_SHA256)
         || (shape.count > 0 && shape.last_chain.as_deref() != Some(claimed_head.as_str()))
     {
         return Err(Failure::new(
@@ -189,33 +189,6 @@ pub(super) fn lineage_usage_connection(connection: &Connection) -> Result<u64, F
         )
         .map_err(map_read_error)?;
     nonnegative_u64(used, "lineage usage")
-}
-
-pub(super) fn verify_exact_digest(
-    bytes: &[u8],
-    digest: &str,
-    message: &'static str,
-    reference: &ArtifactRef,
-) -> Result<(), Failure> {
-    if !valid_sha256(digest) || sha256_hex(bytes) != digest {
-        return Err(
-            Failure::new(FailureCode::ArtifactCorrupt, message).with_artifact(reference.clone())
-        );
-    }
-    Ok(())
-}
-
-pub(super) fn valid_sha256(digest: &str) -> bool {
-    digest.len() == 64 && digest.bytes().all(crate::contract::is_lower_hex)
-}
-
-pub(super) fn lineage_chain_sha256(previous: &str, sequence: u64, receipt_json: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(LINEAGE_DIGEST_DOMAIN);
-    digest.update(previous.as_bytes());
-    digest.update(sequence.to_be_bytes());
-    digest.update(receipt_json);
-    format!("{:x}", digest.finalize())
 }
 
 pub(super) fn validate_receipt(

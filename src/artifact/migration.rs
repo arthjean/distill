@@ -1,6 +1,7 @@
 use super::{
-    EMPTY_LINEAGE_SHA256, lineage_chain_sha256, lineage_usage, map_read_error, map_write_error,
-    nonnegative_u64, sha256_hex, validate_receipt,
+    integrity::{EMPTY_LINEAGE_SHA256, lineage_chain_sha256, nonnegative_u64, sha256_hex},
+    lineage::{lineage_usage, validate_receipt},
+    sqlite_errors::{map_read_error, map_write_error},
 };
 use crate::types::{
     ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode,
