@@ -125,6 +125,12 @@ pub(super) fn validate_optional_store_file(path: &Path) -> Result<(), Failure> {
     }
 }
 
+pub(super) fn sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
 #[cfg(unix)]
 fn store_mode(metadata: &fs::Metadata) -> u32 {
     use std::os::unix::fs::PermissionsExt;
@@ -176,11 +182,30 @@ pub(super) fn enforce_store_modes(path: &Path) -> Result<(), Failure> {
     validate_store_file(path)?;
     set_mode(path, 0o600)?;
     for suffix in ["-wal", "-shm"] {
-        let sidecar = PathBuf::from(format!("{}{suffix}", path.display()));
+        let sidecar = sidecar_path(path, suffix);
         if fs::symlink_metadata(&sidecar).is_ok() {
             validate_store_file(&sidecar)?;
             set_mode(&sidecar, 0o600)?;
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn sidecar_paths_preserve_non_utf8_store_names() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        let path = PathBuf::from(std::ffi::OsString::from_vec(
+            b"/tmp/distill-\xff.sqlite".to_vec(),
+        ));
+        assert_eq!(
+            sidecar_path(&path, "-wal").as_os_str().as_bytes(),
+            b"/tmp/distill-\xff.sqlite-wal"
+        );
+    }
 }

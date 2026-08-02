@@ -14,7 +14,9 @@ mod sqlite_errors;
 
 use lineage::*;
 use migration::migrate_v2_to_v3;
-use permissions::{enforce_store_modes, secure_store_root, validate_optional_store_file};
+use permissions::{
+    enforce_store_modes, secure_store_root, sidecar_path, validate_optional_store_file,
+};
 use row::{
     ArtifactReferenceRow, ArtifactRow, CommitReadbackRow, LineageClaimRow, ReceiptLineageRow,
     ReceiptTargetRow, StatusRow,
@@ -759,10 +761,7 @@ impl ArtifactStore {
         secure_store_root(parent)?;
         validate_optional_store_file(&self.path)?;
         for suffix in ["-wal", "-shm"] {
-            validate_optional_store_file(&PathBuf::from(format!(
-                "{}{suffix}",
-                self.path.display()
-            )))?;
+            validate_optional_store_file(&sidecar_path(&self.path, suffix))?;
         }
         let mut connection = Connection::open_with_flags(
             &self.path,
@@ -1280,7 +1279,7 @@ mod tests {
 
         fs::remove_file(&database).expect("remove database symlink");
         store.initialize().expect("initialize real database");
-        let sidecar = PathBuf::from(format!("{}-wal", database.display()));
+        let sidecar = sidecar_path(&database, "-wal");
         if sidecar.exists() {
             fs::remove_file(&sidecar).expect("remove real sidecar");
         }
