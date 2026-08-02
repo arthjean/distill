@@ -62,7 +62,7 @@ impl ArtifactStore {
             ));
         }
         let receipt_digest = sha256_hex(&receipt_json);
-        let mut connection = self.open(false)?;
+        let mut connection = self.connect()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(map_write_error)?;
@@ -202,7 +202,7 @@ impl ArtifactStore {
     }
 
     pub(crate) fn trace(&self, reference: &ArtifactRef, now: u64) -> Result<StoredTrace, Failure> {
-        let mut connection = self.open(false)?;
+        let mut connection = self.connect()?;
         let transaction = connection.transaction().map_err(map_read_error)?;
         let stored = read_artifact(&transaction, reference, now)?;
         let claim: LineageClaimRow = transaction

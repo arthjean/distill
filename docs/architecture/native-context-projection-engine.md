@@ -61,6 +61,9 @@ lifecycle, migration, and permissions have separate ownership. The store:
   through one semantic implementation at construction, migration, recovery,
   replay, receipt insertion, and trace;
 - migrates v2 proof blobs and their digests in one explicit transaction;
+- creates or migrates the database only during engine initialization;
+  steady-state operations open an existing schema v3 store and never silently
+  recreate or migrate it;
 - caps exact receipt bytes at 64 MiB globally and 1 MiB per artifact in the
   same immediate transaction that assigns the per-artifact lineage sequence;
 - commits receipt count, exact-byte usage, and a sequence-bound lineage hash

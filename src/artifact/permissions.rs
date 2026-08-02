@@ -5,13 +5,38 @@ use std::{
 };
 
 pub(super) fn secure_store_root(path: &Path) -> Result<(), Failure> {
-    let existed = path.exists();
+    match fs::symlink_metadata(path) {
+        Ok(_) => return validate_store_root(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => {
+            return Err(Failure::new(
+                FailureCode::PermissionDenied,
+                "artifact store root cannot be inspected",
+            ));
+        }
+    }
     fs::create_dir_all(path).map_err(|_| {
         Failure::new(
             FailureCode::PermissionDenied,
             "artifact store root cannot be created",
         )
     })?;
+    inspect_store_root(path)?;
+    set_mode(path, 0o700)
+}
+
+pub(super) fn validate_store_root(path: &Path) -> Result<(), Failure> {
+    let metadata = inspect_store_root(path)?;
+    if store_mode(&metadata) != 0o700 {
+        return Err(Failure::new(
+            FailureCode::PermissionDenied,
+            "existing artifact store root is not mode 0700",
+        ));
+    }
+    Ok(())
+}
+
+fn inspect_store_root(path: &Path) -> Result<fs::Metadata, Failure> {
     let metadata = fs::symlink_metadata(path).map_err(|_| {
         Failure::new(
             FailureCode::PermissionDenied,
@@ -26,18 +51,7 @@ pub(super) fn secure_store_root(path: &Path) -> Result<(), Failure> {
     }
     validate_store_owner(&metadata, "artifact store root")?;
     verify_no_store_symlinks(path)?;
-    if existed {
-        let mode = store_mode(&metadata);
-        if mode != 0o700 {
-            return Err(Failure::new(
-                FailureCode::PermissionDenied,
-                "existing artifact store root is not mode 0700",
-            ));
-        }
-        Ok(())
-    } else {
-        set_mode(path, 0o700)
-    }
+    Ok(metadata)
 }
 
 #[cfg(unix)]

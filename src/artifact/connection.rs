@@ -5,49 +5,22 @@ use rusqlite::{Connection, OpenFlags};
 use std::time::Duration;
 
 impl ArtifactStore {
-    pub(super) fn open(&self, check_integrity: bool) -> Result<Connection, Failure> {
-        let parent = self.path.parent().ok_or_else(|| {
-            Failure::new(
-                FailureCode::UnsafeRoot,
-                "artifact store path has no parent directory",
-            )
-        })?;
-        permissions::secure_store_root(parent)?;
-        permissions::validate_optional_store_file(&self.path)?;
-        for suffix in ["-wal", "-shm"] {
-            permissions::validate_optional_store_file(&permissions::sidecar_path(
-                &self.path, suffix,
-            ))?;
-        }
-        let mut connection = Connection::open_with_flags(
-            &self.path,
+    pub(super) fn initialize_connection(&self) -> Result<Connection, Failure> {
+        permissions::secure_store_root(self.store_parent()?)?;
+        let mut connection = self.open_connection(
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_CREATE
                 | OpenFlags::SQLITE_OPEN_FULL_MUTEX
                 | OpenFlags::SQLITE_OPEN_NOFOLLOW,
-        )
-        .map_err(map_open_error)?;
-        connection
-            .busy_timeout(Duration::from_millis(self.busy_timeout_ms))
-            .map_err(map_open_error)?;
-        let schema_version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .map_err(map_open_error)?;
+        )?;
+        let schema_version = schema_version(&connection)?;
         if schema_version > STORE_SCHEMA_VERSION {
             return Err(Failure::new(
                 FailureCode::ArtifactSchemaUnsupported,
                 "artifact database schema is newer than this engine",
             ));
         }
-        connection
-            .pragma_update(None, "journal_mode", "WAL")
-            .map_err(map_open_error)?;
-        connection
-            .pragma_update(None, "synchronous", "FULL")
-            .map_err(map_open_error)?;
-        connection
-            .pragma_update(None, "foreign_keys", "ON")
-            .map_err(map_open_error)?;
+        configure_connection(&connection)?;
         match schema_version {
             0 => create_schema(&connection)?,
             1 => {
@@ -57,21 +30,78 @@ impl ArtifactStore {
             2 => migrate_v2_to_v3(&mut connection, self.max_lineage_bytes)?,
             _ => {}
         }
-        if check_integrity {
-            let integrity: String = connection
-                .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
-                .map_err(map_open_error)?;
-            if integrity != "ok" {
-                return Err(Failure::new(
-                    FailureCode::ArtifactCorrupt,
-                    "artifact database integrity check failed",
-                ));
-            }
-            validate_lineage_bounds_connection(&connection, self.max_lineage_bytes)?;
+        let integrity: String = connection
+            .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+            .map_err(map_open_error)?;
+        if integrity != "ok" {
+            return Err(Failure::new(
+                FailureCode::ArtifactCorrupt,
+                "artifact database integrity check failed",
+            ));
         }
+        validate_lineage_bounds_connection(&connection, self.max_lineage_bytes)?;
         permissions::enforce_store_modes(&self.path)?;
         Ok(connection)
     }
+
+    pub(super) fn connect(&self) -> Result<Connection, Failure> {
+        permissions::validate_store_root(self.store_parent()?)?;
+        let connection = self.open_connection(
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_FULL_MUTEX
+                | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+        )?;
+        if schema_version(&connection)? != STORE_SCHEMA_VERSION {
+            return Err(Failure::new(
+                FailureCode::ArtifactSchemaUnsupported,
+                "artifact database schema does not match the initialized engine",
+            ));
+        }
+        configure_connection(&connection)?;
+        permissions::enforce_store_modes(&self.path)?;
+        Ok(connection)
+    }
+
+    fn open_connection(&self, flags: OpenFlags) -> Result<Connection, Failure> {
+        permissions::validate_optional_store_file(&self.path)?;
+        for suffix in ["-wal", "-shm"] {
+            permissions::validate_optional_store_file(&permissions::sidecar_path(
+                &self.path, suffix,
+            ))?;
+        }
+        let connection = Connection::open_with_flags(&self.path, flags).map_err(map_open_error)?;
+        connection
+            .busy_timeout(Duration::from_millis(self.busy_timeout_ms))
+            .map_err(map_open_error)?;
+        Ok(connection)
+    }
+
+    fn store_parent(&self) -> Result<&std::path::Path, Failure> {
+        self.path.parent().ok_or_else(|| {
+            Failure::new(
+                FailureCode::UnsafeRoot,
+                "artifact store path has no parent directory",
+            )
+        })
+    }
+}
+
+fn schema_version(connection: &Connection) -> Result<i64, Failure> {
+    connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(map_open_error)
+}
+
+fn configure_connection(connection: &Connection) -> Result<(), Failure> {
+    connection
+        .pragma_update(None, "journal_mode", "WAL")
+        .map_err(map_open_error)?;
+    connection
+        .pragma_update(None, "synchronous", "FULL")
+        .map_err(map_open_error)?;
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .map_err(map_open_error)
 }
 
 fn create_schema(connection: &Connection) -> Result<(), Failure> {
