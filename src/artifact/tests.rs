@@ -231,6 +231,16 @@ fn legacy_v2_fixture(
     (directory, path, reference, acquisition_json, receipt_blobs)
 }
 
+fn downgrade_fixture_to_v1(path: &std::path::Path) {
+    let connection = Connection::open(path).expect("downgrade fixture to v1");
+    connection
+        .execute_batch(
+            "DROP TABLE artifact_receipts;
+             PRAGMA user_version = 1;",
+        )
+        .expect("v1 schema");
+}
+
 #[test]
 fn restart_recovery_is_byte_exact_and_private() {
     let (_directory, store) = fixture(1_024);
@@ -674,6 +684,95 @@ fn contradictory_v2_migration_rolls_back_schema_and_data() {
             })
             .expect("legacy acquisition"),
         acquisition_json
+    );
+}
+
+#[test]
+fn contradictory_v1_migration_rolls_back_every_schema_step() {
+    let contradiction = AcquisitionReceipt {
+        partial: true,
+        ..receipt()
+    };
+    let (_directory, path, _reference, acquisition_json, _receipt_blobs) =
+        legacy_v2_fixture(&contradiction, 0);
+    downgrade_fixture_to_v1(&path);
+
+    let store = ArtifactStore::new(path.clone(), 4_096, MAX_LINEAGE_BYTES, 250);
+    assert_eq!(
+        store
+            .initialize()
+            .expect_err("contradictory migration")
+            .code,
+        FailureCode::ArtifactCorrupt
+    );
+
+    let connection = Connection::open(&path).expect("inspect rolled-back v1 store");
+    assert_eq!(
+        connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .expect("schema version"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'artifact_receipts'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("receipt table count"),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT source_metadata FROM artifacts", [], |row| {
+                row.get::<_, Vec<u8>>(0)
+            })
+            .expect("legacy acquisition"),
+        acquisition_json
+    );
+}
+
+#[test]
+fn v1_migration_commits_complete_v3_state_atomically() {
+    let (_directory, path, reference, acquisition_json, _receipt_blobs) =
+        legacy_v2_fixture(&receipt(), 0);
+    downgrade_fixture_to_v1(&path);
+
+    let store = ArtifactStore::new(path.clone(), 4_096, MAX_LINEAGE_BYTES, 250);
+    store.initialize().expect("migrate v1 to v3");
+
+    let connection = Connection::open(&path).expect("inspect migrated v1 store");
+    assert_eq!(
+        connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .expect("schema version"),
+        STORE_SCHEMA_VERSION
+    );
+    let (digest, count, bytes, head): (String, i64, i64, String) = connection
+        .query_row(
+            "SELECT source_metadata_sha256, lineage_count, lineage_bytes,
+                    lineage_head_sha256
+             FROM artifacts WHERE id = ?1",
+            [&reference.id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("migrated artifact state");
+    assert_eq!(digest, sha256_hex(&acquisition_json));
+    assert_eq!((count, bytes, head.as_str()), (0, 0, EMPTY_LINEAGE_SHA256));
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM artifact_receipts", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("receipt count"),
+        0
+    );
+    drop(connection);
+    assert_eq!(
+        store.retrieve(&reference, 101).expect("retrieve").bytes,
+        b"legacy"
     );
 }
 

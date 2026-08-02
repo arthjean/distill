@@ -1,5 +1,5 @@
 use super::{ArtifactStore, STORE_SCHEMA_VERSION, lineage::validate_lineage_bounds_connection};
-use super::{migration::migrate_v2_to_v3, permissions, sqlite_errors::map_open_error};
+use super::{migration::migrate_to_v3, permissions, sqlite_errors::map_open_error};
 use crate::types::{Failure, FailureCode};
 use rusqlite::{Connection, OpenFlags};
 use std::time::Duration;
@@ -23,11 +23,7 @@ impl ArtifactStore {
         configure_connection(&connection)?;
         match schema_version {
             0 => create_schema(&connection)?,
-            1 => {
-                create_v2_receipts(&connection)?;
-                migrate_v2_to_v3(&mut connection, self.max_lineage_bytes)?;
-            }
-            2 => migrate_v2_to_v3(&mut connection, self.max_lineage_bytes)?,
+            1 | 2 => migrate_to_v3(&mut connection, schema_version, self.max_lineage_bytes)?,
             _ => {}
         }
         let integrity: String = connection
@@ -145,25 +141,6 @@ fn create_schema(connection: &Connection) -> Result<(), Failure> {
              CREATE INDEX artifact_receipts_lineage
                  ON artifact_receipts(artifact_id, lineage_sequence);
              PRAGMA user_version = 3;
-             COMMIT;",
-        )
-        .map_err(map_open_error)
-}
-
-fn create_v2_receipts(connection: &Connection) -> Result<(), Failure> {
-    connection
-        .execute_batch(
-            "BEGIN IMMEDIATE;
-             CREATE TABLE artifact_receipts (
-                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                 artifact_id TEXT NOT NULL,
-                 request_id TEXT NOT NULL,
-                 receipt_metadata BLOB NOT NULL,
-                 FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
-             );
-             CREATE INDEX artifact_receipts_lineage
-                 ON artifact_receipts(artifact_id, sequence);
-             PRAGMA user_version = 2;
              COMMIT;",
         )
         .map_err(map_open_error)

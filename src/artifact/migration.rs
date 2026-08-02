@@ -35,13 +35,29 @@ struct LegacyReceiptRow {
     receipt_json: Vec<u8>,
 }
 
-pub(super) fn migrate_v2_to_v3(
+pub(super) fn migrate_to_v3(
     connection: &mut Connection,
+    schema_version: i64,
     max_lineage_bytes: u64,
 ) -> Result<(), Failure> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(map_write_error)?;
+    if schema_version == 1 {
+        transaction
+            .execute_batch(
+                "CREATE TABLE artifact_receipts (
+                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                     artifact_id TEXT NOT NULL,
+                     request_id TEXT NOT NULL,
+                     receipt_metadata BLOB NOT NULL,
+                     FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+                 );
+                 CREATE INDEX artifact_receipts_lineage
+                     ON artifact_receipts(artifact_id, sequence);",
+            )
+            .map_err(map_write_error)?;
+    }
     transaction
         .execute_batch(
             "ALTER TABLE artifacts ADD COLUMN source_metadata_sha256 TEXT;
