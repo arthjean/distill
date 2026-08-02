@@ -89,6 +89,68 @@ fn run_options_are_order_independent_before_the_process_delimiter() {
 }
 
 #[test]
+fn unknown_roots_use_the_engine_failure_contract() {
+    let temp = TempDir::new().expect("temp");
+    let store = store(&temp);
+    let store_text = store.to_string_lossy();
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../docs/integrations/cli-conformance-v2.json"
+    ))
+    .expect("CLI conformance fixture");
+    assert_eq!(fixture["schema_version"], "distill.cli-conformance/v2");
+    assert_eq!(fixture["surface_schema_version"], CLI_SCHEMA_VERSION);
+    let cases = fixture["configured_root_policy"]["cases"]
+        .as_array()
+        .expect("configured-root cases");
+
+    for (operation, arguments) in [
+        (
+            "read",
+            vec![
+                "--store",
+                &store_text,
+                "read",
+                "--root-id",
+                "missing",
+                "--path",
+                "sample.txt",
+                "--budget",
+                "64",
+                "--json",
+            ],
+        ),
+        (
+            "run",
+            vec![
+                "--store",
+                &store_text,
+                "run",
+                "--cwd-root",
+                "missing",
+                "--cwd",
+                ".",
+                "--budget",
+                "64",
+                "--json",
+                "--",
+                "/usr/bin/printf",
+                "ok",
+            ],
+        ),
+    ] {
+        let (code, output, diagnostics) = run_args(&arguments, b"");
+        assert_eq!(code, 2, "{diagnostics}");
+        let response: Value = serde_json::from_slice(&output).expect("failure JSON");
+        assert_eq!(response["schema_version"], CLI_SCHEMA_VERSION);
+        let expected = cases
+            .iter()
+            .find(|case| case["operation"] == operation)
+            .expect("operation conformance case");
+        assert_eq!(response["error"]["code"], expected["unknown_root_failure"]);
+    }
+}
+
+#[test]
 fn project_restore_trace_status_and_gc_are_versioned() {
     let temp = TempDir::new().expect("temp");
     let store = store(&temp);

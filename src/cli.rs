@@ -20,7 +20,7 @@ use std::{
     path::PathBuf,
 };
 
-const CLI_SCHEMA_VERSION: &str = "distill.cli/v1";
+const CLI_SCHEMA_VERSION: &str = "distill.cli/v2";
 
 const HELP: &str = r#"distill: local bounded context projection
 
@@ -370,11 +370,6 @@ fn read_file<W: Write, E: Write>(
     }
     let options = projection.finish()?;
     let root_id = root_id.ok_or_else(|| SurfaceError::invalid("--root-id is required"))?;
-    if !global.roots.contains_key(&root_id) {
-        return Err(SurfaceError::invalid(
-            "--root-id must name a configured --root",
-        ));
-    }
     let path = path.ok_or_else(|| SurfaceError::invalid("--path is required"))?;
     let request = request(
         "cli-read",
@@ -421,11 +416,6 @@ fn run_process<W: Write, E: Write>(
     }
     let options = projection.finish()?;
     let cwd_root_id = cwd_root.ok_or_else(|| SurfaceError::invalid("--cwd-root is required"))?;
-    if !global.roots.contains_key(&cwd_root_id) {
-        return Err(SurfaceError::invalid(
-            "--cwd-root must name a configured --root",
-        ));
-    }
     let source = Source::Process {
         executable: ByteString::from_utf8(
             executable.ok_or_else(|| SurfaceError::invalid("missing executable after --"))?,
