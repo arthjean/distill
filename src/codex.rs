@@ -1,4 +1,4 @@
-use crate::cli::{SurfaceError, write_json_line};
+use crate::surface::{SurfaceError, write_json_line};
 use distill::{
     Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Failure,
     FailureCode, Fidelity, Outcome, Request, Retention, Source,

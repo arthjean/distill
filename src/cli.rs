@@ -1,20 +1,26 @@
-use crate::{codex, mcp, setup};
+use crate::{
+    codex, mcp, setup,
+    surface::{BROKEN_PIPE_EXIT, SurfaceError, write_json_line},
+};
 use distill::{
     ArtifactRef, BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit,
     Engine, EngineConfig, Failure, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention,
     Source,
 };
 use serde::Serialize;
-use serde_json::{Value, json};
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(test)]
+use std::io;
 use std::{
     collections::{BTreeMap, VecDeque},
     ffi::OsString,
-    io::{self, Read, Write},
+    io::{Read, Write},
     path::PathBuf,
 };
 
 const CLI_SCHEMA_VERSION: &str = "distill.cli/v1";
-const BROKEN_PIPE_EXIT: i32 = 74;
 
 const HELP: &str = r#"distill: local bounded context projection
 
@@ -67,74 +73,6 @@ struct ProjectionOptions {
     profile: String,
     retention: Retention,
     json: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct SurfaceError {
-    exit_code: i32,
-    code: String,
-    message: String,
-    artifact: Option<ArtifactRef>,
-}
-
-impl SurfaceError {
-    pub(crate) fn invalid(message: impl Into<String>) -> Self {
-        Self {
-            exit_code: 2,
-            code: "invalid_input".to_owned(),
-            message: message.into(),
-            artifact: None,
-        }
-    }
-
-    pub(crate) fn output(error: io::Error) -> Self {
-        let broken_pipe = error.kind() == io::ErrorKind::BrokenPipe;
-        Self {
-            exit_code: if broken_pipe { BROKEN_PIPE_EXIT } else { 70 },
-            code: if broken_pipe {
-                "broken_pipe".to_owned()
-            } else {
-                "output_failure".to_owned()
-            },
-            message: if broken_pipe {
-                "output consumer closed the pipe".to_owned()
-            } else {
-                "cannot write command output".to_owned()
-            },
-            artifact: None,
-        }
-    }
-}
-
-impl From<Failure> for SurfaceError {
-    fn from(failure: Failure) -> Self {
-        let exit_code = match failure.code {
-            FailureCode::InvalidRequest
-            | FailureCode::SchemaUnsupported
-            | FailureCode::SourceUnsupported
-            | FailureCode::TokenProfileUnsupported
-            | FailureCode::InputTooLarge
-            | FailureCode::ResourceExhausted
-            | FailureCode::UnsafeRoot => 2,
-            FailureCode::BudgetUnsatisfiable => 3,
-            FailureCode::ArtifactUnknown
-            | FailureCode::ArtifactExpired
-            | FailureCode::ArtifactCorrupt
-            | FailureCode::ArtifactSchemaUnsupported => 4,
-            FailureCode::PermissionDenied
-            | FailureCode::StoreFull
-            | FailureCode::StoreBusy
-            | FailureCode::CommitFailed => 5,
-            FailureCode::AcquisitionFailed => 6,
-            FailureCode::InvariantBreach => 70,
-        };
-        Self {
-            exit_code,
-            code: failure.code.as_str().to_owned(),
-            message: failure.safe_message,
-            artifact: failure.artifact,
-        }
-    }
 }
 
 pub(crate) fn run<R: Read, W: Write, E: Write>(
@@ -593,12 +531,6 @@ fn write_success<W: Write, T: Serialize>(output: &mut W, result: &T) -> Result<(
             "result": result,
         }),
     )
-}
-
-pub(crate) fn write_json_line<W: Write>(output: &mut W, value: &Value) -> Result<(), SurfaceError> {
-    serde_json::to_writer(&mut *output, value)
-        .map_err(|error| SurfaceError::output(io::Error::other(error)))?;
-    output.write_all(b"\n").map_err(SurfaceError::output)
 }
 
 fn read_bounded<R: Read>(input: &mut R, limit: usize) -> Result<Vec<u8>, SurfaceError> {

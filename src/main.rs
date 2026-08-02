@@ -7,6 +7,7 @@ mod cli;
 mod codex;
 mod mcp;
 mod setup;
+mod surface;
 
 fn main() {
     let code = cli::run(

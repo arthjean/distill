@@ -1,6 +1,6 @@
 use crate::{
-    cli::{SurfaceError, write_json_line},
     codex,
+    surface::{SurfaceError, write_json_line},
 };
 use serde_json::{Map, Value, json};
 use std::{

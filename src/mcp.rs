@@ -1,4 +1,4 @@
-use crate::cli::SurfaceError;
+use crate::surface::SurfaceError;
 use distill::{
     BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
     EngineConfig, Failure, FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
