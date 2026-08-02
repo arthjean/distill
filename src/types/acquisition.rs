@@ -101,7 +101,6 @@ impl ValidatedAcquisition {
         receipt: AcquisitionReceipt,
         source_bytes: u64,
     ) -> Result<Self, &'static str> {
-        receipt.validate(source_bytes)?;
         let AcquisitionReceipt {
             variant,
             complete,
@@ -111,23 +110,46 @@ impl ValidatedAcquisition {
             relative_path,
             process,
         } = receipt;
+        if (complete && partial)
+            || (truncated && !partial)
+            || (partial && variant != SourceVariant::Process)
+            || (!complete && !partial && source_bytes != 0)
+        {
+            return Err("acquisition completion state is contradictory");
+        }
         let state = match variant {
-            SourceVariant::Inline => AcquisitionState::Inline(Completion::from_complete(complete)),
+            SourceVariant::Inline => {
+                validate_simple_variant(&root_id, &relative_path, &process, truncated)?;
+                AcquisitionState::Inline(Completion::from_complete(complete))
+            }
             SourceVariant::Artifact => {
+                validate_simple_variant(&root_id, &relative_path, &process, truncated)?;
                 AcquisitionState::Artifact(Completion::from_complete(complete))
             }
-            SourceVariant::File => AcquisitionState::File {
-                root_id: root_id.ok_or("file acquisition root is missing")?,
-                relative_path: PathSummary::parse(
-                    relative_path
-                        .as_deref()
-                        .ok_or("file acquisition path is missing")?,
-                )
-                .ok_or("file acquisition path is invalid")?,
-                completion: Completion::from_complete(complete),
-            },
+            SourceVariant::File => {
+                let root_id = root_id
+                    .filter(|root| crate::contract::valid_identifier(root))
+                    .ok_or("file acquisition metadata is incomplete or contradictory")?;
+                let relative_path = relative_path
+                    .as_deref()
+                    .and_then(PathSummary::parse)
+                    .ok_or("file acquisition metadata is incomplete or contradictory")?;
+                if process.is_some() || truncated {
+                    return Err("file acquisition metadata is incomplete or contradictory");
+                }
+                AcquisitionState::File {
+                    root_id,
+                    relative_path,
+                    completion: Completion::from_complete(complete),
+                }
+            }
             SourceVariant::Process => {
-                let root_id = root_id.ok_or("process acquisition root is missing")?;
+                let root_id = root_id
+                    .filter(|root| crate::contract::valid_identifier(root))
+                    .ok_or("process acquisition metadata is incomplete or contradictory")?;
+                if relative_path.is_some() {
+                    return Err("process acquisition metadata is incomplete or contradictory");
+                }
                 let process = process.ok_or("process acquisition data is missing")?;
                 let working_path = process
                     .working_directory
@@ -136,6 +158,8 @@ impl ValidatedAcquisition {
                     .ok_or("process working-directory identity is missing")?;
                 let working_directory = PathSummary::parse(working_path)
                     .ok_or("process working-directory identity is invalid")?;
+                validate_process_events(&process.events, source_bytes)?;
+                validate_process_terminal_state(&process, complete, partial)?;
                 let state = if complete {
                     ProcessState::Complete {
                         events: process.events,
@@ -437,6 +461,59 @@ impl AcquisitionState {
     }
 }
 
-pub(super) fn valid_path_summary(value: &str) -> bool {
-    PathSummary::parse(value).is_some()
+fn validate_simple_variant(
+    root_id: &Option<String>,
+    relative_path: &Option<String>,
+    process: &Option<ProcessReceipt>,
+    truncated: bool,
+) -> Result<(), &'static str> {
+    if root_id.is_some() || relative_path.is_some() || process.is_some() || truncated {
+        return Err("acquisition fields contradict the source variant");
+    }
+    Ok(())
+}
+
+fn validate_process_events(events: &[StreamEvent], source_bytes: u64) -> Result<(), &'static str> {
+    let mut expected_start = 0_u64;
+    for (index, event) in events.iter().enumerate() {
+        if event.order != index as u64
+            || event.span.start != expected_start
+            || event.span.end <= event.span.start
+            || event.span.end > source_bytes
+        {
+            return Err("process stream events are invalid");
+        }
+        expected_start = event.span.end;
+    }
+    if expected_start != source_bytes {
+        return Err("process stream events do not cover the captured source");
+    }
+    Ok(())
+}
+
+fn validate_process_terminal_state(
+    process: &ProcessReceipt,
+    complete: bool,
+    partial: bool,
+) -> Result<(), &'static str> {
+    if !complete && !partial {
+        if !process.events.is_empty()
+            || process.exit_code.is_some()
+            || process.signal.is_some()
+            || process.timed_out
+        {
+            return Err("clean process failure contains terminal capture data");
+        }
+        return Ok(());
+    }
+    if process.exit_code.is_some() == process.signal.is_some() {
+        return Err("process terminal state must contain one exit code or signal");
+    }
+    if complete && (process.timed_out || process.signal.is_some()) {
+        return Err("complete process acquisition has a failure terminal state");
+    }
+    if (process.timed_out || process.signal.is_some()) && !partial {
+        return Err("failed process terminal state is not partial");
+    }
+    Ok(())
 }

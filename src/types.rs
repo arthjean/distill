@@ -329,98 +329,11 @@ pub struct AcquisitionReceipt {
 
 impl AcquisitionReceipt {
     pub(crate) fn validate(&self, source_bytes: u64) -> Result<(), &'static str> {
-        if (self.complete && self.partial)
-            || (self.truncated && !self.partial)
-            || (self.partial && self.variant != SourceVariant::Process)
-            || (!self.complete && !self.partial && source_bytes != 0)
-        {
-            return Err("acquisition completion state is contradictory");
-        }
-
-        match self.variant {
-            SourceVariant::Inline | SourceVariant::Artifact => {
-                if self.root_id.is_some()
-                    || self.relative_path.is_some()
-                    || self.process.is_some()
-                    || self.truncated
-                {
-                    return Err("acquisition fields contradict the source variant");
-                }
-            }
-            SourceVariant::File => {
-                if self
-                    .root_id
-                    .as_deref()
-                    .is_none_or(|root| !crate::contract::valid_identifier(root))
-                    || self
-                        .relative_path
-                        .as_deref()
-                        .is_none_or(|path| !valid_path_summary(path))
-                    || self.process.is_some()
-                    || self.truncated
-                {
-                    return Err("file acquisition metadata is incomplete or contradictory");
-                }
-            }
-            SourceVariant::Process => {
-                let Some(root_id) = self.root_id.as_deref() else {
-                    return Err("process acquisition metadata is incomplete or contradictory");
-                };
-                if !crate::contract::valid_identifier(root_id) || self.relative_path.is_some() {
-                    return Err("process acquisition metadata is incomplete or contradictory");
-                }
-                let process = self
-                    .process
-                    .as_ref()
-                    .ok_or("process acquisition data is missing")?;
-                let working_path = process
-                    .working_directory
-                    .strip_prefix(root_id)
-                    .and_then(|value| value.strip_prefix(':'));
-                if working_path.is_none_or(|path| !valid_path_summary(path)) {
-                    return Err("process working-directory identity is missing");
-                }
-
-                let mut expected_start = 0_u64;
-                for (index, event) in process.events.iter().enumerate() {
-                    if event.order != index as u64
-                        || event.span.start != expected_start
-                        || event.span.end <= event.span.start
-                        || event.span.end > source_bytes
-                    {
-                        return Err("process stream events are invalid");
-                    }
-                    expected_start = event.span.end;
-                }
-                if expected_start != source_bytes {
-                    return Err("process stream events do not cover the captured source");
-                }
-
-                if !self.complete && !self.partial {
-                    if !process.events.is_empty()
-                        || process.exit_code.is_some()
-                        || process.signal.is_some()
-                        || process.timed_out
-                    {
-                        return Err("clean process failure contains terminal capture data");
-                    }
-                } else if process.exit_code.is_some() == process.signal.is_some() {
-                    return Err("process terminal state must contain one exit code or signal");
-                }
-                if self.complete && (process.timed_out || process.signal.is_some()) {
-                    return Err("complete process acquisition has a failure terminal state");
-                }
-                if (process.timed_out || process.signal.is_some()) && !self.partial {
-                    return Err("failed process terminal state is not partial");
-                }
-            }
-        }
-        Ok(())
+        ValidatedAcquisition::from_wire(self.clone(), source_bytes).map(|_| ())
     }
 }
 
 mod acquisition;
-use acquisition::valid_path_summary;
 pub(crate) use acquisition::{ProcessPartialReason, ProcessTermination, ValidatedAcquisition};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
