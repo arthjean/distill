@@ -52,17 +52,18 @@ Request {
   budget: Budget
   preservation_profile: PreservationProfileId
   retention: Retention
+  focus: FocusText?
 }
 ```
 
 `contract_version` selects the complete public semantics. The current contract
 is `distill.context/v3`. `distill.context/v2` remains accepted and behaves
-exactly as it did: v3 adds only the optional artifact selector described below,
-so a v2 request that names no selector produces the same outcome and the same
-receipt. A `distill.context/v2` request that does carry a selector fails with
-`schema_unsupported`. A syntactically decodable `distill.context/v1` request
-fails with `schema_unsupported`; there is no compatibility path that drops v1
-fields. Unknown versions fail the same way.
+exactly as it did: v3 adds only the optional artifact selector and the optional
+focus described below, so a v2 request that names neither produces the same
+outcome and the same receipt. A `distill.context/v2` request that does carry
+either fails with `schema_unsupported`. A syntactically decodable
+`distill.context/v1` request fails with `schema_unsupported`; there is no
+compatibility path that drops v1 fields. Unknown versions fail the same way.
 
 `request_id` is supplied by the caller for correlation only. It does not become
 an artifact identifier and does not provide durable idempotency. Repeating an ID
@@ -196,6 +197,51 @@ Selection changes what is visible, never what is accounted:
 An expired, unknown, corrupt, or partial artifact returns its existing typed
 failure unchanged. A selector never resurrects a partial artifact: it remains
 diagnosis-only.
+
+### FocusText
+
+```text
+FocusText = Utf8Text, 1 through 256 bytes
+```
+
+A focus states why an observation is being read. It is optional, and it is the
+only field of the contract whose purpose is to order selection rather than to
+name what is selected.
+
+Bounds and content class, validated before acquisition:
+
+| Property | Rule | Failure when violated |
+|---|---|---|
+| Length | 1 through 256 UTF-8 bytes | `invalid_request` |
+| Content class | any valid UTF-8 text, taken literally | `invalid_request` |
+| Contract version | `distill.context/v3` | `schema_unsupported` |
+
+A focus is inert data on exactly the terms a selector pattern is. It is split
+into at most 16 literal terms on non-word characters and compared as lowercase
+substrings. It is never evaluated as a pattern language, a shell input, a
+configuration, a template, or a model instruction: a regular expression, a shell
+construct, or an instruction supplied as a focus is compared as the text it is.
+
+A focus can only change the order in which the budget buys the source's own
+lines:
+
+- It never adds, restates, or reclassifies content, never raises the payload
+  budget, and never overrides a mandatory fact, which is retained before
+  selection runs at all.
+- Candidates are ordered by a deterministic score: lexical proximity to the
+  focus first, the structural rank the shape policy assigned second, and source
+  position last, so equal scores always resolve the same way.
+- Only terms that discriminate score. A term the observation carries in more
+  than a quarter of its lines describes the observation rather than a region of
+  it, so it ranks nothing; this is what keeps a focus written as a sentence from
+  ordering by its articles and prepositions.
+- A focus whose terms are absent, or discriminate nowhere, produces exactly the
+  projection the same request produces without one.
+- A request that names no focus behaves exactly as it did before v3.
+
+`PreservationResult.focus_applied` records that a focus ordered selection. The
+value is never recorded: a receipt is persisted, traced, and read back, so
+echoing caller text into it would carry untrusted content into a durable log.
 
 ### Budget
 
@@ -374,6 +420,7 @@ PreservationResult {
   applied_profile: ShapeProfileId
   mandatory_fact_ids: List<OpaqueId>
   aggregates: List<AggregateSpan>
+  focus_applied: Boolean
 }
 
 AggregateSpan {
@@ -385,8 +432,9 @@ AggregateSpan {
 Spans are half-open byte offsets into the committed source. They are sorted,
 non-overlapping within each list, and cover every source byte exactly once when
 the policy returns `extractive`. `PreservationResult` records the profile the
-request named, the shape policy that actually ran, and identifiers of all
-mandatory facts. It does not copy sensitive fact bodies.
+request named, the shape policy that actually ran, identifiers of all mandatory
+facts, and whether a focus ordered selection. It does not copy sensitive fact
+bodies and it does not copy the focus.
 
 The receipt schema is `distill.receipt/v2` and the policy version is
 `distill.preservation/v2`. Lineage recorded under `distill.receipt/v1` and

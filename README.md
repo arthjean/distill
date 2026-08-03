@@ -112,6 +112,21 @@ distill artifact search <artifact-id> --pattern 'error[E0308]' --budget 2048
 
 `--pattern` is literal text, never a regular expression.
 
+State what you are reading for, so the budget buys the lines that answer it:
+
+```bash
+distill \
+  --root workspace=/absolute/path/to/project \
+  read --root-id workspace --path src/projection.rs --budget 4096 \
+  --focus 'where is the payload budget spent'
+```
+
+`--focus` is optional, at most 256 UTF-8 bytes, and literal text on the same
+terms as `--pattern`. It only orders which of the source's own lines survive: it
+adds nothing, lifts no budget, and is never echoed back. The Claude tools accept
+the same field, and the Codex hook derives one from the tool input it already
+received.
+
 Recover and inspect whole artifacts:
 
 ```bash
@@ -162,7 +177,8 @@ Claude receives four explicit tools:
 - `distill_artifact_search`: bounded literal search over that artifact.
 
 The retrieval pair recovers a region an earlier projection omitted without
-leaving Distill, under its own declared budget. Distill does not intercept
+leaving Distill, under its own declared budget. Every tool also accepts an
+optional `focus` stating what the call is looking for. Distill does not intercept
 Claude's native `Read` or `Bash`. Selecting those tools bypasses projection. MCP
 stdout contains JSON-RPC only.
 

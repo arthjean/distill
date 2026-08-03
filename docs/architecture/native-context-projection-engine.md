@@ -115,6 +115,26 @@ instead of growing with input size. Runs of at least three consecutive ordinary
 lines that repeat a known template become collapsed runs; everything else stays
 verbatim.
 
+`src/projection/focus.rs` orders candidates when the request states what it is
+reading for. The focus is split into at most 16 literal terms on non-word
+characters, and the ranking pass records, per line, which terms it carries as one
+bitmask. Which terms actually locate an answer is only knowable once the whole
+observation has been ranked, so scoring resolves after that pass: a term the
+observation carries in more than a quarter of its lines describes the whole of it
+and ranks nothing, which is what stops a focus written as a sentence from
+ordering by its articles. Candidates then sort by lexical proximity, then by the
+structural rank of the shape policy, then by source position.
+
+A focus promotes lines the shape policy ranked ordinary, because what answers a
+question is rarely what orders the output. The reducer work limit therefore
+applies once per reason a line can rank: at most 256 structural candidates and at
+most 256 focused ones, so a focus reaches the whole observation rather than the
+prefix whose structure already filled the table, and a preferred line is never
+crowded out. A promoted line that no discriminating term reached is dropped
+again, so an uninformative focus leaves the candidate set exactly where it was.
+Scoring is substring comparison and never tokenizes, so the tokenization bound
+below is unchanged.
+
 Planning is incremental. A plan's count is the sum of its span counts, which is
 exact because every span boundary is anchored to an additive offset: the start
 of the text, its end, or a line break followed by a line that reaches a

@@ -11,9 +11,9 @@ surfaces:
   `distill_artifact_slice`, and `distill_artifact_search`, installed with
   `distill setup claude`.
 
-Requests use `distill.context/v3`. Its only addition is the optional artifact
-selector, so a `distill.context/v2` request that names no selector behaves
-exactly as before; one that names a selector is refused with
+Requests use `distill.context/v3`. Its only additions are the optional artifact
+selector and the optional focus, so a `distill.context/v2` request that names
+neither behaves exactly as before; one that names either is refused with
 `schema_unsupported`.
 
 Both product surfaces send `auto/v1` and declare no content class: a hook or an
@@ -84,6 +84,25 @@ MCP retrieval arguments the decoder rejects produce a bounded `isError` tool
 result naming the typed failure, rather than a JSON-RPC protocol error, so the
 agent can correct the call from its own surface. The published retrieval schemas
 are bound to [`mcp-conformance-v1.json`](mcp-conformance-v1.json).
+
+## Stated intent
+
+Every surface can say why an observation is being read. The four MCP tools each
+publish an optional `focus` at the contract's 256-byte bound, the CLI accepts
+`--focus TEXT` on every projecting command, and the Codex hook derives one from
+the `tool_input` fields that state what a call was for: `command`, `file_path`,
+`path`, `pattern`, and `query`. A payload field is deliberately not among them,
+because a focus states the intent of a call rather than the body it wrote.
+
+A declared focus outside the published bound is refused, exactly like an
+oversized selector pattern, so the published schemas and the runtime decoder
+agree. A focus the hook derives itself is truncated on a UTF-8 boundary instead,
+because there the adapter is the author of the value; a tool input that is
+absent, shaped differently, or empty simply yields no focus and the request
+proceeds without one. A focus only orders which of the source's own lines the
+budget keeps: it adds nothing, lifts no budget, and is never echoed into an
+envelope, a receipt, or a diagnostic. The versioned matrices pin the field, its
+bound, its optionality, and the receipt field that records that one applied.
 
 CLI JSON uses `distill.cli/v2` and is bound to
 [`cli-conformance-v3.json`](cli-conformance-v3.json), which supersedes the

@@ -278,6 +278,27 @@ through the existing verified-retrieval path, so expired, unknown, corrupt, and
 partial artifacts keep their typed failures, and a partial capture stays
 diagnosis-only. It cannot name a filesystem path, a root, or a process.
 
+## Agent-supplied focus
+
+A focus is caller-controlled input on the same terms. It is capped at 256 UTF-8
+bytes before acquisition, split into at most 16 literal terms on non-word
+characters, and compared as lowercase substrings. There is no pattern language
+to evaluate and no expression a focus can form: a regular expression, a shell
+construct, or an instruction supplied as a focus is compared as the text it is.
+
+A focus cannot change what a projection contains, only which of the source's own
+lines the budget keeps first. It cannot add content, restate content, name a
+path, a root, a process, or an artifact, or lift the payload budget, and the
+receipt records only that one applied. The value is never echoed into the visible
+payload, the receipt, the lineage, or a diagnostic, so a focus cannot carry
+attacker-authored text into a durable log or back into a model.
+
+Work stays bounded by construction: term extraction is bounded by the value's
+length, scoring is one substring pass per term over each line, and the candidate
+table admits at most 256 entries for each of the two reasons a line can rank.
+Scoring never tokenizes, so the single full-render tokenization bound of the
+planner is unchanged.
+
 ## Verification requirements
 
 The language spikes and selected engine must supply automated evidence for:
@@ -288,8 +309,9 @@ The language spikes and selected engine must supply automated evidence for:
 3. argv preservation, option-shaped values, command-injection strings, timeout,
    output cap, signal, and child cleanup;
 4. invalid UTF-8, binary bytes, prompt-injection-shaped content, maximum lengths,
-   integer overflow, corrupted store pages, and out-of-bounds or
-   pattern-language-shaped artifact selectors;
+   integer overflow, corrupted store pages, out-of-bounds or
+   pattern-language-shaped artifact selectors, and out-of-bounds or
+   pattern-language-shaped focus values;
 5. disk full, lock timeout, killed writer at each commit boundary, and eight
    concurrent writers;
 6. zero outbound connections during capture, projection, retrieval, trace, and
