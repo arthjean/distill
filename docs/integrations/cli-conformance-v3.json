@@ -1,0 +1,51 @@
+{
+  "schema_version": "distill.cli-conformance/v3",
+  "supersedes": "distill.cli-conformance/v2",
+  "surface_schema_version": "distill.cli/v2",
+  "request_contract_version": "distill.context/v3",
+  "configured_root_policy": {
+    "owner": "Engine::handle",
+    "cases": [
+      {
+        "operation": "read",
+        "unknown_root_failure": "unsafe_root"
+      },
+      {
+        "operation": "run",
+        "unknown_root_failure": "unsafe_root"
+      }
+    ]
+  },
+  "retrieval": {
+    "owner": "Engine::handle",
+    "pattern_language": "literal",
+    "unbounded_recovery_command": "distill artifact get",
+    "commands": [
+      {
+        "operation": "slice",
+        "form": "distill artifact slice ID --start-line N --lines N --budget N",
+        "required_options": ["--start-line", "--lines", "--budget"],
+        "missing_budget_failure": "invalid_input",
+        "missing_budget_exit_code": 2
+      },
+      {
+        "operation": "search",
+        "form": "distill artifact search ID --pattern TEXT --budget N",
+        "required_options": ["--pattern", "--budget"],
+        "missing_budget_failure": "invalid_input",
+        "missing_budget_exit_code": 2
+      }
+    ],
+    "selector_bounds": {
+      "artifact_id_length": 32,
+      "max_pattern_bytes": 512,
+      "max_context_lines": 16,
+      "max_matches": 32,
+      "default_context_lines": 2,
+      "default_matches": 8,
+      "min_start_line": 1,
+      "min_line_count": 1,
+      "out_of_bounds_failure": "invalid_request"
+    }
+  }
+}

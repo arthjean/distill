@@ -6,8 +6,8 @@ use crate::{
     },
 };
 use distill::{
-    ArtifactRef, BinaryPolicy, Budget, ByteString, CONTRACT_VERSION, CountUnit, Engine,
-    EngineConfig, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention, Source,
+    ArtifactRef, ArtifactSelector, BinaryPolicy, Budget, ByteString, CONTRACT_VERSION, CountUnit,
+    Engine, EngineConfig, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention, Source,
 };
 use serde::Serialize;
 #[cfg(test)]
@@ -30,6 +30,8 @@ Usage:
   distill [--store PATH] [--root ID=PATH] project --budget N [--json]
   distill [--store PATH] artifact get ID [--json]
   distill [--store PATH] artifact trace ID [--json]
+  distill [--store PATH] artifact slice ID --start-line N --lines N --budget N [--json]
+  distill [--store PATH] artifact search ID --pattern TEXT --budget N [--before N] [--after N] [--max-matches N] [--json]
   distill [--store PATH] status [--json]
   distill [--store PATH] gc [--json]
   distill [--store PATH] [--root ID=PATH] read --root-id ID --path PATH --budget N [--json]
@@ -46,6 +48,14 @@ Budget options:
   --profile NAME      Central preservation profile (default: plain-text/v1)
   --ttl SECONDS       Artifact retention from capture time
 
+Retrieval options (artifact slice, artifact search):
+  --start-line N      1-based first line of a slice
+  --lines N           Number of lines in a slice
+  --pattern TEXT      Literal text to find, never a regular expression
+  --before N          Context lines kept before each match (default: 2)
+  --after N           Context lines kept after each match (default: 2)
+  --max-matches N     Largest number of matches selected (default: 8)
+
 Stable exit codes:
   0 success
   2 invalid input or unsupported schema
@@ -61,6 +71,9 @@ objects to stdout. Diagnostics use stderr. NO_COLOR is honored by never emitting
 color. Codex hooks cover supported local tools only: hosted tools and specialized
 paths that bypass PostToolUse cannot be projected. Claude projection is explicit
 through distill_read and distill_run; native Read and Bash are not intercepted.
+Bounded recovery of an omitted region uses artifact slice and artifact search on
+the CLI, and distill_artifact_slice and distill_artifact_search on MCP. Unbounded
+artifact get remains an operator command outside the agent loop.
 "#;
 
 #[derive(Clone, Debug)]
@@ -233,7 +246,7 @@ fn run_inner<R: Read, W: Write, E: Write>(
         .ok_or_else(|| SurfaceError::invalid("missing command"))?;
     match command.as_str() {
         "project" => project(global, args, input, output, diagnostics, json_mode),
-        "artifact" => artifact(global, args, output, json_mode),
+        "artifact" => artifact(global, args, output, diagnostics, json_mode),
         "status" => status(global, args, output, json_mode),
         "gc" => gc(global, args, output, json_mode),
         "read" => read_file(global, args, output, diagnostics, json_mode),
@@ -430,18 +443,38 @@ fn run_process<W: Write, E: Write>(
     write_outcome(output, diagnostics, &outcome, options.json)
 }
 
-fn artifact<W: Write>(
+const ARTIFACT_ACTIONS: &str = "artifact requires get, trace, slice, or search";
+
+fn artifact<W: Write, E: Write>(
     global: GlobalOptions,
     mut args: VecDeque<String>,
     output: &mut W,
+    diagnostics: &mut E,
     json_mode: &mut bool,
 ) -> Result<(), SurfaceError> {
     let action = args
         .pop_front()
-        .ok_or_else(|| SurfaceError::invalid("artifact requires get or trace"))?;
+        .ok_or_else(|| SurfaceError::invalid(ARTIFACT_ACTIONS))?;
     let target = args
         .pop_front()
         .ok_or_else(|| SurfaceError::invalid("artifact requires an ID or JSON reference"))?;
+    if matches!(action.as_str(), "slice" | "search") {
+        // Selector and budget parsing precedes engine construction, so an
+        // incomplete retrieval request never reaches the store.
+        let (selector, options) = parse_selector(&action, &mut args, json_mode)?;
+        distill::validate_artifact_selector(&selector)?;
+        let engine = Engine::new(global.config())?;
+        let reference = parse_artifact_target(&engine, &target)?;
+        let outcome = engine.handle(request(
+            &format!("cli-artifact-{action}"),
+            Source::Artifact {
+                artifact: reference,
+                selector: Some(selector),
+            },
+            options.clone(),
+        ))?;
+        return write_outcome(output, diagnostics, &outcome, options.json);
+    }
     let json = remove_flag(&mut args, "--json");
     *json_mode |= json;
     ensure_empty(&args)?;
@@ -462,8 +495,75 @@ fn artifact<W: Write>(
             let trace = engine.trace(&reference)?;
             write_success(output, &trace)
         }
-        _ => Err(SurfaceError::invalid("artifact requires get or trace")),
+        _ => Err(SurfaceError::invalid(ARTIFACT_ACTIONS)),
     }
+}
+
+/// Parses one retrieval selector and its budget. Selector values are taken
+/// literally, so a value that looks like a Distill option cannot become one.
+fn parse_selector(
+    action: &str,
+    args: &mut VecDeque<String>,
+    json_mode: &mut bool,
+) -> Result<(ArtifactSelector, ProjectionOptions), SurfaceError> {
+    let mut start_line = None;
+    let mut line_count = None;
+    let mut pattern = None;
+    let mut before_lines = None;
+    let mut after_lines = None;
+    let mut max_matches = None;
+    let mut projection = ProjectionParser::new();
+    while let Some(argument) = args.pop_front() {
+        match argument.as_str() {
+            "--start-line" => {
+                start_line = Some(parse_u64(&take(args, "--start-line")?, "--start-line")?)
+            }
+            "--lines" => line_count = Some(parse_u64(&take(args, "--lines")?, "--lines")?),
+            "--pattern" => pattern = Some(take(args, "--pattern")?),
+            "--before" => before_lines = Some(parse_u64(&take(args, "--before")?, "--before")?),
+            "--after" => after_lines = Some(parse_u64(&take(args, "--after")?, "--after")?),
+            "--max-matches" => {
+                max_matches = Some(parse_u64(&take(args, "--max-matches")?, "--max-matches")?)
+            }
+            _ => projection.consume(&argument, args, json_mode)?,
+        }
+    }
+    let options = projection.finish()?;
+    let selector = match action {
+        "slice" => {
+            if pattern.is_some()
+                || before_lines.is_some()
+                || after_lines.is_some()
+                || max_matches.is_some()
+            {
+                return Err(SurfaceError::invalid(
+                    "artifact slice accepts only --start-line and --lines",
+                ));
+            }
+            ArtifactSelector::Lines {
+                start_line: start_line
+                    .ok_or_else(|| SurfaceError::invalid("--start-line is required"))?,
+                line_count: line_count
+                    .ok_or_else(|| SurfaceError::invalid("--lines is required"))?,
+            }
+        }
+        _ => {
+            if start_line.is_some() || line_count.is_some() {
+                return Err(SurfaceError::invalid(
+                    "artifact search accepts only --pattern, --before, --after, and --max-matches",
+                ));
+            }
+            ArtifactSelector::Pattern {
+                pattern: ByteString::from_utf8(
+                    pattern.ok_or_else(|| SurfaceError::invalid("--pattern is required"))?,
+                ),
+                before_lines,
+                after_lines,
+                max_matches,
+            }
+        }
+    };
+    Ok((selector, options))
 }
 
 fn status<W: Write>(

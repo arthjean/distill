@@ -195,6 +195,266 @@ fn project_restore_trace_status_and_gc_are_versioned() {
     }
 }
 
+fn committed_artifact(store_text: &str, body: &str) -> String {
+    let (code, output, stderr) = run_args(
+        &["--store", store_text, "project", "--budget", "16", "--json"],
+        body.as_bytes(),
+    );
+    assert_eq!(code, 0, "{stderr}");
+    serde_json::from_slice::<Value>(&output).expect("projection JSON")["result"]["artifact"]["id"]
+        .as_str()
+        .expect("artifact ID")
+        .to_owned()
+}
+
+/// US-010: retrieval is available on the CLI with the versioned JSON result and
+/// the existing stable exit codes.
+#[test]
+fn artifact_slice_and_search_emit_versioned_results() {
+    let temp = TempDir::new().expect("temp");
+    let store = store(&temp);
+    let store_text = store.to_string_lossy().into_owned();
+    let body = "alpha\nbravo\nCLI_NEEDLE charlie\ndelta\necho\n";
+    let id = committed_artifact(&store_text, body);
+
+    let (code, output, stderr) = run_args(
+        &[
+            "--store",
+            &store_text,
+            "artifact",
+            "slice",
+            &id,
+            "--start-line",
+            "2",
+            "--lines",
+            "2",
+            "--budget",
+            "256",
+            "--json",
+        ],
+        b"",
+    );
+    assert_eq!(code, 0, "{stderr}");
+    let result: Value = serde_json::from_slice(&output).expect("slice JSON");
+    assert_eq!(result["schema_version"], CLI_SCHEMA_VERSION);
+    assert_eq!(result["ok"], true);
+    assert_eq!(
+        result["result"]["visible"]["bytes"],
+        "bravo\nCLI_NEEDLE charlie\n"
+    );
+    assert_eq!(
+        result["result"]["receipt"]["original_count"],
+        body.len() as u64
+    );
+
+    let (code, output, stderr) = run_args(
+        &[
+            "--store",
+            &store_text,
+            "artifact",
+            "search",
+            &id,
+            "--pattern",
+            "CLI_NEEDLE",
+            "--before",
+            "0",
+            "--after",
+            "0",
+            "--budget",
+            "256",
+        ],
+        b"",
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        String::from_utf8(output).expect("search payload"),
+        "CLI_NEEDLE charlie\n"
+    );
+
+    // The unbounded operator path is unchanged and still returns the whole
+    // committed source.
+    let (code, output, stderr) = run_args(&["--store", &store_text, "artifact", "get", &id], b"");
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(String::from_utf8(output).expect("restored"), body);
+}
+
+/// US-010: a retrieval request the CLI cannot complete fails before the engine
+/// opens the store, and selector values stay literal.
+#[test]
+fn retrieval_arguments_fail_closed_and_stay_literal() {
+    let temp = TempDir::new().expect("temp");
+    let unread_store = temp.path().join("unread/artifacts.db");
+    let unread_text = unread_store.to_string_lossy().into_owned();
+    let id = "0123456789abcdef0123456789abcdef";
+
+    for arguments in [
+        vec![
+            "--store",
+            &unread_text,
+            "artifact",
+            "slice",
+            id,
+            "--start-line",
+            "1",
+            "--lines",
+            "1",
+            "--json",
+        ],
+        vec![
+            "--store",
+            &unread_text,
+            "artifact",
+            "search",
+            id,
+            "--pattern",
+            "needle",
+            "--json",
+        ],
+    ] {
+        let (code, output, _) = run_args(&arguments, b"");
+        assert_eq!(code, 2);
+        let failure: Value = serde_json::from_slice(&output).expect("failure JSON");
+        assert_eq!(failure["error"]["code"], "invalid_input");
+        assert!(
+            failure["error"]["message"]
+                .as_str()
+                .expect("message")
+                .contains("--budget")
+        );
+    }
+
+    // An out-of-bounds selector is refused by the engine contract, still before
+    // the store is opened.
+    let (code, output, _) = run_args(
+        &[
+            "--store",
+            &unread_text,
+            "artifact",
+            "slice",
+            id,
+            "--start-line",
+            "0",
+            "--lines",
+            "1",
+            "--budget",
+            "64",
+            "--json",
+        ],
+        b"",
+    );
+    assert_eq!(code, 2);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).expect("bounds JSON")["error"]["code"],
+        "invalid_request"
+    );
+
+    // Each selector keeps only its own options.
+    let (code, _, stderr) = run_args(
+        &[
+            "--store",
+            &unread_text,
+            "artifact",
+            "slice",
+            id,
+            "--start-line",
+            "1",
+            "--lines",
+            "1",
+            "--pattern",
+            "needle",
+            "--budget",
+            "64",
+        ],
+        b"",
+    );
+    assert_eq!(code, 2);
+    assert!(stderr.contains("--start-line and --lines"));
+    assert!(!unread_store.exists());
+
+    // A selector value that looks like a Distill option remains literal and
+    // cannot select Distill output mode.
+    let store = store(&temp);
+    let store_text = store.to_string_lossy().into_owned();
+    let id = committed_artifact(&store_text, "alpha\n--json marker\nbravo\n");
+    let (code, output, stderr) = run_args(
+        &[
+            "--store",
+            &store_text,
+            "artifact",
+            "search",
+            &id,
+            "--pattern",
+            "--json",
+            "--before",
+            "0",
+            "--after",
+            "0",
+            "--budget",
+            "256",
+        ],
+        b"",
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        String::from_utf8(output).expect("literal pattern payload"),
+        "--json marker\n"
+    );
+}
+
+/// US-010: the CLI conformance matrix pins the retrieval forms, the selector
+/// bounds, and the surface schema the release ships.
+#[test]
+fn cli_conformance_matrix_pins_retrieval_and_selector_bounds() {
+    let matrix: Value = serde_json::from_str(include_str!(
+        "../../docs/integrations/cli-conformance-v3.json"
+    ))
+    .expect("CLI conformance fixture");
+    assert_eq!(matrix["schema_version"], "distill.cli-conformance/v3");
+    assert_eq!(matrix["supersedes"], "distill.cli-conformance/v2");
+    assert_eq!(matrix["surface_schema_version"], CLI_SCHEMA_VERSION);
+    assert_eq!(matrix["request_contract_version"], CONTRACT_VERSION);
+    assert_eq!(matrix["retrieval"]["pattern_language"], "literal");
+    assert_eq!(
+        matrix["retrieval"]["unbounded_recovery_command"],
+        "distill artifact get"
+    );
+
+    let bounds = &matrix["retrieval"]["selector_bounds"];
+    assert_eq!(
+        bounds["max_pattern_bytes"],
+        distill::MAX_SELECTOR_PATTERN_BYTES
+    );
+    assert_eq!(
+        bounds["max_context_lines"],
+        distill::MAX_SELECTOR_CONTEXT_LINES
+    );
+    assert_eq!(bounds["max_matches"], distill::MAX_SELECTOR_MATCHES);
+    assert_eq!(
+        bounds["default_context_lines"],
+        distill::DEFAULT_SELECTOR_CONTEXT_LINES
+    );
+    assert_eq!(bounds["default_matches"], distill::DEFAULT_SELECTOR_MATCHES);
+
+    for command in matrix["retrieval"]["commands"]
+        .as_array()
+        .expect("retrieval commands")
+    {
+        let operation = command["operation"].as_str().expect("operation");
+        let form = command["form"].as_str().expect("form");
+        assert!(HELP.contains(&format!("artifact {operation} ID")), "{form}");
+        assert_eq!(command["missing_budget_failure"], "invalid_input");
+        assert_eq!(command["missing_budget_exit_code"], 2);
+        for option in command["required_options"]
+            .as_array()
+            .expect("required options")
+        {
+            let option = option.as_str().expect("option");
+            assert!(form.contains(option), "{form} omits {option}");
+            assert!(HELP.contains(option), "help omits {option}");
+        }
+    }
+}
+
 #[test]
 fn read_and_run_use_configured_roots_without_shell_parsing() {
     let temp = TempDir::new().expect("temp");
