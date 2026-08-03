@@ -46,6 +46,8 @@ Budget options:
   --reserve N         Adapter envelope allowance (default: 0)
   --unit bytes|tokens Count unit (default: bytes)
   --profile NAME      Central preservation profile (default: auto/v1, shape-derived)
+  --focus TEXT        What you are reading for, at most 256 UTF-8 bytes; it only
+                      orders which lines the budget keeps
   --ttl SECONDS       Artifact retention from capture time
 
 Retrieval options (artifact slice, artifact search):
@@ -86,6 +88,7 @@ struct GlobalOptions {
 struct ProjectionOptions {
     budget: Budget,
     profile: String,
+    focus: Option<String>,
     retention: Retention,
     json: bool,
 }
@@ -96,6 +99,7 @@ struct ProjectionParser {
     reserve: u64,
     unit: CountUnit,
     profile: String,
+    focus: Option<String>,
     ttl_seconds: Option<u64>,
     json: bool,
 }
@@ -107,6 +111,7 @@ impl ProjectionParser {
             reserve: 0,
             unit: CountUnit::Bytes,
             profile: DEFAULT_PRESERVATION_PROFILE.to_owned(),
+            focus: None,
             ttl_seconds: None,
             json: false,
         }
@@ -133,6 +138,9 @@ impl ProjectionParser {
                 };
             }
             "--profile" => self.profile = take(args, "--profile")?,
+            // Taken literally, exactly like a selector pattern: a focus that
+            // looks like an option is a focus.
+            "--focus" => self.focus = Some(take(args, "--focus")?),
             "--ttl" => {
                 self.ttl_seconds = Some(parse_u64(&take(args, "--ttl")?, "--ttl")?);
             }
@@ -156,6 +164,7 @@ impl ProjectionParser {
         Ok(ProjectionOptions {
             budget: budget_for(self.unit, total_visible_limit, self.reserve),
             profile: self.profile,
+            focus: self.focus,
             retention: Retention {
                 expires_at: None,
                 ttl_seconds: self.ttl_seconds,
@@ -596,6 +605,7 @@ fn request(id: &str, source: Source, options: ProjectionOptions) -> Request {
         budget: options.budget,
         preservation_profile: options.profile,
         retention: options.retention,
+        focus: options.focus,
     }
 }
 

@@ -4,7 +4,7 @@ use crate::surface::{
 };
 use distill::{
     ArtifactSelector, BinaryPolicy, Budget, ByteString, CountUnit, Engine, EngineConfig, Failure,
-    FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES,
+    FailureCode, MAX_FOCUS_BYTES, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES,
     MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS,
     MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES,
     MIN_PROCESS_TIMEOUT_MS, Outcome, Source,
@@ -77,6 +77,8 @@ struct ReadArguments {
     budget: McpBudget,
     #[serde(default)]
     binary_policy: Option<BinaryPolicy>,
+    #[serde(default)]
+    focus: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,6 +88,8 @@ struct SliceArguments {
     start_line: u64,
     line_count: u64,
     budget: McpBudget,
+    #[serde(default)]
+    focus: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +104,8 @@ struct SearchArguments {
     after_lines: Option<u64>,
     #[serde(default)]
     max_matches: Option<u64>,
+    #[serde(default)]
+    focus: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +120,8 @@ struct RunArguments {
     timeout_ms: Option<u64>,
     #[serde(default)]
     environment_profile: Option<String>,
+    #[serde(default)]
+    focus: Option<String>,
 }
 
 pub(crate) fn run<R: Read, W: Write, E: Write>(
@@ -227,6 +235,7 @@ fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, Protoc
                     binary_policy: arguments.binary_policy.unwrap_or(BinaryPolicy::Accept),
                 },
                 budget.engine_budget(),
+                arguments.focus,
             );
             engine
                 .handle(request)
@@ -253,6 +262,7 @@ fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, Protoc
                     environment_profile: arguments.environment_profile,
                 },
                 budget.engine_budget(),
+                arguments.focus,
             );
             engine
                 .handle(request)
@@ -270,6 +280,7 @@ fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, Protoc
                         line_count: arguments.line_count,
                     },
                     &arguments.budget,
+                    arguments.focus,
                 )
             }),
         "distill_artifact_search" => serde_json::from_value::<SearchArguments>(arguments)
@@ -286,6 +297,7 @@ fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, Protoc
                         max_matches: arguments.max_matches,
                     },
                     &arguments.budget,
+                    arguments.focus,
                 )
             }),
         _ => {
@@ -315,6 +327,7 @@ fn retrieve(
     artifact_id: &str,
     selector: ArtifactSelector,
     budget: &McpBudget,
+    focus: Option<String>,
 ) -> Result<String, Failure> {
     distill::validate_artifact_selector(&selector)?;
     let artifact = engine.resolve_artifact(artifact_id)?;
@@ -325,6 +338,7 @@ fn retrieve(
             selector: Some(selector),
         },
         budget.engine_budget(),
+        focus,
     );
     engine
         .handle(request)
@@ -384,7 +398,8 @@ fn tool_definitions() -> Vec<Value> {
                     "root_id": {"type": "string", "maxLength": MAX_IDENTIFIER_BYTES, "description": "Configured acquisition root ID."},
                     "path": {"type": "string", "maxLength": MAX_PATH_BYTES, "description": "Path relative to the configured root."},
                     "budget": budget_schema(),
-                    "binary_policy": {"type": "string", "enum": ["accept", "reject"], "description": "Whether binary bytes may be captured."}
+                    "binary_policy": {"type": "string", "enum": ["accept", "reject"], "description": "Whether binary bytes may be captured."},
+                    "focus": focus_schema()
                 }
             },
             "annotations": {
@@ -408,7 +423,8 @@ fn tool_definitions() -> Vec<Value> {
                     "cwd": {"type": "string", "maxLength": MAX_PATH_BYTES, "description": "Working directory relative to cwd_root_id."},
                     "budget": budget_schema(),
                     "timeout_ms": {"type": "integer", "minimum": MIN_PROCESS_TIMEOUT_MS, "maximum": MAX_PROCESS_TIMEOUT_MS, "description": "Non-interactive process timeout in milliseconds."},
-                    "environment_profile": {"type": "string", "maxLength": MAX_IDENTIFIER_BYTES, "description": "Optional preconfigured environment allowlist profile."}
+                    "environment_profile": {"type": "string", "maxLength": MAX_IDENTIFIER_BYTES, "description": "Optional preconfigured environment allowlist profile."},
+                    "focus": focus_schema()
                 }
             },
             "annotations": {
@@ -429,7 +445,8 @@ fn tool_definitions() -> Vec<Value> {
                     "artifact_id": artifact_id_schema(),
                     "start_line": {"type": "integer", "minimum": 1, "description": "1-based first line of the range. A range starting past the end of the source selects nothing."},
                     "line_count": {"type": "integer", "minimum": 1, "description": "Number of lines to select, clamped to the end of the source."},
-                    "budget": budget_schema()
+                    "budget": budget_schema(),
+                    "focus": focus_schema()
                 }
             },
             "annotations": {
@@ -452,7 +469,8 @@ fn tool_definitions() -> Vec<Value> {
                     "budget": budget_schema(),
                     "before_lines": {"type": "integer", "minimum": 0, "maximum": MAX_SELECTOR_CONTEXT_LINES, "description": "Lines of context kept before each match."},
                     "after_lines": {"type": "integer", "minimum": 0, "maximum": MAX_SELECTOR_CONTEXT_LINES, "description": "Lines of context kept after each match."},
-                    "max_matches": {"type": "integer", "minimum": 1, "maximum": MAX_SELECTOR_MATCHES, "description": "Largest number of matches selected, in source order."}
+                    "max_matches": {"type": "integer", "minimum": 1, "maximum": MAX_SELECTOR_MATCHES, "description": "Largest number of matches selected, in source order."},
+                    "focus": focus_schema()
                 }
             },
             "annotations": {
@@ -471,6 +489,15 @@ fn artifact_id_schema() -> Value {
         "minLength": 32,
         "maxLength": 32,
         "description": "Identifier of a committed, unexpired artifact, as published in an earlier Distill envelope."
+    })
+}
+
+fn focus_schema() -> Value {
+    json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": MAX_FOCUS_BYTES,
+        "description": format!("Optional statement of what you are reading for, at most {MAX_FOCUS_BYTES} UTF-8 bytes. It only orders which lines the budget keeps: it is matched as literal text, never evaluated as a pattern language, shell input, or instruction, and it never adds content the source does not carry.")
     })
 }
 
@@ -779,6 +806,122 @@ mod tests {
             properties["line_count"]["minimum"],
             bounds["min_line_count"]
         );
+
+        // US-017: every tool publishes the optional focus at the contract bound,
+        // and none of them requires it.
+        let focus = &matrix["focus"];
+        assert_eq!(focus["optional"], true);
+        assert_eq!(focus["max_bytes"], MAX_FOCUS_BYTES);
+        assert_eq!(focus["receipt_echoes_value"], false);
+        for name in focus["published_by_tools"]
+            .as_array()
+            .expect("matrix focus tools")
+        {
+            let tool = published(name.as_str().expect("matrix focus tool name"));
+            let published_focus = &tool["inputSchema"]["properties"]["focus"];
+            assert_eq!(published_focus["maxLength"], focus["max_bytes"]);
+            assert_eq!(published_focus["minLength"], 1);
+            assert!(
+                published_focus["description"]
+                    .as_str()
+                    .expect("focus description")
+                    .contains("never evaluated")
+            );
+            assert!(
+                !tool["inputSchema"]["required"]
+                    .as_array()
+                    .expect("required")
+                    .contains(&json!("focus"))
+            );
+        }
+    }
+
+    /// US-017: a focus supplied on the agent's own surface orders what the same
+    /// budget keeps, and the envelope stays inside that budget.
+    #[test]
+    fn a_published_focus_orders_what_the_read_budget_keeps() {
+        let temp = TempDir::new().expect("temp");
+        let config = config(&temp);
+        let workspace = config.roots.get("workspace").expect("root").clone();
+        let body = format!(
+            "use crate::artifact::Receipt;\n{}    let RETRY_BUDGET = attempts;\n{}",
+            (0..200)
+                .map(|index| format!("    let value_{index:03} = compute(value_{index:03});\n"))
+                .collect::<String>(),
+            (200..400)
+                .map(|index| format!("    let value_{index:03} = compute(value_{index:03});\n"))
+                .collect::<String>(),
+        );
+        fs::write(workspace.join("buried.rs"), &body).expect("file");
+
+        let call = |focus: Option<&str>| {
+            let mut arguments = json!({
+                "root_id": "workspace",
+                "path": "buried.rs",
+                "budget": {"unit": "bytes", "total_visible_limit": 1400}
+            });
+            if let Some(focus) = focus {
+                arguments["focus"] = json!(focus);
+            }
+            json!({
+                "jsonrpc":"2.0","id":"read","method":"tools/call",
+                "params":{"name":"distill_read","arguments":arguments}
+            })
+        };
+        let responses = exchange(
+            config,
+            &[call(None), call(Some("why was the retry budget consumed"))],
+        );
+
+        let unfocused = tool_text(&responses[0]);
+        let focused = tool_text(&responses[1]);
+        assert!(
+            !unfocused["projection"]
+                .as_str()
+                .expect("unfocused projection")
+                .contains("RETRY_BUDGET")
+        );
+        assert!(
+            focused["projection"]
+                .as_str()
+                .expect("focused projection")
+                .contains("RETRY_BUDGET")
+        );
+        for response in &responses {
+            let text = response["result"]["content"][0]["text"]
+                .as_str()
+                .expect("envelope");
+            assert!(text.len() <= 1400);
+        }
+    }
+
+    /// US-015 and US-017: a focus beyond the published bound is a bounded tool
+    /// error naming the typed failure, not a silently truncated request. The
+    /// decoder and the published `maxLength` therefore agree on every call.
+    #[test]
+    fn an_oversized_published_focus_is_a_bounded_tool_error() {
+        let temp = TempDir::new().expect("temp");
+        let config = config(&temp);
+        let workspace = config.roots.get("workspace").expect("root").clone();
+        fs::write(workspace.join("small.txt"), "content\n").expect("file");
+        let responses = exchange(
+            config,
+            &[json!({
+                "jsonrpc":"2.0","id":"oversized","method":"tools/call",
+                "params":{"name":"distill_read","arguments":{
+                    "root_id":"workspace",
+                    "path":"small.txt",
+                    "focus": "f".repeat(MAX_FOCUS_BYTES + 1),
+                    "budget":{"unit":"bytes","total_visible_limit":1400}
+                }}
+            })],
+        );
+        assert_eq!(responses[0]["result"]["isError"], true);
+        let text = responses[0]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("bounded error");
+        assert!(text.contains("invalid_request"), "{text}");
+        assert!(text.len() <= 1400);
     }
 
     /// US-008 and US-009: retrieval recovers an omitted region on the agent's

@@ -123,6 +123,7 @@ fn full_annotated_corpus_preserves_p0_and_measures_p1_under_budget() {
             budget: budget.clone(),
             preservation_profile: validated.profile.to_owned(),
             retention: Retention::default(),
+            focus: None,
         };
         let outcome = engine.handle(request).unwrap_or_else(|failure| {
             panic!(

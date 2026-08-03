@@ -27,6 +27,7 @@ fn request(request_id: &str, source: impl Into<Vec<u8>>, budget: Budget, profile
         budget,
         preservation_profile: profile.to_owned(),
         retention: Retention::default(),
+        focus: None,
     }
 }
 

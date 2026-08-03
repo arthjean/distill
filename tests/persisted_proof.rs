@@ -139,6 +139,7 @@ fn deterministic_receipt_generator_freezes_lineage_budgets() {
                                 };
                                 span_count
                             ],
+                            focus_applied: true,
                         },
                         acquisition: acquisition.clone(),
                     };

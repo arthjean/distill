@@ -1,10 +1,10 @@
 use crate::{
     contract::{
-        DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_PATH_BYTES,
+        DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_FOCUS_BYTES, MAX_PATH_BYTES,
         MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES, is_lower_hex,
         valid_correlation_id, valid_identifier,
     },
-    projection::{ProjectionSpec, Selection},
+    projection::{Focus, ProjectionSpec, Selection},
     types::{
         ArtifactRef, ArtifactSelector, ByteString, CONTRACT_VERSION, EngineConfig, Failure,
         FailureCode, Request, Retention, Source, supported_contract_version,
@@ -25,6 +25,7 @@ pub(crate) struct ValidatedRequest {
     pub source: ValidatedSource,
     pub projection: ProjectionSpec,
     pub retention: ValidatedRetention,
+    pub focus: Option<Focus>,
 }
 
 #[derive(Clone, Debug)]
@@ -220,6 +221,8 @@ pub(crate) fn prepare(
     };
     let retention = validate_retention_shape(&request.retention)
         .map_err(|failure| failure.for_request(&request.request_id))?;
+    let focus = validate_focus(request.focus.as_deref(), selector_supported)
+        .map_err(|failure| failure.for_request(&request.request_id))?;
     let projection = ProjectionSpec::new(&request.preservation_profile, &request.budget)
         .map_err(|failure| failure.for_request(&request.request_id))?;
     Ok(ValidatedRequest {
@@ -227,7 +230,30 @@ pub(crate) fn prepare(
         source,
         projection,
         retention,
+        focus,
     })
+}
+
+/// Resolves the optional focus against its documented bound. The value is
+/// length-checked and compiled into literal terms here, before any acquisition,
+/// and it never leaves this crate as anything but terms.
+fn validate_focus(focus: Option<&str>, supported: bool) -> Result<Option<Focus>, Failure> {
+    let Some(focus) = focus else {
+        return Ok(None);
+    };
+    if !supported {
+        return Err(Failure::new(
+            FailureCode::SchemaUnsupported,
+            "request focus requires the current request contract version",
+        ));
+    }
+    if focus.is_empty() || focus.len() > MAX_FOCUS_BYTES {
+        return Err(Failure::new(
+            FailureCode::InvalidRequest,
+            "focus is empty or exceeds the documented maximum length",
+        ));
+    }
+    Ok(Some(Focus::new(focus)))
 }
 
 #[cfg(test)]
@@ -387,6 +413,7 @@ mod tests {
             },
             preservation_profile: "plain-text/v1".to_owned(),
             retention: Retention::default(),
+            focus: None,
         }
     }
 
@@ -671,6 +698,53 @@ mod tests {
             .code,
             FailureCode::InvalidRequest
         );
+    }
+
+    /// US-015: the focus is bounded and versioned exactly like the selector,
+    /// and every check runs before any acquisition or store read.
+    #[test]
+    fn focus_is_bounded_versioned_and_optional() {
+        let config = EngineConfig::local(PathBuf::from("store.sqlite"));
+        let prepared = |focus: Option<&str>, version: &str| {
+            let mut request = request(Source::Inline {
+                bytes: ByteString::from_utf8("body"),
+                media_type: None,
+            });
+            request.contract_version = version.to_owned();
+            request.focus = focus.map(str::to_owned);
+            prepare(request, &config)
+        };
+
+        assert!(
+            prepared(None, CONTRACT_VERSION)
+                .expect("no focus")
+                .focus
+                .is_none()
+        );
+        assert!(
+            prepared(Some("why did the release build fail"), CONTRACT_VERSION)
+                .expect("focus")
+                .focus
+                .is_some()
+        );
+
+        // A v2 request that names a focus is refused exactly as one that names a
+        // selector is; a v2 request that names neither is unchanged.
+        assert_eq!(
+            prepared(Some("why"), crate::types::CONTRACT_VERSION_V2)
+                .expect_err("v2 focus")
+                .code,
+            FailureCode::SchemaUnsupported
+        );
+        assert!(prepared(None, crate::types::CONTRACT_VERSION_V2).is_ok());
+
+        let oversized = "f".repeat(MAX_FOCUS_BYTES + 1);
+        for out_of_bounds in ["", oversized.as_str()] {
+            let failure = prepared(Some(out_of_bounds), CONTRACT_VERSION).expect_err("focus bound");
+            assert_eq!(failure.code, FailureCode::InvalidRequest);
+            assert_eq!(failure.request_id.as_deref(), Some("request"));
+        }
+        assert!(prepared(Some(&"f".repeat(MAX_FOCUS_BYTES)), CONTRACT_VERSION).is_ok());
     }
 
     #[test]

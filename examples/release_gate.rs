@@ -794,6 +794,7 @@ fn request(fixture: &Fixture, bytes: Vec<u8>, budget: Budget) -> Request {
         budget,
         preservation_profile: preservation_profile(&fixture.category).to_owned(),
         retention: Retention::default(),
+        focus: None,
     }
 }
 

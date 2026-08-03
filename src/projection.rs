@@ -9,11 +9,17 @@ use shape::{LineClass, Shape};
 use tiktoken_rs::cl100k_base_singleton;
 
 mod aggregate;
+mod focus;
 mod retrieval;
 mod shape;
 
+pub(crate) use focus::Focus;
 pub(crate) use retrieval::Selection;
 
+/// The reducer work limit. It applies to mandatory facts, and once per reason a
+/// line can become a candidate: structural rank and focus proximity each admit
+/// at most this many, so a focus reaches the whole observation without ever
+/// crowding out the structure the shape policy found.
 const MAX_REDUCER_SPANS: usize = 256;
 
 /// The profile both product surfaces send: the policy is derived from the
@@ -120,8 +126,23 @@ const POLICIES: &[Policy] = &[
 #[derive(Debug)]
 struct Analysis {
     mandatory: Vec<ByteSpan>,
-    candidates: Vec<ByteSpan>,
+    candidates: Vec<Candidate>,
     aggregation: Aggregation,
+}
+
+/// One optional line the plan may buy, with everything ordering needs to rank
+/// it. Mandatory lines are not candidates: they are already retained.
+#[derive(Clone, Copy, Debug)]
+struct Candidate {
+    span: ByteSpan,
+    /// The focus terms the line carries. Empty without a focus.
+    matched: focus::Match,
+    /// How many discriminating focus terms the line carries, resolved once the
+    /// whole observation has been seen.
+    lexical: u32,
+    /// The rank the shape policy gave the line: a preferred line outranks the
+    /// boundary spans every observation offers.
+    structural: u8,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -474,6 +495,7 @@ pub(crate) struct Projection {
 pub(crate) fn project_validated(
     source: &[u8],
     spec: ProjectionSpec,
+    focus: Option<&Focus>,
 ) -> Result<Projection, Failure> {
     let payload_limit = spec.payload_limit();
     if payload_limit == 0 && !source.is_empty() {
@@ -504,7 +526,7 @@ pub(crate) fn project_validated(
                 aggregates: Vec::new(),
             });
         }
-        return project_text(source, text, spec, payload_limit, original_count);
+        return project_text(source, text, spec, payload_limit, original_count, focus);
     }
     project_binary(source, spec.resolved(None), payload_limit)
 }
@@ -517,6 +539,7 @@ pub(crate) fn project_selection(
     source: &[u8],
     selection: &Selection,
     spec: ProjectionSpec,
+    focus: Option<&Focus>,
 ) -> Result<Projection, Failure> {
     let text = std::str::from_utf8(source).map_err(|_| {
         Failure::new(
@@ -542,7 +565,7 @@ pub(crate) fn project_selection(
     }
 
     let selected = retrieval::render_regions(source, &regions);
-    let inner = project_validated(&selected, spec.with_region_headroom(regions.len()))?;
+    let inner = project_validated(&selected, spec.with_region_headroom(regions.len()), focus)?;
     let fidelity = match inner.fidelity {
         Fidelity::Exact if covers_source(&regions, source.len()) => Fidelity::Exact,
         Fidelity::Exact | Fidelity::Extractive => Fidelity::Extractive,
@@ -589,8 +612,9 @@ fn project_text(
     spec: ProjectionSpec,
     payload_limit: u64,
     original_count: u64,
+    focus: Option<&Focus>,
 ) -> Result<Projection, Failure> {
-    let analysis = analyze(source, text, spec)?;
+    let analysis = analyze(source, text, spec, focus)?;
     let mandatory = analysis.mandatory;
     let aggregation = &analysis.aggregation;
     let mut retained = SpanPlan::new(spec, text, &mandatory, aggregation);
@@ -607,7 +631,7 @@ fn project_text(
             source.len(),
             text,
             retained,
-            candidate,
+            candidate.span,
             payload_limit,
             aggregation,
         );
@@ -777,20 +801,32 @@ fn mandatory_spans(source: &[u8], shape: Shape) -> Result<Vec<ByteSpan>, Failure
     Ok(spans)
 }
 
-/// Ranks every line of the source under the resolved shape policy, and groups
-/// the redundant ones in the same pass.
-fn analyze(source: &[u8], text: &str, spec: ProjectionSpec) -> Result<Analysis, Failure> {
+/// Ranks every line of the source under the resolved shape policy, scores it
+/// against the caller's focus, and groups the redundant ones in the same pass.
+fn analyze(
+    source: &[u8],
+    text: &str,
+    spec: ProjectionSpec,
+    focus: Option<&Focus>,
+) -> Result<Analysis, Failure> {
     let mut mandatory = Vec::new();
     let mut candidates = Vec::new();
     let mut first = None;
     let mut last = None;
     let mut templates = Templates::new(spec.aggregates());
+    let mut matched_lines = focus::Counts::default();
+    let mut lines = 0_u64;
+    let mut structural_count = 0_usize;
+    let mut focused_count = 0_usize;
     for span in line_spans(source) {
+        lines += 1;
         first.get_or_insert(span);
         last = Some(span);
         let line = &text[span.start as usize..span.end as usize];
         let lowercase = line.to_ascii_lowercase();
         let class = spec.shape.classify(line, &lowercase);
+        let matched = focus.map_or(0, |focus| focus.matches(&lowercase));
+        focus::accumulate(&mut matched_lines, matched);
         match class {
             LineClass::Mandatory => {
                 if mandatory.len() == MAX_REDUCER_SPANS {
@@ -801,24 +837,80 @@ fn analyze(source: &[u8], text: &str, spec: ProjectionSpec) -> Result<Analysis, 
                 }
                 mandatory.push(span);
             }
-            LineClass::Preferred if candidates.len() < MAX_REDUCER_SPANS => candidates.push(span),
-            LineClass::Preferred | LineClass::Ordinary => {}
+            // A focus promotes a line the shape policy ranked ordinary: what
+            // answers the caller's question is rarely what orders the output.
+            // The work limit applies once per reason a line can qualify, so a
+            // focus reaches the whole observation rather than the prefix whose
+            // structure already filled the table.
+            LineClass::Preferred | LineClass::Ordinary => {
+                let structural = u8::from(class == LineClass::Preferred);
+                let by_structure = structural > 0 && structural_count < MAX_REDUCER_SPANS;
+                let by_focus = matched > 0 && focused_count < MAX_REDUCER_SPANS;
+                if by_structure || by_focus {
+                    structural_count += usize::from(by_structure);
+                    focused_count += usize::from(by_focus);
+                    candidates.push(Candidate {
+                        span,
+                        matched,
+                        lexical: 0,
+                        structural,
+                    });
+                }
+            }
         }
         templates.observe(span, line, class);
     }
+    // Which focus terms actually locate an answer is only knowable once the
+    // whole observation has been ranked, so scoring resolves here. A line the
+    // focus promoted but no discriminating term reached is dropped again: a
+    // focus whose terms say nothing about this observation leaves selection
+    // exactly where it was.
+    if let Some(focus) = focus {
+        let discriminating = focus.discriminating(&matched_lines, lines);
+        for candidate in &mut candidates {
+            candidate.lexical = focus::score(candidate.matched, discriminating);
+        }
+        candidates.retain(|candidate| candidate.structural > 0 || candidate.lexical > 0);
+    }
     // The boundaries of an observation are always offered: they are what an
-    // agent reads first when it cannot read everything.
-    if let Some(first) = first {
-        candidates.push(first);
+    // agent reads first when it cannot read everything. They are offered, never
+    // ranked, so a focus cannot displace them from the end of the order.
+    for boundary in [first, last].into_iter().flatten() {
+        candidates.push(Candidate {
+            span: boundary,
+            matched: 0,
+            lexical: 0,
+            structural: 0,
+        });
     }
-    if let Some(last) = last {
-        candidates.push(last);
-    }
+    order_candidates(&mut candidates);
     Ok(Analysis {
         mandatory,
         candidates,
         aggregation: templates.finish([first, last]),
     })
+}
+
+/// Orders candidates by the deterministic score selection plans them in.
+///
+/// Lexical proximity to the focus ranks first, the structural rank of the shape
+/// policy second, and source position last, so a line that answers the question
+/// outranks a line that merely opens a section, and equal scores always resolve
+/// the same way. A focus no line carries scores nothing, and an observation read
+/// without one scores nothing either: both keep the source order the shape
+/// policy produced, so ordering can only take effect where it discriminates.
+fn order_candidates(candidates: &mut [Candidate]) {
+    if candidates.iter().all(|candidate| candidate.lexical == 0) {
+        return;
+    }
+    candidates.sort_by_key(|candidate| {
+        (
+            std::cmp::Reverse(candidate.lexical),
+            std::cmp::Reverse(candidate.structural),
+            candidate.span.start,
+            candidate.span.end,
+        )
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1232,9 +1324,14 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
         token_profile: None,
     };
     // The executed profile: the shape of untrusted bytes is detected, never
-    // declared, so the classifier is fuzzed with everything else.
-    let result =
-        ProjectionSpec::new(AUTO_PROFILE, &budget).and_then(|spec| project_validated(data, spec));
+    // declared, so the classifier is fuzzed with everything else. The focus is
+    // drawn from the same untrusted bytes, because it is data on exactly the
+    // same footing as the source it orders.
+    let focus = String::from_utf8_lossy(&data[..data.len().min(crate::contract::MAX_FOCUS_BYTES)])
+        .into_owned();
+    let focus = Focus::new(&focus);
+    let result = ProjectionSpec::new(AUTO_PROFILE, &budget)
+        .and_then(|spec| project_validated(data, spec, Some(&focus)));
     if matches!(
         result,
         Err(Failure {
@@ -1263,6 +1360,7 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
                     max_matches: 8,
                 },
                 spec,
+                Some(&focus),
             ),
             Err(Failure {
                 code: FailureCode::InvariantBreach,
@@ -1291,7 +1389,19 @@ fn fitting_prefix(text: &str, budget: &Budget, limit: u64) -> Result<usize, Fail
 
 #[cfg(test)]
 fn project(source: &[u8], budget: &Budget, profile: &str) -> Result<Projection, Failure> {
-    ProjectionSpec::new(profile, budget).and_then(|spec| project_validated(source, spec))
+    project_focused(source, budget, profile, None)
+}
+
+#[cfg(test)]
+fn project_focused(
+    source: &[u8],
+    budget: &Budget,
+    profile: &str,
+    focus: Option<&str>,
+) -> Result<Projection, Failure> {
+    let focus = focus.map(Focus::new);
+    ProjectionSpec::new(profile, budget)
+        .and_then(|spec| project_validated(source, spec, focus.as_ref()))
 }
 
 #[cfg(test)]
@@ -1299,10 +1409,11 @@ fn project_with_metrics(
     source: &[u8],
     budget: &Budget,
     profile: &str,
+    focus: Option<&str>,
     metrics: &mut PlanningMetrics,
 ) -> Result<Projection, Failure> {
     FULL_RENDER_COUNT_EVALUATIONS.with(|count| count.set(0));
-    let result = project(source, budget, profile);
+    let result = project_focused(source, budget, profile, focus);
     metrics.full_render_count_evaluations =
         FULL_RENDER_COUNT_EVALUATIONS.with(std::cell::Cell::get);
     result

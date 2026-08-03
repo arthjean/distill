@@ -547,6 +547,7 @@ fn jsonl_request_decoding_is_bounded_strict_and_versioned() {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
+        focus: None,
     };
     let mut line = serde_json::to_vec(&request).expect("serialize");
     line.push(b'\n');

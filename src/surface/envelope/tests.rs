@@ -38,6 +38,7 @@ fn outcome() -> Outcome {
                 applied_profile: "terminal-log/v1".to_owned(),
                 mandatory_fact_ids: Vec::new(),
                 aggregates: Vec::new(),
+                focus_applied: false,
             },
             acquisition: AcquisitionReceipt {
                 variant: SourceVariant::File,

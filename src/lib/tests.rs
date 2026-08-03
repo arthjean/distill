@@ -17,6 +17,7 @@ fn request(bytes: &[u8], limit: u64) -> Request {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
+        focus: None,
     }
 }
 
@@ -344,6 +345,7 @@ fn public_types_round_trip_without_information_loss() {
                 applied_profile: "terminal-log/v1".to_owned(),
                 mandatory_fact_ids: Vec::new(),
                 aggregates: Vec::new(),
+                focus_applied: false,
             },
             acquisition: AcquisitionReceipt {
                 variant: SourceVariant::Inline,
@@ -545,6 +547,7 @@ fn partial_process_capture_is_committed_but_never_projected_as_complete() {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
+        focus: None,
     };
     let failure = engine.handle(process).expect_err("timeout");
     assert_eq!(failure.code, FailureCode::AcquisitionFailed);
@@ -1047,4 +1050,46 @@ fn failures_and_receipts_never_copy_raw_source() {
     let encoded = serde_json::to_string(&failure).expect("failure JSON");
     assert!(!encoded.contains(secret));
     assert!(!failure.safe_message.contains(secret));
+}
+
+/// US-015: the receipt states that a focus ordered selection and states nothing
+/// else about it. A receipt is persisted, traced, and read back, so echoing
+/// caller text into it would carry untrusted content into a durable log.
+#[test]
+fn a_receipt_records_that_a_focus_applied_without_echoing_it() {
+    let (_directory, engine) = fixture();
+    let source = format!(
+        "use crate::artifact::Receipt;\n{}    let RETRY_BUDGET = attempts;\n{}",
+        (0..80)
+            .map(|index| format!("    let value_{index:02} = compute(value_{index:02});\n"))
+            .collect::<String>(),
+        (80..160)
+            .map(|index| format!("    let value_{index:02} = compute(value_{index:02});\n"))
+            .collect::<String>(),
+    );
+
+    let mut unfocused = request(source.as_bytes(), 240);
+    unfocused.preservation_profile = AUTO_PROFILE.to_owned();
+    let unfocused = engine.handle(unfocused).expect("unfocused outcome");
+    assert!(!unfocused.receipt.preservation.focus_applied);
+
+    let mut focused = request(source.as_bytes(), 240);
+    focused.request_id = "focused".to_owned();
+    focused.preservation_profile = AUTO_PROFILE.to_owned();
+    focused.focus = Some("why was the retry budget consumed".to_owned());
+    let focused = engine.handle(focused).expect("focused outcome");
+
+    assert!(focused.receipt.preservation.focus_applied);
+    assert!(focused.visible.bytes.contains("RETRY_BUDGET"));
+    assert!(!unfocused.visible.bytes.contains("RETRY_BUDGET"));
+
+    // The value reaches neither the receipt nor anything persisted with it.
+    let persisted = serde_json::to_string(&engine.trace(&focused.artifact).expect("trace"))
+        .expect("serialized trace");
+    for term in ["why", "consumed", "retry budget"] {
+        assert!(
+            !persisted.to_ascii_lowercase().contains(term),
+            "the trace echoed the focus term '{term}'"
+        );
+    }
 }

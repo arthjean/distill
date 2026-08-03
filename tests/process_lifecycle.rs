@@ -123,6 +123,7 @@ fn signaled_process_preserves_all_buffered_output_and_event_spans() {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
+        focus: None,
     };
 
     let failure = engine.handle(request).expect_err("signal failure");
@@ -205,6 +206,7 @@ fn escaped_descendant_runtime_probe_process() {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
+        focus: None,
     };
 
     let started = Instant::now();

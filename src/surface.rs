@@ -26,7 +26,12 @@ pub(crate) fn budget_for(unit: CountUnit, total: u64, reserved: u64) -> Budget {
     }
 }
 
-pub(crate) fn default_request(request_id: String, source: Source, budget: Budget) -> Request {
+pub(crate) fn default_request(
+    request_id: String,
+    source: Source,
+    budget: Budget,
+    focus: Option<String>,
+) -> Request {
     Request {
         contract_version: distill::CONTRACT_VERSION.to_owned(),
         request_id,
@@ -34,7 +39,24 @@ pub(crate) fn default_request(request_id: String, source: Source, budget: Budget
         budget,
         preservation_profile: DEFAULT_PRESERVATION_PROFILE.to_owned(),
         retention: Retention::default(),
+        focus,
     }
+}
+
+/// Brings a focus an adapter derived itself inside the contract bound, on a
+/// UTF-8 boundary. It applies where the adapter is the author of the value, not
+/// where a caller declared one: a declared focus outside the published bound is
+/// a request the engine refuses, exactly like an oversized selector pattern.
+pub(crate) fn bounded_focus(value: String) -> Option<String> {
+    let mut bounded = value.trim();
+    if bounded.len() > distill::MAX_FOCUS_BYTES {
+        let mut boundary = distill::MAX_FOCUS_BYTES;
+        while !bounded.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        bounded = &bounded[..boundary];
+    }
+    (!bounded.is_empty()).then(|| bounded.to_owned())
 }
 
 pub(crate) fn count_visible(text: &str, unit: CountUnit) -> u64 {

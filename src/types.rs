@@ -4,7 +4,8 @@ use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 pub const CONTRACT_VERSION: &str = "distill.context/v3";
 /// The preceding contract stays accepted unchanged. v3 adds only the optional
-/// artifact selector, so a v2 request that names none behaves identically.
+/// artifact selector and the optional focus, so a v2 request that names neither
+/// behaves identically.
 pub const CONTRACT_VERSION_V2: &str = "distill.context/v2";
 
 #[must_use]
@@ -86,6 +87,11 @@ pub struct Request {
     pub preservation_profile: String,
     #[serde(default)]
     pub retention: Retention,
+    /// What the caller is reading for, added by `distill.context/v3`. It only
+    /// orders candidate selection; it never adds, invents, or reclassifies
+    /// content, and absent means selection behaves as it did without it.
+    #[serde(default)]
+    pub focus: Option<String>,
 }
 
 impl Request {
@@ -364,6 +370,11 @@ pub struct PreservationResult {
     /// stay inside `omitted_spans`, and they never change the partition.
     #[serde(default)]
     pub aggregates: Vec<AggregateSpan>,
+    /// Whether the request carried a focus that ordered candidate selection.
+    /// The value itself is never recorded: a receipt is persisted and traced,
+    /// and echoing caller text into it would carry untrusted content into a log.
+    #[serde(default)]
+    pub focus_applied: bool,
 }
 
 /// One collapsed run: the source range the payload replaced with an annotation,

@@ -137,6 +137,7 @@ fn projection_receipt(reference: &ArtifactRef, request_id: String) -> Receipt {
             applied_profile: "terminal-log/v1".to_owned(),
             mandatory_fact_ids: Vec::new(),
             aggregates: Vec::new(),
+            focus_applied: false,
         },
         acquisition: receipt(),
     }

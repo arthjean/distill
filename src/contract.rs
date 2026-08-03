@@ -11,6 +11,11 @@ pub const MAX_SELECTOR_MATCHES: u64 = 32;
 pub const DEFAULT_SELECTOR_CONTEXT_LINES: u64 = 2;
 pub const DEFAULT_SELECTOR_MATCHES: u64 = 8;
 
+/// Bound of the `distill.context/v3` optional focus: the phrase a caller states
+/// to say what it is reading for. It is inert literal data, bounded exactly like
+/// a selector pattern, and it is published by every surface that accepts one.
+pub const MAX_FOCUS_BYTES: usize = 256;
+
 pub(crate) fn valid_correlation_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_IDENTIFIER_BYTES
 }

@@ -453,6 +453,16 @@ fn cli_conformance_matrix_pins_retrieval_and_selector_bounds() {
     );
     assert_eq!(bounds["default_matches"], distill::DEFAULT_SELECTOR_MATCHES);
 
+    // US-017: the focus is pinned as an optional literal option at the
+    // contract bound, recorded by the receipt without its value.
+    let focus = &matrix["focus"];
+    assert_eq!(focus["optional"], true);
+    assert_eq!(focus["max_bytes"], distill::MAX_FOCUS_BYTES);
+    assert_eq!(focus["literal_value"], true);
+    assert_eq!(focus["receipt_echoes_value"], false);
+    let option = focus["option"].as_str().expect("focus option");
+    assert!(HELP.contains(option), "help omits {option}");
+
     for command in matrix["retrieval"]["commands"]
         .as_array()
         .expect("retrieval commands")
@@ -736,4 +746,71 @@ fn output_and_argument_helpers_cover_both_outcomes() {
             .exit_code,
         2
     );
+}
+
+/// US-015 and US-017: `--focus` is optional, orders what the budget keeps, stays
+/// literal, and fails with the engine's typed bound rather than being truncated.
+#[test]
+fn focus_is_optional_literal_and_bounded_on_the_cli() {
+    let temp = TempDir::new().expect("temp");
+    let store = store(&temp);
+    let store = store.to_str().expect("store path");
+    let line = |index: usize| format!("let value_{index:03} = compute(value_{index:03});\n");
+    let body = format!(
+        "use crate::artifact::Receipt;\n{}let RETRY_BUDGET = attempts;\n{}",
+        (0..200).map(line).collect::<String>(),
+        (200..400).map(line).collect::<String>(),
+    );
+
+    let project = |focus: Option<&str>| {
+        let mut arguments = vec!["--store", store, "project", "--budget", "240", "--json"];
+        if let Some(focus) = focus {
+            arguments.extend(["--focus", focus]);
+        }
+        let (code, stdout, _) = run_args(&arguments, body.as_bytes());
+        (code, stdout)
+    };
+
+    let (code, stdout) = project(None);
+    assert_eq!(code, 0);
+    let unfocused: Value = serde_json::from_slice(&stdout).expect("unfocused JSON");
+    assert_eq!(
+        unfocused["result"]["receipt"]["preservation"]["focus_applied"],
+        false
+    );
+    assert!(
+        !unfocused["result"]["visible"]["bytes"]
+            .as_str()
+            .expect("visible")
+            .contains("RETRY_BUDGET")
+    );
+
+    let (code, stdout) = project(Some("why was the retry budget consumed"));
+    assert_eq!(code, 0);
+    let focused: Value = serde_json::from_slice(&stdout).expect("focused JSON");
+    assert_eq!(
+        focused["result"]["receipt"]["preservation"]["focus_applied"],
+        true
+    );
+    assert!(
+        focused["result"]["visible"]["bytes"]
+            .as_str()
+            .expect("visible")
+            .contains("RETRY_BUDGET")
+    );
+
+    // A focus that looks like a Distill option is a focus.
+    let (code, stdout) = project(Some("--json --budget 1"));
+    assert_eq!(code, 0);
+    let literal: Value = serde_json::from_slice(&stdout).expect("literal JSON");
+    assert_eq!(
+        literal["result"]["receipt"]["preservation"]["focus_applied"],
+        true
+    );
+
+    let oversized = "f".repeat(distill::MAX_FOCUS_BYTES + 1);
+    let (code, stdout) = project(Some(&oversized));
+    assert_eq!(code, 2);
+    let failure: Value = serde_json::from_slice(&stdout).expect("failure JSON");
+    assert_eq!(failure["error"]["code"], "invalid_request");
 }

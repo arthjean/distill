@@ -83,5 +83,21 @@
     "derivation": "shape-detected from a bounded prefix of the observation",
     "policy_version": "distill.preservation/v2",
     "declared_content_class": false
+  },
+  "focus": {
+    "owner": "Engine::handle",
+    "optional": true,
+    "max_bytes": 256,
+    "content_class": "literal UTF-8 text",
+    "derived_from": "tool_input",
+    "derived_fields": [
+      "command",
+      "file_path",
+      "path",
+      "pattern",
+      "query"
+    ],
+    "underivable_input_behavior": "request proceeds without a focus",
+    "receipt_field": "preservation.focus_applied"
   }
 }

@@ -367,6 +367,7 @@ impl ProductionRuntime {
             },
             preservation_profile: crate::projection::AUTO_PROFILE.to_owned(),
             retention: Retention::default(),
+            focus: None,
         };
         let prepared = request_policy::prepare(request, &self.request_config)
             .map_err(AcquisitionError::clean)?;

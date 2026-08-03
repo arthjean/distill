@@ -73,6 +73,7 @@ fn request(id: &str, bytes: Vec<u8>) -> Request {
         budget: hook_budget(),
         preservation_profile: EXECUTED_PROFILE.to_owned(),
         retention: Retention::default(),
+        focus: None,
     }
 }
 

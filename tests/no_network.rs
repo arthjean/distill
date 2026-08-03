@@ -72,6 +72,7 @@ fn request(request_id: &str, source: Source) -> Request {
         },
         preservation_profile: "plain-text/v1".to_owned(),
         retention: Retention::default(),
+        focus: None,
     }
 }
 

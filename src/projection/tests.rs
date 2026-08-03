@@ -33,7 +33,7 @@ fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Baseline,
     assert!(original_count > payload_limit);
 
     let empty = Aggregation::default();
-    let analysis = analyze(source, text, spec).expect("baseline analysis");
+    let analysis = analyze(source, text, spec, None).expect("baseline analysis");
     let mandatory = analysis.mandatory;
     let mut evaluations = 1;
     let mandatory_visible = render(source, &mandatory, &empty).expect("baseline mandatory render");
@@ -42,7 +42,7 @@ fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Baseline,
     let mut retained = mandatory.clone();
     for candidate in analysis.candidates {
         let mut proposed = retained.clone();
-        proposed.push(candidate);
+        proposed.push(candidate.span);
         normalize_spans(&mut proposed);
         evaluations += 1;
         if count(
@@ -389,8 +389,14 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
     let (baseline, baseline_evaluations) =
         baseline_project(source.as_bytes(), &budget, "build-output/v1");
     let mut metrics = PlanningMetrics::default();
-    let planned = project_with_metrics(source.as_bytes(), &budget, "build-output/v1", &mut metrics)
-        .expect("planned projection");
+    let planned = project_with_metrics(
+        source.as_bytes(),
+        &budget,
+        "build-output/v1",
+        None,
+        &mut metrics,
+    )
+    .expect("planned projection");
     assert_eq!(planned.mandatory_fact_ids, baseline.mandatory_fact_ids);
     assert!(planned.visible.contains("error[E1]: mandatory fact"));
     assert!(planned.visible.contains("warning: W000 optional fact"));
@@ -431,6 +437,7 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
                 black_box(source.as_bytes()),
                 black_box(&budget),
                 "build-output/v1",
+                None,
                 &mut warmup_metrics,
             )
             .expect("planned warm-up"),
@@ -456,6 +463,7 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
                     black_box(source.as_bytes()),
                     black_box(&budget),
                     "build-output/v1",
+                    None,
                     &mut run_metrics,
                 )
                 .expect("measured planned projection"),
@@ -724,6 +732,7 @@ fn a_fragmented_selection_holds_the_receipt_span_ceiling() {
             max_matches: crate::contract::MAX_SELECTOR_MATCHES,
         },
         spec,
+        None,
     )
     .expect("fragmented selection");
 
@@ -852,7 +861,7 @@ fn project_without_aggregation(
 ) -> Result<Projection, Failure> {
     ProjectionSpec::new(profile, budget)
         .map(ProjectionSpec::without_aggregation)
-        .and_then(|spec| project_validated(source, spec))
+        .and_then(|spec| project_validated(source, spec, None))
 }
 
 /// US-011: classification decides from a bounded prefix, so bytes past that
@@ -1297,3 +1306,252 @@ fn each_shape_reduces_along_its_own_structure() {
     }
     assert_partitions(file.len(), &projected);
 }
+
+/// An observation whose answer sits far from both boundaries: the marker line is
+/// ordinary under the detected policy, the surrounding lines are distinct enough
+/// that nothing collapses them, and expansion around the head and the tail
+/// cannot reach the middle at a small budget.
+fn buried_answer(marker: &str) -> String {
+    let mut file =
+        String::from("use crate::artifact::Receipt;\n\npub fn recompute(attempts: u64) -> u64 {\n");
+    let body = |file: &mut String, range: std::ops::Range<usize>| {
+        for index in range {
+            file.push_str(&format!(
+                "    let value_{index:03} = compute(value_{index:03});\n"
+            ));
+        }
+    };
+    body(&mut file, 0..200);
+    file.push_str(&format!("    let {marker} = attempts.saturating_add(3);\n"));
+    body(&mut file, 200..400);
+    file.push_str("    value_399\n}\n");
+    file
+}
+
+/// US-016: candidates are ordered by the documented score. Lexical proximity to
+/// the focus ranks first, the structural rank of the shape policy second, and
+/// source position breaks every remaining tie.
+#[test]
+fn scored_candidates_follow_the_documented_order() {
+    // The observation is long enough that the focus terms occur in a small
+    // share of it, which is what makes them discriminating.
+    let mut lines = vec![
+        "error[E0001]: mandatory diagnostic\n".to_owned(),
+        "warning: retry budget exhausted\n".to_owned(),
+        "an ordinary note about the retry budget\n".to_owned(),
+        "warning: unrelated advice\n".to_owned(),
+    ];
+    lines.extend((0..20).map(|index| format!("ordinary build output line {index:02}\n")));
+    let source = lines.concat();
+    let spans = lines
+        .iter()
+        .scan(0_u64, |start, line| {
+            let span = ByteSpan {
+                start: *start,
+                end: *start + line.len() as u64,
+            };
+            *start = span.end;
+            Some(span)
+        })
+        .collect::<Vec<_>>();
+
+    let spec = ProjectionSpec::new("build-output/v1", &bytes(64)).expect("spec");
+    let focus = Focus::new("retry budget");
+    let analysis = analyze(source.as_bytes(), &source, spec, Some(&focus)).expect("analysis");
+
+    // A mandatory fact is retained before selection runs, so it is never ranked.
+    assert_eq!(analysis.mandatory, vec![spans[0]]);
+    assert_eq!(
+        analysis
+            .candidates
+            .iter()
+            .map(|candidate| (candidate.span, candidate.lexical, candidate.structural))
+            .collect::<Vec<_>>(),
+        vec![
+            // Preferred and focused outranks focused alone.
+            (spans[1], 2, 1),
+            // Focused alone outranks preferred alone: what answers the question
+            // beats what merely orders the output.
+            (spans[2], 2, 0),
+            (spans[3], 0, 1),
+            // The boundaries close the order, in source position.
+            (spans[0], 0, 0),
+            (spans[lines.len() - 1], 0, 0),
+        ]
+    );
+
+    // Without a focus the same observation keeps the unscored source order.
+    let unscored = analyze(source.as_bytes(), &source, spec, None).expect("unscored analysis");
+    assert_eq!(
+        unscored
+            .candidates
+            .iter()
+            .map(|candidate| candidate.span)
+            .collect::<Vec<_>>(),
+        vec![spans[1], spans[3], spans[0], spans[lines.len() - 1]]
+    );
+}
+
+/// US-016: at a budget that reaches neither boundary, a focus buys the region
+/// that answers it, and the same budget without one does not.
+#[test]
+fn a_focus_spends_the_budget_on_the_region_that_answers_it() {
+    let source = buried_answer("RETRY_BUDGET");
+    let budget = bytes(240);
+
+    let unscored = project(source.as_bytes(), &budget, AUTO_PROFILE).expect("unscored");
+    assert!(
+        !unscored.visible.contains("RETRY_BUDGET"),
+        "the unscored projection already reached the buried answer"
+    );
+
+    let scored = project_focused(
+        source.as_bytes(),
+        &budget,
+        AUTO_PROFILE,
+        Some("why was the retry budget reached"),
+    )
+    .expect("scored");
+    assert!(
+        scored
+            .visible
+            .contains("RETRY_BUDGET = attempts.saturating_add(3)"),
+        "the focused projection omitted the line that answers it"
+    );
+    // A focus reorders what the budget buys; it never raises the ceiling.
+    assert!(scored.visible_count <= 240);
+    assert_eq!(scored.original_count, unscored.original_count);
+    assert_partitions(source.len(), &scored);
+}
+
+/// US-015 and US-016: a focus that matches nothing scores nothing, so the
+/// projection is the unscored one, byte for byte and span for span.
+#[test]
+fn a_focus_that_matches_nothing_projects_exactly_as_no_focus_does() {
+    let source = buried_answer("RETRY_BUDGET");
+    let budget = bytes(512);
+    let unscored = project(source.as_bytes(), &budget, AUTO_PROFILE).expect("unscored");
+    let unmatched = project_focused(
+        source.as_bytes(),
+        &budget,
+        AUTO_PROFILE,
+        Some("kubernetes ingress certificate rotation"),
+    )
+    .expect("unmatched focus");
+
+    assert_eq!(unmatched.visible, unscored.visible);
+    assert_eq!(unmatched.retained_spans, unscored.retained_spans);
+    assert_eq!(unmatched.omitted_spans, unscored.omitted_spans);
+    assert_eq!(unmatched.visible_count, unscored.visible_count);
+    assert_eq!(unmatched.applied_profile, unscored.applied_profile);
+}
+
+/// US-016: identical input and focus produce an identical payload, every time.
+#[test]
+fn repeated_focused_projections_are_byte_identical() {
+    let source = buried_answer("RETRY_BUDGET");
+    let budget = bytes(320);
+    let focus = Some("why was the retry budget reached");
+    let first = project_focused(source.as_bytes(), &budget, AUTO_PROFILE, focus).expect("first");
+    for _ in 0..100 {
+        let repeated =
+            project_focused(source.as_bytes(), &budget, AUTO_PROFILE, focus).expect("repeated");
+        assert_eq!(repeated.visible, first.visible);
+        assert_eq!(repeated.retained_spans, first.retained_spans);
+        assert_eq!(repeated.visible_count, first.visible_count);
+    }
+}
+
+/// US-016: scoring is lexical, not tokenized, so a full candidate table under a
+/// token budget still costs the single full-render tokenization US-004 bounds.
+#[test]
+fn scoring_a_full_candidate_table_holds_the_render_bound() {
+    let mut source = String::from("error[E1]: mandatory fact\n");
+    for index in 0..MAX_REDUCER_SPANS {
+        source.push_str(&format!("warning: W{index:03} optional fact\n"));
+        source.push_str(&format!("ordinary line naming optional fact {index:03}\n"));
+    }
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 2_048,
+        reserved_envelope: 0,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+
+    let spec = ProjectionSpec::new("build-output/v1", &budget).expect("spec");
+    let focus = Focus::new("optional fact");
+    let analysis = analyze(source.as_bytes(), &source, spec, Some(&focus)).expect("analysis");
+    assert_eq!(
+        analysis.candidates.len(),
+        MAX_REDUCER_SPANS + 2,
+        "the candidate table is not saturated, so the bound is not exercised"
+    );
+
+    let mut metrics = PlanningMetrics::default();
+    let projected = project_with_metrics(
+        source.as_bytes(),
+        &budget,
+        "build-output/v1",
+        Some("optional fact"),
+        &mut metrics,
+    )
+    .expect("scored projection");
+    assert!(
+        metrics.full_render_count_evaluations <= MAX_PLAN_FULL_RENDER_COUNTS,
+        "{} full-render tokenizations exceed the {MAX_PLAN_FULL_RENDER_COUNTS} bound",
+        metrics.full_render_count_evaluations
+    );
+    assert_eq!(
+        projected.visible_count,
+        count(&projected.visible, &budget).expect("scored payload count")
+    );
+
+    // Scoring is substring comparison over lines the ranking pass already
+    // lowercased, so a focus costs a documented fraction of the projection it
+    // orders rather than a second pass over the observation. On this padded
+    // source the focus terms reach a small share of the lines, so they
+    // discriminate and the measured projection is genuinely ordered.
+    //
+    // The cost is read as the median of paired measurements. Two independent
+    // tail statistics compare the load each sample met inside a suite that runs
+    // in parallel, not the cost of ordering: pairing cancels the load both
+    // members of a pair meet, and the median discards the stalls that reach only
+    // one of them.
+    while source.len() < 1024 * 1024 {
+        source.push_str("ordinary build output padding\n");
+    }
+    source.truncate(1024 * 1024);
+    let run = |focus: Option<&str>| {
+        let started = Instant::now();
+        black_box(project_focused(
+            black_box(source.as_bytes()),
+            black_box(&budget),
+            "build-output/v1",
+            focus,
+        ))
+        .expect("measured projection");
+        started.elapsed()
+    };
+    for _ in 0..2 {
+        run(None);
+        run(Some("optional fact"));
+    }
+    let mut ratios = (0..20)
+        .map(|_| {
+            let unscored = run(None);
+            let scored = run(Some("optional fact"));
+            scored.as_nanos() * 100 / unscored.as_nanos().max(1)
+        })
+        .collect::<Vec<_>>();
+    ratios.sort_unstable();
+    let median = ratios[ratios.len() / 2];
+    eprintln!("focus ordering cost: median {median}% of unscored, samples {ratios:?}");
+    assert!(
+        median <= u128::from(FOCUS_LATENCY_CEILING_PERCENT),
+        "ordering by a focus cost {median}% of the unscored projection, beyond the {FOCUS_LATENCY_CEILING_PERCENT}% ceiling"
+    );
+}
+
+/// The documented cost of ordering a 1 MiB observation by a focus, relative to
+/// the same projection without one, on the unoptimized test profile.
+const FOCUS_LATENCY_CEILING_PERCENT: u64 = 120;

@@ -36,6 +36,14 @@ fn codex_setup_conforms_to_adapter_and_versioned_fixture() {
         distill::POLICY_VERSION
     );
     assert_eq!(fixture["preservation"]["declared_content_class"], false);
+    // US-017: the focus the hook derives is pinned to the adapter exactly like
+    // every other behaviour this matrix records, so the published bound, the
+    // optionality, and the derived fields cannot drift from the code.
+    let focus = &fixture["focus"];
+    assert_eq!(focus["optional"], true);
+    assert_eq!(focus["max_bytes"], distill::MAX_FOCUS_BYTES);
+    assert_eq!(focus["derived_fields"], json!(codex::FOCUS_FIELDS));
+    assert_eq!(focus["receipt_field"], "preservation.focus_applied");
     assert_eq!(fixture["setup"]["matcher"], codex::SETUP_MATCHER);
     assert_eq!(
         fixture["setup"]["timeout_seconds"],

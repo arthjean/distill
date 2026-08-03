@@ -48,6 +48,17 @@
       "out_of_bounds_failure": "invalid_request"
     }
   },
+  "focus": {
+    "owner": "Engine::handle",
+    "optional": true,
+    "max_bytes": 256,
+    "content_class": "literal UTF-8 text",
+    "out_of_bounds_failure": "invalid_request",
+    "receipt_field": "preservation.focus_applied",
+    "receipt_echoes_value": false,
+    "option": "--focus",
+    "literal_value": true
+  },
   "preservation": {
     "owner": "Engine::handle",
     "default_profile": "auto/v1",
@@ -57,7 +68,8 @@
     "receipt_fields": [
       "preservation.profile",
       "preservation.applied_profile",
-      "preservation.aggregates"
+      "preservation.aggregates",
+      "preservation.focus_applied"
     ],
     "shape_profiles": [
       "build-output/v1",

@@ -11,8 +11,9 @@ mod runtime;
 mod types;
 
 pub use contract::{
-    DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
-    MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES,
+    DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_FOCUS_BYTES,
+    MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES,
+    MAX_SELECTOR_PATTERN_BYTES,
 };
 pub use projection::AUTO_PROFILE;
 pub use request_policy::{
@@ -198,11 +199,12 @@ impl Engine {
             }
         };
 
+        let focus = request.focus.as_ref();
         let projected = match &request.source {
             request_policy::ValidatedSource::Artifact(_, Some(selection)) => {
-                projection::project_selection(&acquired.bytes, selection, projection_spec)
+                projection::project_selection(&acquired.bytes, selection, projection_spec, focus)
             }
-            _ => projection::project_validated(&acquired.bytes, projection_spec),
+            _ => projection::project_validated(&acquired.bytes, projection_spec, focus),
         };
         let projection = projected.map_err(|failure| {
             let failure = failure.for_request(&request.request_id);
@@ -256,6 +258,7 @@ fn build_outcome(
     projection: Projection,
     projection_spec: ProjectionSpec,
 ) -> Result<Outcome, Failure> {
+    let focus_applied = request.focus.is_some();
     let receipt = Receipt {
         schema_version: RECEIPT_SCHEMA_VERSION.to_owned(),
         request_id: request.request_id,
@@ -275,6 +278,7 @@ fn build_outcome(
             applied_profile: projection.applied_profile.to_owned(),
             mandatory_fact_ids: projection.mandatory_fact_ids,
             aggregates: projection.aggregates,
+            focus_applied,
         },
         acquisition: acquired.receipt.into_receipt(),
     };

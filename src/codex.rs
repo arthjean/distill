@@ -1,5 +1,5 @@
 use crate::surface::{
-    Recovery, SurfaceError, adapter_failure, bounded_correlation_id, budget_for,
+    Recovery, SurfaceError, adapter_failure, bounded_correlation_id, bounded_focus, budget_for,
     codex_error_envelope, count_visible, default_request, projection_envelope, write_json_line,
 };
 use distill::{
@@ -157,6 +157,7 @@ pub(crate) fn run<R: Read, W: Write>(
             media_type: Some("application/json".to_owned()),
         },
         budget_for(CountUnit::Tokens, total_tokens, reserved_tokens),
+        derived_focus(&event.tool_input),
     );
     let handled = catch_unwind(AssertUnwindSafe(|| engine.handle(request)));
     let outcome = match handled {
@@ -274,6 +275,31 @@ pub(crate) fn is_unsupported_surface(tool_name: &str) -> bool {
         tool_name,
         "Bash" | "apply_patch" | "Edit" | "Write" | "update_plan" | "Agent"
     ) && !tool_name.starts_with("mcp__")
+}
+
+/// The `tool_input` fields that state what a call was for, in the order they are
+/// joined. The list is an allowlist rather than a walk of the object, because a
+/// tool input also carries payloads: a focus states the intent of a call, never
+/// the body it wrote.
+pub(crate) const FOCUS_FIELDS: &[&str] = &["command", "file_path", "path", "pattern", "query"];
+
+/// Derives the focus of a hook request from the tool input Codex recorded.
+///
+/// The hook is the one caller that always knows why an observation exists: the
+/// model asked for it by name. Nothing here can fail the projection: an input
+/// that is absent, structured differently, or oversized simply yields no focus,
+/// and the request proceeds exactly as it did without one.
+fn derived_focus(tool_input: &Value) -> Option<String> {
+    if let Some(text) = tool_input.as_str() {
+        return bounded_focus(text.to_owned());
+    }
+    let object = tool_input.as_object()?;
+    let derived = FOCUS_FIELDS
+        .iter()
+        .filter_map(|field| object.get(*field)?.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    bounded_focus(derived)
 }
 
 fn bounded_request_id(event: &PostToolUseEvent) -> String {
@@ -528,6 +554,92 @@ mod tests {
             let value: Value = serde_json::from_slice(&output).expect("hook response");
             assert_eq!(value["decision"], "block", "{tool}");
         }
+    }
+
+    /// US-017: the hook derives a bounded focus from the tool input Codex
+    /// recorded, and an input it cannot read simply yields none.
+    #[test]
+    fn focus_is_derived_from_tool_input_or_omitted() {
+        assert_eq!(
+            derived_focus(&json!({"command": "cargo test --locked projection"})),
+            Some("cargo test --locked projection".to_owned())
+        );
+        assert_eq!(
+            derived_focus(&json!({"file_path": "src/projection.rs", "path": "src"})),
+            Some("src/projection.rs src".to_owned())
+        );
+        assert_eq!(
+            derived_focus(&json!("read the release protocol")),
+            Some("read the release protocol".to_owned())
+        );
+
+        // A payload field is not intent: a focus states why a call was made,
+        // never the body it wrote.
+        assert_eq!(
+            derived_focus(&json!({"content": "the entire file body", "input": "*** patch"})),
+            None
+        );
+        for undecodable in [
+            json!(null),
+            json!(42),
+            json!([1, 2]),
+            json!({}),
+            json!("   "),
+        ] {
+            assert_eq!(derived_focus(&undecodable), None, "{undecodable}");
+        }
+
+        // An oversized input is truncated on a UTF-8 boundary inside the bound,
+        // because the hook is the author of the value rather than its caller.
+        let oversized = format!("{}é", "cargo ".repeat(distill::MAX_FOCUS_BYTES));
+        let derived = derived_focus(&json!({"command": oversized})).expect("truncated focus");
+        assert!(derived.len() <= distill::MAX_FOCUS_BYTES);
+        assert!(derived.is_char_boundary(derived.len()));
+        let multibyte = format!("{}é", "x".repeat(distill::MAX_FOCUS_BYTES - 1));
+        let derived = derived_focus(&json!({"command": multibyte})).expect("multibyte focus");
+        assert_eq!(derived.len(), distill::MAX_FOCUS_BYTES - 1);
+    }
+
+    /// US-017: the derived focus reaches the engine, which records that it
+    /// applied without echoing it into the model-visible envelope.
+    #[test]
+    fn a_derived_focus_reaches_the_engine_without_entering_the_envelope() {
+        let temp = TempDir::new().expect("temp");
+        // Long lines without quotes: the observation stays large while its
+        // projection carries few lines, so the JSON envelope escapes little.
+        let line = |index: usize| {
+            format!(
+                "let value_{index:03} = recompute_projection_budget(value_{index:03}, attempts_remaining, retained_span_count);\n"
+            )
+        };
+        let body = format!(
+            "use crate::artifact::Receipt;\n{}let RETRY_BUDGET = attempts.saturating_add(3);\n{}",
+            (0..400).map(line).collect::<String>(),
+            (400..800).map(line).collect::<String>(),
+        );
+        let mut event: Value =
+            serde_json::from_slice(&event("Bash", json!(body))).expect("event value");
+        event["tool_input"] = json!({"command": "rg RETRY_BUDGET src"});
+        let (result, output) = invoke(
+            config(&temp),
+            "active",
+            &serde_json::to_vec(&event).expect("focused event"),
+        );
+        assert!(result.is_ok());
+
+        let response: Value = serde_json::from_slice(&output).expect("hook response");
+        let feedback = response["reason"].as_str().expect("feedback");
+        let envelope: Value = serde_json::from_str(feedback).expect("projection envelope");
+        let projection = envelope["projection"].as_str().expect("projection");
+        assert!(
+            projection.contains("RETRY_BUDGET"),
+            "the derived focus did not reach selection"
+        );
+        assert!(
+            !feedback.contains("rg RETRY_BUDGET src"),
+            "the envelope echoed the derived focus"
+        );
+        assert!(token_count(feedback) <= SAFE_OUTPUT_CAP_TOKENS);
     }
 
     #[test]
