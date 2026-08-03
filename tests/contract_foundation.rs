@@ -40,13 +40,25 @@ fn byte_budget(total: u64, reserved: u64) -> Budget {
 }
 
 fn token_budget(total: u64) -> Budget {
+    token_budget_with_envelope(total, 0)
+}
+
+fn token_budget_with_envelope(total: u64, reserved: u64) -> Budget {
     Budget {
         unit: CountUnit::Tokens,
         total_visible_limit: total,
-        reserved_envelope: 0,
+        reserved_envelope: reserved,
         token_profile: Some(CL100K_PROFILE.to_owned()),
     }
 }
+
+/// A projection that leaves more than 20% of its payload budget unused on an
+/// over-budget source fails the matrix.
+const BUDGET_UTILIZATION_FLOOR_BASIS_POINTS: u64 = 8_000;
+
+/// 225 total visible tokens minus a 45-token reserved envelope, the Codex hook
+/// proportions at matrix scale.
+const OVER_BUDGET_PAYLOAD_LIMIT: u64 = 180;
 
 #[test]
 fn public_projection_matrix_freezes_fidelity_budget_and_receipt_claims() {
@@ -237,6 +249,130 @@ fn immutable_cl100k_vectors_are_verified_through_engine_handle() {
             Some(CL100K_PROFILE)
         );
     }
+}
+
+#[test]
+fn projection_matrix_reports_budget_utilization_and_retention() {
+    let (_directory, engine) = engine();
+    let source = line_structured_source();
+
+    let over_budget = engine
+        .handle(request(
+            "over-budget-utilization",
+            source.clone(),
+            token_budget_with_envelope(225, 45),
+            "plain-text/v1",
+        ))
+        .expect("over-budget projection");
+    let receipt = &over_budget.receipt;
+    assert_eq!(receipt.fidelity, Fidelity::Extractive);
+    assert!(
+        receipt.original_count > OVER_BUDGET_PAYLOAD_LIMIT,
+        "matrix source must overflow its payload budget"
+    );
+    assert_eq!(receipt.original_count, 2_805);
+    assert_eq!(receipt.visible_count, 5);
+    assert_eq!(
+        basis_points(receipt.visible_count, OVER_BUDGET_PAYLOAD_LIMIT),
+        277,
+        "frozen US-002 baseline budget utilization in basis points"
+    );
+    assert_eq!(retained_bytes(&receipt.retained_spans), 14);
+    assert_eq!(
+        basis_points(retained_bytes(&receipt.retained_spans), source.len() as u64),
+        12,
+        "frozen US-002 baseline retained byte ratio in basis points"
+    );
+    assert_eq!(receipt.retained_spans.len(), 2);
+    assert_eq!(receipt.omitted_spans.len(), 1);
+    assert_partition(
+        source.len() as u64,
+        &receipt.retained_spans,
+        &receipt.omitted_spans,
+    );
+
+    // A source that already fits carries no omission, so the utilization floor
+    // does not apply to it and fidelity is asserted as exact instead.
+    let under_budget = engine
+        .handle(request(
+            "under-budget-utilization",
+            b"fn main() {}\n".to_vec(),
+            token_budget_with_envelope(225, 45),
+            "plain-text/v1",
+        ))
+        .expect("under-budget projection");
+    assert_eq!(under_budget.receipt.fidelity, Fidelity::Exact);
+    assert!(under_budget.receipt.original_count <= OVER_BUDGET_PAYLOAD_LIMIT);
+    assert_eq!(
+        under_budget.receipt.visible_count,
+        under_budget.receipt.original_count
+    );
+    assert!(under_budget.receipt.omitted_spans.is_empty());
+}
+
+/// EP-001 US-003: the payload-budget floor is asserted, not skipped. It records
+/// the failure frozen by the US-002 baseline, where `plain-text/v1` spends 5 of
+/// 180 payload tokens. EP-002 US-005 must make this assertion hold; removing
+/// `should_panic` is then the mechanical proof that it did.
+#[test]
+#[should_panic(expected = "budget utilization")]
+fn over_budget_projection_must_spend_its_payload_budget() {
+    let (_directory, engine) = engine();
+    let outcome = engine
+        .handle(request(
+            "utilization-floor",
+            line_structured_source(),
+            token_budget_with_envelope(225, 45),
+            "plain-text/v1",
+        ))
+        .expect("over-budget projection");
+    let measured = basis_points(outcome.receipt.visible_count, OVER_BUDGET_PAYLOAD_LIMIT);
+    eprintln!(
+        "US-002 baseline: plain-text/v1 spent {} of {OVER_BUDGET_PAYLOAD_LIMIT} payload tokens ({}.{:02}%)",
+        outcome.receipt.visible_count,
+        measured / 100,
+        measured % 100
+    );
+    assert_spends_payload_budget(
+        "plain-text/v1",
+        outcome.receipt.visible_count,
+        OVER_BUDGET_PAYLOAD_LIMIT,
+    );
+}
+
+fn assert_spends_payload_budget(label: &str, visible_count: u64, payload_limit: u64) {
+    let measured = basis_points(visible_count, payload_limit);
+    assert!(
+        measured >= BUDGET_UTILIZATION_FLOOR_BASIS_POINTS,
+        "{label} budget utilization was {}.{:02}% ({visible_count} of {payload_limit} payload \
+         units), below the {}% floor",
+        measured / 100,
+        measured % 100,
+        BUDGET_UTILIZATION_FLOOR_BASIS_POINTS / 100
+    );
+}
+
+/// Exact integer ratio in hundredths of a percent, so frozen matrix claims never
+/// depend on floating-point rendering.
+fn basis_points(part: u64, whole: u64) -> u64 {
+    (part * 10_000).checked_div(whole).unwrap_or(0)
+}
+
+fn retained_bytes(retained: &[ByteSpan]) -> u64 {
+    retained.iter().map(|span| span.end - span.start).sum()
+}
+
+/// Deterministic line-structured source in the shape of a captured source file,
+/// large enough to overflow the matrix payload budget many times over.
+fn line_structured_source() -> Vec<u8> {
+    let mut source = String::from("fn main() {\n");
+    for index in 0..200 {
+        source.push_str(&format!(
+            "    let value_{index:03} = compute_checksum({index}, \"projection\");\n"
+        ));
+    }
+    source.push_str("}\n");
+    source.into_bytes()
 }
 
 fn assert_receipt_binding(outcome: &Outcome, source: &[u8], unit: CountUnit) {
