@@ -1,0 +1,2883 @@
+{
+  "schema_version": "distill.projection-baseline/v1",
+  "id": "projection-baseline-v1",
+  "recorded_at": "2026-08-03",
+  "status": "FROZEN",
+  "purpose": "Executed-path projection behavior before EP-002, recorded per real corpus fixture and budget.",
+  "executed_profile": "plain-text/v1",
+  "executed_profile_source": "src/surface.rs DEFAULT_PRESERVATION_PROFILE, pinned by both surfaces",
+  "measured_through": "target/release/distill project --json, the CLI seam over Engine::handle",
+  "source_revision": "5f228cda3c0215c8ce61907350e6c7da37896584",
+  "worktree_clean": false,
+  "binary_sha256": "342217af37c0aa18054924aa78161ed9a8a5bef6e9038f344c94d39aa7fc37e5",
+  "corpus_manifest_sha256": "02548a5da13cd42f78ed905229ce6834ea4d57d560080e99c451eace7364d2de",
+  "corpus": {
+    "fixtures": 48,
+    "digests_verified": 48,
+    "shapes": {
+      "api-json": 6,
+      "build-output": 6,
+      "source-file": 6,
+      "stack-trace": 6,
+      "terminal-log": 6,
+      "test-output": 6,
+      "typecheck-lint": 6,
+      "unified-diff": 6
+    },
+    "bytes": 668956
+  },
+  "budgets": [
+    {
+      "id": "codex-hook-default",
+      "unit": "tokens",
+      "total_visible_limit": 2250,
+      "reserved_envelope": 450,
+      "role": "executed Codex hook default (SAFE_OUTPUT_CAP_TOKENS, DEFAULT_RESERVED_TOKENS)"
+    },
+    {
+      "id": "tokens-512-envelope-64",
+      "unit": "tokens",
+      "total_visible_limit": 512,
+      "reserved_envelope": 64,
+      "role": "corpus token budget profile"
+    },
+    {
+      "id": "tokens-8192-envelope-1024",
+      "unit": "tokens",
+      "total_visible_limit": 8192,
+      "reserved_envelope": 1024,
+      "role": "large host budget"
+    },
+    {
+      "id": "tokens-450-envelope-450",
+      "unit": "tokens",
+      "total_visible_limit": 450,
+      "reserved_envelope": 450,
+      "role": "zero payload boundary"
+    }
+  ],
+  "references": [
+    {
+      "fixture": "source-artifact-rs",
+      "budget": "codex-hook-default",
+      "declared_original_count": 2799,
+      "declared_utilization_percent": 0.39,
+      "tolerance_points": 1,
+      "count_tolerance_fraction": 0.1,
+      "note": "line-structured source file, captured without any normalization hit",
+      "measured_original_count": 2799,
+      "measured_visible_count": 7,
+      "measured_utilization_percent": 0.3889,
+      "original_count_delta": 0,
+      "reproduced": true
+    },
+    {
+      "fixture": "log-git-log-stat",
+      "budget": "codex-hook-default",
+      "declared_original_count": 6341,
+      "declared_utilization_percent": 2.4,
+      "tolerance_points": 1,
+      "count_tolerance_fraction": 0.1,
+      "note": "command log; scrubbing author identities shortens the captured bytes",
+      "measured_original_count": 5821,
+      "measured_visible_count": 44,
+      "measured_utilization_percent": 2.4444,
+      "original_count_delta": -520,
+      "reproduced": true
+    }
+  ],
+  "aggregates": [
+    {
+      "budget": "codex-hook-default",
+      "payload_limit": 1800,
+      "fixtures": 48,
+      "exact_fidelity": 34,
+      "extractive_fidelity": 14,
+      "typed_failures": {},
+      "over_budget_fixtures": 14,
+      "min_budget_utilization_percent": 0.1111,
+      "median_budget_utilization_percent": 0.7778,
+      "max_budget_utilization_percent": 100,
+      "median_retained_byte_ratio_percent": 0.1514
+    },
+    {
+      "budget": "tokens-512-envelope-64",
+      "payload_limit": 448,
+      "fixtures": 48,
+      "exact_fidelity": 23,
+      "extractive_fidelity": 25,
+      "typed_failures": {},
+      "over_budget_fixtures": 25,
+      "min_budget_utilization_percent": 0.4464,
+      "median_budget_utilization_percent": 6.25,
+      "max_budget_utilization_percent": 100,
+      "median_retained_byte_ratio_percent": 0.5052
+    },
+    {
+      "budget": "tokens-8192-envelope-1024",
+      "payload_limit": 7168,
+      "fixtures": 48,
+      "exact_fidelity": 43,
+      "extractive_fidelity": 5,
+      "typed_failures": {},
+      "over_budget_fixtures": 5,
+      "min_budget_utilization_percent": 0.1953,
+      "median_budget_utilization_percent": 0.3906,
+      "max_budget_utilization_percent": 100,
+      "median_retained_byte_ratio_percent": 0.1514
+    },
+    {
+      "budget": "tokens-450-envelope-450",
+      "payload_limit": 0,
+      "fixtures": 48,
+      "exact_fidelity": 0,
+      "extractive_fidelity": 0,
+      "typed_failures": {
+        "budget_unsatisfiable": 48
+      },
+      "over_budget_fixtures": 0,
+      "min_budget_utilization_percent": null,
+      "median_budget_utilization_percent": null,
+      "max_budget_utilization_percent": null,
+      "median_retained_byte_ratio_percent": null
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "build-cargo-release-verbose",
+      "shape": "build-output",
+      "byte_length": 1506,
+      "line_count": 47,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 549,
+          "visible_count": 549,
+          "over_budget": false,
+          "budget_utilization_percent": 30.5,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1506,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 549,
+          "visible_count": 30,
+          "over_budget": true,
+          "budget_utilization_percent": 6.6964,
+          "retained_byte_ratio_percent": 6.3745,
+          "retained_bytes": 96,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 549,
+          "visible_count": 549,
+          "over_budget": false,
+          "budget_utilization_percent": 7.659,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1506,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "build-cargo-check-short",
+      "shape": "build-output",
+      "byte_length": 1698,
+      "line_count": 53,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 639,
+          "visible_count": 639,
+          "over_budget": false,
+          "budget_utilization_percent": 35.5,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1698,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 639,
+          "visible_count": 35,
+          "over_budget": true,
+          "budget_utilization_percent": 7.8125,
+          "retained_byte_ratio_percent": 6.2426,
+          "retained_bytes": 106,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 639,
+          "visible_count": 639,
+          "over_budget": false,
+          "budget_utilization_percent": 8.9146,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1698,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "build-cargo-broken-crate",
+      "shape": "build-output",
+      "byte_length": 687,
+      "line_count": 18,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 186,
+          "visible_count": 186,
+          "over_budget": false,
+          "budget_utilization_percent": 10.3333,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 687,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 186,
+          "visible_count": 186,
+          "over_budget": false,
+          "budget_utilization_percent": 41.5179,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 687,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 186,
+          "visible_count": 186,
+          "over_budget": false,
+          "budget_utilization_percent": 2.5949,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 687,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "build-cargo-broken-short",
+      "shape": "build-output",
+      "byte_length": 336,
+      "line_count": 4,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 99,
+          "visible_count": 99,
+          "over_budget": false,
+          "budget_utilization_percent": 5.5,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 336,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 99,
+          "visible_count": 99,
+          "over_budget": false,
+          "budget_utilization_percent": 22.0982,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 336,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 99,
+          "visible_count": 99,
+          "over_budget": false,
+          "budget_utilization_percent": 1.3811,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 336,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "build-cargo-release-crate",
+      "shape": "build-output",
+      "byte_length": 125,
+      "line_count": 2,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 39,
+          "visible_count": 39,
+          "over_budget": false,
+          "budget_utilization_percent": 2.1667,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 125,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 39,
+          "visible_count": 39,
+          "over_budget": false,
+          "budget_utilization_percent": 8.7054,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 125,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 39,
+          "visible_count": 39,
+          "over_budget": false,
+          "budget_utilization_percent": 0.5441,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 125,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "build-bun-bundle",
+      "shape": "build-output",
+      "byte_length": 64,
+      "line_count": 4,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 23,
+          "visible_count": 23,
+          "over_budget": false,
+          "budget_utilization_percent": 1.2778,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 64,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 23,
+          "visible_count": 23,
+          "over_budget": false,
+          "budget_utilization_percent": 5.1339,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 64,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 23,
+          "visible_count": 23,
+          "over_budget": false,
+          "budget_utilization_percent": 0.3209,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 64,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "test-cargo-failing",
+      "shape": "test-output",
+      "byte_length": 941,
+      "line_count": 28,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 268,
+          "visible_count": 268,
+          "over_budget": false,
+          "budget_utilization_percent": 14.8889,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 941,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 268,
+          "visible_count": 268,
+          "over_budget": false,
+          "budget_utilization_percent": 59.8214,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 941,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 268,
+          "visible_count": 268,
+          "over_budget": false,
+          "budget_utilization_percent": 3.7388,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 941,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "test-cargo-failing-nocapture",
+      "shape": "test-output",
+      "byte_length": 822,
+      "line_count": 24,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 236,
+          "visible_count": 236,
+          "over_budget": false,
+          "budget_utilization_percent": 13.1111,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 822,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 236,
+          "visible_count": 236,
+          "over_budget": false,
+          "budget_utilization_percent": 52.6786,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 822,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 236,
+          "visible_count": 236,
+          "over_budget": false,
+          "budget_utilization_percent": 3.2924,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 822,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "test-cargo-list",
+      "shape": "test-output",
+      "byte_length": 5107,
+      "line_count": 69,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1191,
+          "visible_count": 1191,
+          "over_budget": false,
+          "budget_utilization_percent": 66.1667,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 5107,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 1191,
+          "visible_count": 46,
+          "over_budget": true,
+          "budget_utilization_percent": 10.2679,
+          "retained_byte_ratio_percent": 3.1134,
+          "retained_bytes": 159,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1191,
+          "visible_count": 1191,
+          "over_budget": false,
+          "budget_utilization_percent": 16.6155,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 5107,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "test-bun-failing",
+      "shape": "test-output",
+      "byte_length": 673,
+      "line_count": 24,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 205,
+          "visible_count": 205,
+          "over_budget": false,
+          "budget_utilization_percent": 11.3889,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 673,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 205,
+          "visible_count": 205,
+          "over_budget": false,
+          "budget_utilization_percent": 45.7589,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 673,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 205,
+          "visible_count": 205,
+          "over_budget": false,
+          "budget_utilization_percent": 2.8599,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 673,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "test-node-failing",
+      "shape": "test-output",
+      "byte_length": 1061,
+      "line_count": 37,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 343,
+          "visible_count": 343,
+          "over_budget": false,
+          "budget_utilization_percent": 19.0556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1061,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 343,
+          "visible_count": 343,
+          "over_budget": false,
+          "budget_utilization_percent": 76.5625,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1061,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 343,
+          "visible_count": 343,
+          "over_budget": false,
+          "budget_utilization_percent": 4.7852,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1061,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "test-python-unittest",
+      "shape": "test-output",
+      "byte_length": 925,
+      "line_count": 17,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 192,
+          "visible_count": 192,
+          "over_budget": false,
+          "budget_utilization_percent": 10.6667,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 925,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 192,
+          "visible_count": 192,
+          "over_budget": false,
+          "budget_utilization_percent": 42.8571,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 925,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 192,
+          "visible_count": 192,
+          "over_budget": false,
+          "budget_utilization_percent": 2.6786,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 925,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "lint-cargo-clippy-repo",
+      "shape": "typecheck-lint",
+      "byte_length": 1698,
+      "line_count": 53,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 639,
+          "visible_count": 639,
+          "over_budget": false,
+          "budget_utilization_percent": 35.5,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1698,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 639,
+          "visible_count": 35,
+          "over_budget": true,
+          "budget_utilization_percent": 7.8125,
+          "retained_byte_ratio_percent": 6.2426,
+          "retained_bytes": 106,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 639,
+          "visible_count": 639,
+          "over_budget": false,
+          "budget_utilization_percent": 8.9146,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1698,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "lint-cargo-clippy-crate",
+      "shape": "typecheck-lint",
+      "byte_length": 1599,
+      "line_count": 40,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 478,
+          "visible_count": 478,
+          "over_budget": false,
+          "budget_utilization_percent": 26.5556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1599,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 478,
+          "visible_count": 45,
+          "over_budget": true,
+          "budget_utilization_percent": 10.0446,
+          "retained_byte_ratio_percent": 8.6304,
+          "retained_bytes": 138,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 478,
+          "visible_count": 478,
+          "over_budget": false,
+          "budget_utilization_percent": 6.6685,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1599,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "lint-cargo-clippy-crate-short",
+      "shape": "typecheck-lint",
+      "byte_length": 1533,
+      "line_count": 39,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 456,
+          "visible_count": 456,
+          "over_budget": false,
+          "budget_utilization_percent": 25.3333,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1533,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 456,
+          "visible_count": 46,
+          "over_budget": true,
+          "budget_utilization_percent": 10.2679,
+          "retained_byte_ratio_percent": 10.5023,
+          "retained_bytes": 161,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 456,
+          "visible_count": 456,
+          "over_budget": false,
+          "budget_utilization_percent": 6.3616,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1533,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "lint-rustc-diagnostics",
+      "shape": "typecheck-lint",
+      "byte_length": 581,
+      "line_count": 18,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 155,
+          "visible_count": 155,
+          "over_budget": false,
+          "budget_utilization_percent": 8.6111,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 581,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 155,
+          "visible_count": 155,
+          "over_budget": false,
+          "budget_utilization_percent": 34.5982,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 581,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 155,
+          "visible_count": 155,
+          "over_budget": false,
+          "budget_utilization_percent": 2.1624,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 581,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "lint-cargo-fmt-check",
+      "shape": "typecheck-lint",
+      "byte_length": 291,
+      "line_count": 11,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 90,
+          "visible_count": 90,
+          "over_budget": false,
+          "budget_utilization_percent": 5,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 291,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 90,
+          "visible_count": 90,
+          "over_budget": false,
+          "budget_utilization_percent": 20.0893,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 291,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 90,
+          "visible_count": 90,
+          "over_budget": false,
+          "budget_utilization_percent": 1.2556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 291,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "lint-node-check",
+      "shape": "typecheck-lint",
+      "byte_length": 209,
+      "line_count": 9,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 62,
+          "visible_count": 62,
+          "over_budget": false,
+          "budget_utilization_percent": 3.4444,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 209,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 62,
+          "visible_count": 62,
+          "over_budget": false,
+          "budget_utilization_percent": 13.8393,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 209,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 62,
+          "visible_count": 62,
+          "over_budget": false,
+          "budget_utilization_percent": 0.865,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 209,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "trace-rust-panic",
+      "shape": "stack-trace",
+      "byte_length": 1263,
+      "line_count": 22,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 421,
+          "visible_count": 421,
+          "over_budget": false,
+          "budget_utilization_percent": 23.3889,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1263,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 421,
+          "visible_count": 421,
+          "over_budget": false,
+          "budget_utilization_percent": 93.9732,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1263,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 421,
+          "visible_count": 421,
+          "over_budget": false,
+          "budget_utilization_percent": 5.8733,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 1263,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "trace-rust-panic-full",
+      "shape": "stack-trace",
+      "byte_length": 8313,
+      "line_count": 77,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 3314,
+          "visible_count": 16,
+          "over_budget": true,
+          "budget_utilization_percent": 0.8889,
+          "retained_byte_ratio_percent": 0.5052,
+          "retained_bytes": 42,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 3314,
+          "visible_count": 16,
+          "over_budget": true,
+          "budget_utilization_percent": 3.5714,
+          "retained_byte_ratio_percent": 0.5052,
+          "retained_bytes": 42,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 3314,
+          "visible_count": 3314,
+          "over_budget": false,
+          "budget_utilization_percent": 46.2333,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 8313,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "trace-node-throw",
+      "shape": "stack-trace",
+      "byte_length": 829,
+      "line_count": 17,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 238,
+          "visible_count": 238,
+          "over_budget": false,
+          "budget_utilization_percent": 13.2222,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 829,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 238,
+          "visible_count": 238,
+          "over_budget": false,
+          "budget_utilization_percent": 53.125,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 829,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 238,
+          "visible_count": 238,
+          "over_budget": false,
+          "budget_utilization_percent": 3.3203,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 829,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "trace-node-async",
+      "shape": "stack-trace",
+      "byte_length": 967,
+      "line_count": 19,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 277,
+          "visible_count": 277,
+          "over_budget": false,
+          "budget_utilization_percent": 15.3889,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 967,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 277,
+          "visible_count": 277,
+          "over_budget": false,
+          "budget_utilization_percent": 61.8304,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 967,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 277,
+          "visible_count": 277,
+          "over_budget": false,
+          "budget_utilization_percent": 3.8644,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 967,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "trace-bun-throw",
+      "shape": "stack-trace",
+      "byte_length": 347,
+      "line_count": 9,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 98,
+          "visible_count": 98,
+          "over_budget": false,
+          "budget_utilization_percent": 5.4444,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 347,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 98,
+          "visible_count": 98,
+          "over_budget": false,
+          "budget_utilization_percent": 21.875,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 347,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 98,
+          "visible_count": 98,
+          "over_budget": false,
+          "budget_utilization_percent": 1.3672,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 347,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "trace-python",
+      "shape": "stack-trace",
+      "byte_length": 903,
+      "line_count": 21,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 236,
+          "visible_count": 236,
+          "over_budget": false,
+          "budget_utilization_percent": 13.1111,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 903,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 236,
+          "visible_count": 236,
+          "over_budget": false,
+          "budget_utilization_percent": 52.6786,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 903,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 236,
+          "visible_count": 236,
+          "over_budget": false,
+          "budget_utilization_percent": 3.2924,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 903,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "diff-git-two-commits",
+      "shape": "unified-diff",
+      "byte_length": 33494,
+      "line_count": 906,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8195,
+          "visible_count": 14,
+          "over_budget": true,
+          "budget_utilization_percent": 0.7778,
+          "retained_byte_ratio_percent": 0.1194,
+          "retained_bytes": 40,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8195,
+          "visible_count": 14,
+          "over_budget": true,
+          "budget_utilization_percent": 3.125,
+          "retained_byte_ratio_percent": 0.1194,
+          "retained_bytes": 40,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8195,
+          "visible_count": 14,
+          "over_budget": true,
+          "budget_utilization_percent": 0.1953,
+          "retained_byte_ratio_percent": 0.1194,
+          "retained_bytes": 40,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "diff-git-show",
+      "shape": "unified-diff",
+      "byte_length": 33683,
+      "line_count": 912,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8260,
+          "visible_count": 28,
+          "over_budget": true,
+          "budget_utilization_percent": 1.5556,
+          "retained_byte_ratio_percent": 0.1514,
+          "retained_bytes": 51,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8260,
+          "visible_count": 28,
+          "over_budget": true,
+          "budget_utilization_percent": 6.25,
+          "retained_byte_ratio_percent": 0.1514,
+          "retained_bytes": 51,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8260,
+          "visible_count": 28,
+          "over_budget": true,
+          "budget_utilization_percent": 0.3906,
+          "retained_byte_ratio_percent": 0.1514,
+          "retained_bytes": 51,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "diff-git-log-patch",
+      "shape": "unified-diff",
+      "byte_length": 19394,
+      "line_count": 584,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 5031,
+          "visible_count": 28,
+          "over_budget": true,
+          "budget_utilization_percent": 1.5556,
+          "retained_byte_ratio_percent": 0.263,
+          "retained_bytes": 51,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 5031,
+          "visible_count": 28,
+          "over_budget": true,
+          "budget_utilization_percent": 6.25,
+          "retained_byte_ratio_percent": 0.263,
+          "retained_bytes": 51,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 5031,
+          "visible_count": 5031,
+          "over_budget": false,
+          "budget_utilization_percent": 70.1869,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 19394,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "diff-git-scoped",
+      "shape": "unified-diff",
+      "byte_length": 96738,
+      "line_count": 2720,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 23965,
+          "visible_count": 15,
+          "over_budget": true,
+          "budget_utilization_percent": 0.8333,
+          "retained_byte_ratio_percent": 0.0517,
+          "retained_bytes": 50,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 23965,
+          "visible_count": 15,
+          "over_budget": true,
+          "budget_utilization_percent": 3.3482,
+          "retained_byte_ratio_percent": 0.0517,
+          "retained_bytes": 50,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 23965,
+          "visible_count": 15,
+          "over_budget": true,
+          "budget_utilization_percent": 0.2093,
+          "retained_byte_ratio_percent": 0.0517,
+          "retained_bytes": 50,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "diff-git-format-patch",
+      "shape": "unified-diff",
+      "byte_length": 34248,
+      "line_count": 926,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8414,
+          "visible_count": 39,
+          "over_budget": true,
+          "budget_utilization_percent": 2.1667,
+          "retained_byte_ratio_percent": 0.2102,
+          "retained_bytes": 72,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8414,
+          "visible_count": 39,
+          "over_budget": true,
+          "budget_utilization_percent": 8.7054,
+          "retained_byte_ratio_percent": 0.2102,
+          "retained_bytes": 72,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 8414,
+          "visible_count": 39,
+          "over_budget": true,
+          "budget_utilization_percent": 0.5441,
+          "retained_byte_ratio_percent": 0.2102,
+          "retained_bytes": 72,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "diff-unified-files",
+      "shape": "unified-diff",
+      "byte_length": 387,
+      "line_count": 18,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 146,
+          "visible_count": 146,
+          "over_budget": false,
+          "budget_utilization_percent": 8.1111,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 387,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 146,
+          "visible_count": 146,
+          "over_budget": false,
+          "budget_utilization_percent": 32.5893,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 387,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 146,
+          "visible_count": 146,
+          "over_budget": false,
+          "budget_utilization_percent": 2.0368,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 387,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "json-cargo-metadata-shallow",
+      "shape": "api-json",
+      "byte_length": 3884,
+      "line_count": 1,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1041,
+          "visible_count": 1041,
+          "over_budget": false,
+          "budget_utilization_percent": 57.8333,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 3884,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 1041,
+          "visible_count": 448,
+          "over_budget": true,
+          "budget_utilization_percent": 100,
+          "retained_byte_ratio_percent": 41.6066,
+          "retained_bytes": 1616,
+          "retained_span_count": 1,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1041,
+          "visible_count": 1041,
+          "over_budget": false,
+          "budget_utilization_percent": 14.5229,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 3884,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "json-cargo-metadata-full",
+      "shape": "api-json",
+      "byte_length": 262143,
+      "line_count": 1,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 74559,
+          "visible_count": 1800,
+          "over_budget": true,
+          "budget_utilization_percent": 100,
+          "retained_byte_ratio_percent": 2.3312,
+          "retained_bytes": 6111,
+          "retained_span_count": 1,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 74559,
+          "visible_count": 448,
+          "over_budget": true,
+          "budget_utilization_percent": 100,
+          "retained_byte_ratio_percent": 0.594,
+          "retained_bytes": 1557,
+          "retained_span_count": 1,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 74559,
+          "visible_count": 7168,
+          "over_budget": true,
+          "budget_utilization_percent": 100,
+          "retained_byte_ratio_percent": 9.5826,
+          "retained_bytes": 25120,
+          "retained_span_count": 1,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "json-cargo-build-messages",
+      "shape": "api-json",
+      "byte_length": 5761,
+      "line_count": 7,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1617,
+          "visible_count": 1617,
+          "over_budget": false,
+          "budget_utilization_percent": 89.8333,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 5761,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 1617,
+          "visible_count": 22,
+          "over_budget": true,
+          "budget_utilization_percent": 4.9107,
+          "retained_byte_ratio_percent": 1.4928,
+          "retained_bytes": 86,
+          "retained_span_count": 1,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1617,
+          "visible_count": 1617,
+          "over_budget": false,
+          "budget_utilization_percent": 22.5586,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 5761,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "json-cli-conformance",
+      "shape": "api-json",
+      "byte_length": 402,
+      "line_count": 18,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 109,
+          "visible_count": 109,
+          "over_budget": false,
+          "budget_utilization_percent": 6.0556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 402,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 109,
+          "visible_count": 109,
+          "over_budget": false,
+          "budget_utilization_percent": 24.3304,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 402,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 109,
+          "visible_count": 109,
+          "over_budget": false,
+          "budget_utilization_percent": 1.5206,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 402,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "json-release-protocol",
+      "shape": "api-json",
+      "byte_length": 11326,
+      "line_count": 354,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 2716,
+          "visible_count": 2,
+          "over_budget": true,
+          "budget_utilization_percent": 0.1111,
+          "retained_byte_ratio_percent": 0.0353,
+          "retained_bytes": 4,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 2716,
+          "visible_count": 2,
+          "over_budget": true,
+          "budget_utilization_percent": 0.4464,
+          "retained_byte_ratio_percent": 0.0353,
+          "retained_bytes": 4,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 2716,
+          "visible_count": 2716,
+          "over_budget": false,
+          "budget_utilization_percent": 37.8906,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 11326,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "json-distill-status",
+      "shape": "api-json",
+      "byte_length": 321,
+      "line_count": 1,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 90,
+          "visible_count": 90,
+          "over_budget": false,
+          "budget_utilization_percent": 5,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 321,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 90,
+          "visible_count": 90,
+          "over_budget": false,
+          "budget_utilization_percent": 20.0893,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 321,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 90,
+          "visible_count": 90,
+          "over_budget": false,
+          "budget_utilization_percent": 1.2556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 321,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "source-artifact-rs",
+      "shape": "source-file",
+      "byte_length": 13000,
+      "line_count": 401,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 2799,
+          "visible_count": 7,
+          "over_budget": true,
+          "budget_utilization_percent": 0.3889,
+          "retained_byte_ratio_percent": 0.1846,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 2799,
+          "visible_count": 7,
+          "over_budget": true,
+          "budget_utilization_percent": 1.5625,
+          "retained_byte_ratio_percent": 0.1846,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 2799,
+          "visible_count": 2799,
+          "over_budget": false,
+          "budget_utilization_percent": 39.0485,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 13000,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "source-projection-rs",
+      "shape": "source-file",
+      "byte_length": 20937,
+      "line_count": 688,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 4825,
+          "visible_count": 6,
+          "over_budget": true,
+          "budget_utilization_percent": 0.3333,
+          "retained_byte_ratio_percent": 0.1146,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 4825,
+          "visible_count": 6,
+          "over_budget": true,
+          "budget_utilization_percent": 1.3393,
+          "retained_byte_ratio_percent": 0.1146,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 4825,
+          "visible_count": 4825,
+          "over_budget": false,
+          "budget_utilization_percent": 67.3131,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 20937,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "source-mcp-rs",
+      "shape": "source-file",
+      "byte_length": 27222,
+      "line_count": 734,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 5970,
+          "visible_count": 6,
+          "over_budget": true,
+          "budget_utilization_percent": 0.3333,
+          "retained_byte_ratio_percent": 0.0882,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 5970,
+          "visible_count": 6,
+          "over_budget": true,
+          "budget_utilization_percent": 1.3393,
+          "retained_byte_ratio_percent": 0.0882,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 5970,
+          "visible_count": 5970,
+          "over_budget": false,
+          "budget_utilization_percent": 83.2868,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 27222,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "source-cli-rs",
+      "shape": "source-file",
+      "byte_length": 19248,
+      "line_count": 593,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 4473,
+          "visible_count": 6,
+          "over_budget": true,
+          "budget_utilization_percent": 0.3333,
+          "retained_byte_ratio_percent": 0.1247,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 4473,
+          "visible_count": 6,
+          "over_budget": true,
+          "budget_utilization_percent": 1.3393,
+          "retained_byte_ratio_percent": 0.1247,
+          "retained_bytes": 24,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 4473,
+          "visible_count": 4473,
+          "over_budget": false,
+          "budget_utilization_percent": 62.4023,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 19248,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "source-corpus-lib-mjs",
+      "shape": "source-file",
+      "byte_length": 18949,
+      "line_count": 635,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 4649,
+          "visible_count": 12,
+          "over_budget": true,
+          "budget_utilization_percent": 0.6667,
+          "retained_byte_ratio_percent": 0.2322,
+          "retained_bytes": 44,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 4649,
+          "visible_count": 12,
+          "over_budget": true,
+          "budget_utilization_percent": 2.6786,
+          "retained_byte_ratio_percent": 0.2322,
+          "retained_bytes": 44,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 4649,
+          "visible_count": 4649,
+          "over_budget": false,
+          "budget_utilization_percent": 64.8577,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 18949,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "source-check-native-sh",
+      "shape": "source-file",
+      "byte_length": 788,
+      "line_count": 28,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 237,
+          "visible_count": 237,
+          "over_budget": false,
+          "budget_utilization_percent": 13.1667,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 788,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 237,
+          "visible_count": 237,
+          "over_budget": false,
+          "budget_utilization_percent": 52.9018,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 788,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 237,
+          "visible_count": 237,
+          "over_budget": false,
+          "budget_utilization_percent": 3.3064,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 788,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "log-git-log-stat",
+      "shape": "terminal-log",
+      "byte_length": 21238,
+      "line_count": 514,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 5821,
+          "visible_count": 44,
+          "over_budget": true,
+          "budget_utilization_percent": 2.4444,
+          "retained_byte_ratio_percent": 0.485,
+          "retained_bytes": 103,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 5821,
+          "visible_count": 44,
+          "over_budget": true,
+          "budget_utilization_percent": 9.8214,
+          "retained_byte_ratio_percent": 0.485,
+          "retained_bytes": 103,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 5821,
+          "visible_count": 5821,
+          "over_budget": false,
+          "budget_utilization_percent": 81.2081,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 21238,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "log-git-log-oneline",
+      "shape": "terminal-log",
+      "byte_length": 5889,
+      "line_count": 100,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1492,
+          "visible_count": 1492,
+          "over_budget": false,
+          "budget_utilization_percent": 82.8889,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 5889,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 1492,
+          "visible_count": 29,
+          "over_budget": true,
+          "budget_utilization_percent": 6.4732,
+          "retained_byte_ratio_percent": 2.2075,
+          "retained_bytes": 130,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1492,
+          "visible_count": 1492,
+          "over_budget": false,
+          "budget_utilization_percent": 20.8147,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 5889,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "log-ls-recursive",
+      "shape": "terminal-log",
+      "byte_length": 3661,
+      "line_count": 102,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1799,
+          "visible_count": 1799,
+          "over_budget": false,
+          "budget_utilization_percent": 99.9444,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 3661,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 1799,
+          "visible_count": 27,
+          "over_budget": true,
+          "budget_utilization_percent": 6.0268,
+          "retained_byte_ratio_percent": 1.5023,
+          "retained_bytes": 55,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1799,
+          "visible_count": 1799,
+          "over_budget": false,
+          "budget_utilization_percent": 25.0977,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 3661,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "log-find-sources",
+      "shape": "terminal-log",
+      "byte_length": 896,
+      "line_count": 43,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 253,
+          "visible_count": 253,
+          "over_budget": false,
+          "budget_utilization_percent": 14.0556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 896,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 253,
+          "visible_count": 253,
+          "over_budget": false,
+          "budget_utilization_percent": 56.4732,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 896,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 253,
+          "visible_count": 253,
+          "over_budget": false,
+          "budget_utilization_percent": 3.5296,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 896,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "log-wc-sources",
+      "shape": "terminal-log",
+      "byte_length": 117,
+      "line_count": 6,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 46,
+          "visible_count": 46,
+          "over_budget": false,
+          "budget_utilization_percent": 2.5556,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 117,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 46,
+          "visible_count": 46,
+          "over_budget": false,
+          "budget_utilization_percent": 10.2679,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 117,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 46,
+          "visible_count": 46,
+          "over_budget": false,
+          "budget_utilization_percent": 0.6417,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 117,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    },
+    {
+      "id": "log-cargo-tree",
+      "shape": "terminal-log",
+      "byte_length": 2752,
+      "line_count": 75,
+      "results": [
+        {
+          "budget": "codex-hook-default",
+          "payload_limit": 1800,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1008,
+          "visible_count": 1008,
+          "over_budget": false,
+          "budget_utilization_percent": 56,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 2752,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-512-envelope-64",
+          "payload_limit": 448,
+          "exit_code": 0,
+          "fidelity": "extractive",
+          "original_count": 1008,
+          "visible_count": 30,
+          "over_budget": true,
+          "budget_utilization_percent": 6.6964,
+          "retained_byte_ratio_percent": 2.7253,
+          "retained_bytes": 75,
+          "retained_span_count": 2,
+          "omitted_span_count": 1
+        },
+        {
+          "budget": "tokens-8192-envelope-1024",
+          "payload_limit": 7168,
+          "exit_code": 0,
+          "fidelity": "exact",
+          "original_count": 1008,
+          "visible_count": 1008,
+          "over_budget": false,
+          "budget_utilization_percent": 14.0625,
+          "retained_byte_ratio_percent": 100,
+          "retained_bytes": 2752,
+          "retained_span_count": 1,
+          "omitted_span_count": 0
+        },
+        {
+          "budget": "tokens-450-envelope-450",
+          "payload_limit": 0,
+          "exit_code": 3,
+          "failure_code": "budget_unsatisfiable",
+          "failure_message": "nonempty content cannot satisfy a zero payload budget"
+        }
+      ]
+    }
+  ]
+}
