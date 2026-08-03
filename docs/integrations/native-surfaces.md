@@ -16,6 +16,15 @@ selector, so a `distill.context/v2` request that names no selector behaves
 exactly as before; one that names a selector is refused with
 `schema_unsupported`.
 
+Both product surfaces send `auto/v1` and declare no content class: a hook or an
+MCP client cannot know what a command was about to print, so the engine derives
+the policy from the shape of the observation it captured. The MCP tools publish
+no preservation argument at all, and the CLI keeps `--profile` for the operator,
+defaulting to the same `auto/v1`. Every retired profile identifier still
+resolves, per the table in ADR-001. The versioned matrices pin the default, the
+shape policies, the retired mapping, and the receipt fields that record which
+policy ran.
+
 Both setup targets require an explicit absolute configuration path, support
 `--dry-run`, preserve an exact first-install backup, are idempotent, and restore
 that backup with `--restore`. Codex setup rejects `--root`; Claude setup rejects

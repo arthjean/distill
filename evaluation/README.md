@@ -139,7 +139,10 @@ clone. The `json-distill-status` fixture requires `target/release/distill`.
 
 `baseline/projection-baseline-v1.json` records what the shipped projection
 actually does, measured through `distill project --json` with
-`plain-text/v1`, the profile both product surfaces pin. It covers every real
+`plain-text/v1`, the profile both product surfaces pinned when the baseline was
+frozen. EP-004 moved the executed default to `auto/v1`, which derives the policy
+from the shape of the observation; `plain-text/v1` still resolves, to the
+line-structured policy, so the recorded run stays reproducible. It covers every real
 corpus fixture at four budgets: the executed Codex hook default (2250 total,
 450 reserved), the corpus token profile (512/64), a large host budget
 (8192/1024), and the zero-payload boundary (450/450). Each result records

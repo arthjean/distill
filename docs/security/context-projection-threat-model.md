@@ -201,6 +201,7 @@ as a complete projection.
 |---|---|---|
 | Secret or PII exposure | Source, path, argv, receipt, log, or trace leaks sensitive data | Private store permissions; no Request metadata; bounded receipt and configuration fields; no raw bodies in logs; redact configured secret values; active mode exposes only the verified projection |
 | Prompt injection | Stored bytes claim to be instructions or configuration | Content is inert data; reducers use fixed policies; no prompt execution, model call, template evaluation, or policy mutation from source |
+| Policy steering | Crafted output makes the projector choose a weaker policy or fake an annotation | Classification selects among fixed shape policies only and never disables preservation; source bytes cannot introduce a rule; the collapsed-run annotation is engine-generated text that the receipt states, and stored bytes that imitate it stay ordinary retained content |
 | Path traversal | Relative path escapes an allowed root | Descriptor-relative open, reject absolute and parent components, verify opened identity; fail `unsafe_root` |
 | Symlink race | Attacker swaps a checked path before read or write | No check-then-open authorization; no-follow descriptor operations; pre/post identity checks; abort acquisition |
 | Option injection | Filename or content becomes a utility flag | Direct system APIs where possible; fixed argv; option terminator for utilities; no concatenated command |

@@ -289,6 +289,49 @@ An implementation may deduplicate storage, but deduplication cannot shorten the
 retention promised by an existing reference or make identifiers predictable from
 sensitive source content.
 
+### PreservationProfileId
+
+```text
+PreservationProfileId = auto/v1 | ShapeProfileId | RetiredProfileId
+
+ShapeProfileId =
+  | build-output/v1
+  | test-output/v1
+  | typecheck-lint/v1
+  | stack-trace/v1
+  | unified-diff/v1
+  | api-json/v1
+  | source-file/v1
+  | terminal-log/v1
+```
+
+`auto/v1` is the profile both product surfaces send, and the engine derives the
+policy from the observation instead of accepting a declared content class. A
+caller may still name a shape directly; naming one only pins what detection
+would otherwise decide. An identifier outside the set fails with
+`invalid_request`.
+
+Detection reads a bounded prefix of the source and scores it against the
+structural markers of the developer tool-output families: JSON openings, hunk
+headers, stack frames, test outcomes, diagnostic grammar, build progress verbs,
+and program text. It is deterministic for the same bytes, it never reads the
+whole source, and anything it cannot place becomes `terminal-log/v1`, the
+line-structured policy. Detection failure is not a failure mode: the fallback is
+unconditional.
+
+The retired identifiers of the preceding release stay accepted and resolve to
+the shape policy each of them approximated:
+
+| Retired identifier | Applied policy |
+|---|---|
+| `plain-text/v1`, `unicode/v1`, `binary/v1`, `untrusted-text/v1`, `none/v1` | `terminal-log/v1` |
+| `build-log/v1` | `build-output/v1` |
+| `test-log/v1` | `test-output/v1` |
+| `diagnostic/v1` | `typecheck-lint/v1` |
+| `diff/v1` | `unified-diff/v1` |
+| `json/v1` | `api-json/v1` |
+| `source-code/v1` | `source-file/v1` |
+
 ### Fidelity
 
 ```text
@@ -325,10 +368,31 @@ Receipt {
 }
 ```
 
+```text
+PreservationResult {
+  profile: PreservationProfileId
+  applied_profile: ShapeProfileId
+  mandatory_fact_ids: List<OpaqueId>
+  aggregates: List<AggregateSpan>
+}
+
+AggregateSpan {
+  span: ByteSpan
+  lines: PositiveInteger
+}
+```
+
 Spans are half-open byte offsets into the committed source. They are sorted,
 non-overlapping within each list, and cover every source byte exactly once when
-the policy returns `extractive`. `PreservationResult` records the applied profile
-and identifiers of all mandatory facts. It does not copy sensitive fact bodies.
+the policy returns `extractive`. `PreservationResult` records the profile the
+request named, the shape policy that actually ran, and identifiers of all
+mandatory facts. It does not copy sensitive fact bodies.
+
+The receipt schema is `distill.receipt/v2` and the policy version is
+`distill.preservation/v2`. Lineage recorded under `distill.receipt/v1` and
+`distill.preservation/v1` stays readable and verifiable; it is never rewritten,
+and its `applied_profile` is empty because the release that wrote it had no
+shape policies.
 
 `AcquisitionReceipt` records source-variant metadata needed to distinguish
 complete, partial, timed-out, signaled, or failed acquisition. Process acquisition
@@ -401,6 +465,40 @@ When a policy cannot determine whether a mandatory fact survives, it fails
 closed with `budget_unsatisfiable` or `invariant_breach`; it does not substitute
 a generative summary. P1 recall is measured and reported but does not override a
 P0 or budget guarantee.
+
+The rules are structural, never literal. A policy recognizes the grammar its
+tool family emits: a diagnostic severity and its location line, a test outcome
+and its summary, an exception header and the frames beneath it, a hunk header
+and the lines it changes, the outer keys of a document, the declarations of a
+source file. No rule may name a string drawn from a fixture, because a policy
+that recognizes its own test data proves nothing about the inputs it will meet.
+
+Mandatory is reserved for facts whose loss would make the projection a lie: an
+error diagnostic, a failing test, the exception a trace reports. Structure that
+merely orders an observation is preferred rather than mandatory, so a large
+observation reduces instead of failing closed.
+
+### Aggregation
+
+A policy for a shape whose redundancy is mechanical may collapse runs of lines
+that differ only in their variable literals, keeping the first occurrence and
+replacing the rest with one annotation line stating how many lines it stands
+for. This is the only visible content that is not a verbatim source slice, and
+the receipt states every occurrence of it in `preservation.aggregates`.
+
+- Only lines the shape policy ranks as ordinary are ever collapsed: a mandatory
+  or preferred line is a fact, not redundancy.
+- A template that occurs once, or too few times to pay for its annotation, is
+  never replaced by a count.
+- The collapsed run stays inside `omitted_spans`, so retained and omitted spans
+  still partition the source exactly and still reference real source ranges.
+- Collapsing frees budget for distinct content. When no distinct content is left
+  to buy, the budget is spent on the collapsed lines themselves rather than left
+  unused.
+- Bounded retrieval never aggregates: a caller who selects a region receives
+  that region verbatim.
+- `unified-diff/v1`, `api-json/v1`, and `source-file/v1` never aggregate. Their
+  repetition is structure, not redundancy.
 
 ## Commit and release ordering
 

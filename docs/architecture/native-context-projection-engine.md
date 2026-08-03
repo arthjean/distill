@@ -87,11 +87,33 @@ accepts at most 10 MiB per observation and eight concurrent writers.
 ## Projection policy
 
 `src/projection.rs` provides deterministic extractive
-profiles. It preserves mandatory spans, selects optional spans within the
+profiles. It preserves mandatory spans, selects preferred spans within the
 remaining budget, and emits a receipt that maps visible and omitted spans to the
-source digest. Closed v1 profile identifiers and line rules are one internal
-policy table. Over-budget text is scanned once for mandatory and optional
+source digest. Over-budget text is scanned once for mandatory and preferred
 candidates, then planned as a set of spans carrying their own counts.
+
+The policy is derived from the observation rather than declared by the caller.
+`src/projection/shape.rs` classifies a bounded prefix into one of the eight
+shapes of ADR-001 and returns the line policy of that shape; `ProjectionSpec`
+resolves `auto/v1` once, before analysis, and records the applied policy in the
+receipt. Adapters keep passing a profile identifier and no host type enters the
+policy, so `Engine::handle` remains the only policy seam. Because a shape maps
+to a fixed line policy, the table stays `&'static` and dispatch is a match, not
+a dynamic registry.
+
+Classification reads at most 64 KiB and 512 lines: tool output announces its
+family in its first screens, so a 10 MiB observation costs the same decision as
+a small one. Every rule is structural, so a policy cannot pass a gate by
+recognizing its own test data.
+
+`src/projection/aggregate.rs` groups the redundant lines of the shapes whose
+repetition is mechanical. Value-shaped tokens are masked, lines are bucketed by
+token count and leading token, and a line joins a template when at least half of
+its positions agree: Drain as a design reference, implemented in-crate with a
+bucket cap, a global template cap, and a line cap, so grouping cost stays bounded
+instead of growing with input size. Runs of at least three consecutive ordinary
+lines that repeat a known template become collapsed runs; everything else stays
+verbatim.
 
 Planning is incremental. A plan's count is the sum of its span counts, which is
 exact because every span boundary is anchored to an additive offset: the start
@@ -109,6 +131,15 @@ payload keeps both the head and the tail of the observation, until no further
 line group fits. A frontier that fails is retired, because the remaining budget
 never grows back. Selection that finds no candidate at all still falls back to
 the longest fitting prefix, cut on a UTF-8 boundary.
+
+Expansion runs in two passes. The first steps over every collapsed run and keeps
+its annotation, so the budget buys distinct content instead of redundancy. The
+second runs only when the first ran out of source rather than out of budget, and
+grows contiguously through the collapsed runs: unspent budget helps nobody, but
+budget spent on redundancy is what aggregation exists to prevent. A plan carries
+the count of its annotations alongside the count of its spans, so the payload
+budget covers the text the projection synthesizes as well as the source it
+retains, and the single verification tokenization still has to agree.
 
 The planner enforces the persisted receipt span limit before it returns a
 projection, including both retained and omitted partitions. At the ceiling a
