@@ -45,7 +45,7 @@ Budget options:
   --budget N          Total visible limit (required)
   --reserve N         Adapter envelope allowance (default: 0)
   --unit bytes|tokens Count unit (default: bytes)
-  --profile NAME      Central preservation profile (default: plain-text/v1)
+  --profile NAME      Central preservation profile (default: auto/v1, shape-derived)
   --ttl SECONDS       Artifact retention from capture time
 
 Retrieval options (artifact slice, artifact search):

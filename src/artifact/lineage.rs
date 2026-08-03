@@ -5,8 +5,8 @@ use super::{
 use crate::contract::MAX_RECEIPT_SPANS;
 use crate::types::{
     ArtifactRef, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity,
-    MAX_ARTIFACT_LINEAGE_BYTES, POLICY_VERSION, PROJECTION_VERSION, RECEIPT_SCHEMA_VERSION,
-    Receipt,
+    MAX_ARTIFACT_LINEAGE_BYTES, POLICY_VERSION, POLICY_VERSION_V1, PROJECTION_VERSION,
+    RECEIPT_SCHEMA_VERSION, RECEIPT_SCHEMA_VERSION_V1, Receipt,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
@@ -196,15 +196,24 @@ pub(super) fn validate_receipt(
     reference: &ArtifactRef,
     code: FailureCode,
 ) -> Result<(), Failure> {
-    if receipt.schema_version != RECEIPT_SCHEMA_VERSION
+    // Lineage recorded before the shape policies stays verifiable: only the
+    // schema and policy identifiers of that release are accepted alongside the
+    // current ones, and nothing is rewritten.
+    let known_schema = [RECEIPT_SCHEMA_VERSION, RECEIPT_SCHEMA_VERSION_V1];
+    let known_policy = [POLICY_VERSION, POLICY_VERSION_V1];
+    if !known_schema.contains(&receipt.schema_version.as_str())
         || receipt.artifact != *reference
         || receipt.source_sha256 != reference.source_sha256
         || receipt.projection_version != PROJECTION_VERSION
-        || receipt.policy_version != POLICY_VERSION
+        || !known_policy.contains(&receipt.policy_version.as_str())
         || receipt.request_id.is_empty()
         || receipt.request_id.len() > crate::contract::MAX_IDENTIFIER_BYTES
         || receipt.preservation.profile.is_empty()
         || receipt.preservation.profile.len() > crate::contract::MAX_IDENTIFIER_BYTES
+        || receipt.preservation.applied_profile.len() > crate::contract::MAX_IDENTIFIER_BYTES
+        || (receipt.schema_version == RECEIPT_SCHEMA_VERSION
+            && receipt.preservation.applied_profile.is_empty())
+        || receipt.preservation.aggregates.len() > MAX_RECEIPT_SPANS
         || receipt.preservation.mandatory_fact_ids.len() > 256
         || receipt
             .preservation
@@ -251,6 +260,15 @@ fn receipt_spans_are_consistent(receipt: &Receipt, source_bytes: u64) -> bool {
         true
     };
     if !sorted(&receipt.retained_spans) || !sorted(&receipt.omitted_spans) {
+        return false;
+    }
+    // A collapsed run is metadata beside the partition, but it still points at
+    // real source, so a receipt that claims otherwise is corrupt.
+    if receipt.preservation.aggregates.iter().any(|aggregate| {
+        aggregate.lines == 0
+            || aggregate.span.end <= aggregate.span.start
+            || aggregate.span.end > source_bytes
+    }) {
         return false;
     }
     let mut partition = receipt

@@ -13,17 +13,30 @@ fn bytes(limit: u64) -> Budget {
     }
 }
 
-fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Projection, usize) {
-    let policy = validated_policy(profile, budget).expect("baseline policy");
+/// What the pre-expansion planner produced, kept only to measure against it.
+struct Baseline {
+    visible_count: u64,
+    mandatory_fact_ids: Vec<String>,
+}
+
+/// Re-plays the planner as it stood before incremental counting: one full
+/// render and one full tokenization per accepted candidate, no expansion, no
+/// aggregation.
+fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Baseline, usize) {
+    let spec = ProjectionSpec::new(profile, budget)
+        .expect("baseline spec")
+        .without_aggregation();
     let text = std::str::from_utf8(source).expect("baseline text");
+    let spec = spec.resolved(Some(text));
     let original_count = count(text, budget).expect("baseline original count");
     let payload_limit = budget.total_visible_limit - budget.reserved_envelope;
     assert!(original_count > payload_limit);
 
-    let analysis = analyze(source, policy).expect("baseline analysis");
+    let empty = Aggregation::default();
+    let analysis = analyze(source, text, spec).expect("baseline analysis");
     let mandatory = analysis.mandatory;
     let mut evaluations = 1;
-    let mandatory_visible = render(source, &mandatory).expect("baseline mandatory render");
+    let mandatory_visible = render(source, &mandatory, &empty).expect("baseline mandatory render");
     assert!(count(&mandatory_visible, budget).expect("baseline mandatory count") <= payload_limit);
 
     let mut retained = mandatory.clone();
@@ -33,7 +46,7 @@ fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Projectio
         normalize_spans(&mut proposed);
         evaluations += 1;
         if count(
-            &render(source, &proposed).expect("baseline proposal render"),
+            &render(source, &proposed, &empty).expect("baseline proposal render"),
             budget,
         )
         .expect("baseline proposal count")
@@ -54,19 +67,14 @@ fn baseline_project(source: &[u8], budget: &Budget, profile: &str) -> (Projectio
     }
     normalize_spans(&mut retained);
     evaluations += 1;
-    let visible = render(source, &retained).expect("baseline final render");
+    let visible = render(source, &retained, &empty).expect("baseline final render");
     let visible_count = count(&visible, budget).expect("baseline final count");
     (
-        Projection {
-            visible,
-            original_count,
+        Baseline {
             visible_count,
-            fidelity: Fidelity::Extractive,
-            retained_spans: retained.clone(),
-            omitted_spans: complement(source.len(), &retained),
             mandatory_fact_ids: mandatory
                 .iter()
-                .map(|span| fact_id(policy.id, *span))
+                .map(|span| fact_id(spec.applied_profile(), *span))
                 .collect(),
         },
         evaluations,
@@ -97,76 +105,73 @@ fn exact_text_and_cl100k_accounting_are_exact() {
     assert_eq!(token.visible, "hello world");
 }
 
+/// US-013: every shape policy keeps the fragment that carries the answer of
+/// that shape, under a budget far too small to keep the observation. None of
+/// these markers is a literal drawn from a fixture: they are the grammar the
+/// tool families emit.
 #[test]
-fn every_v1_reducer_preserves_mandatory_and_optional_facts() {
+fn every_shape_policy_preserves_the_fragment_that_carries_its_answer() {
     let cases = [
-        ("build-log/v1", "ERROR E1: critical", "warning W1: useful"),
         (
-            "test-log/v1",
-            "FAIL session boundary",
-            "Tests: 4 passed, 1 failed",
+            "build-output/v1",
+            "error[E0308]: mismatched types",
+            "warning: unused variable `budget`",
         ),
         (
-            "diff/v1",
-            "+ enforcePrivateMode(root, 0o700);",
-            "@@ -1,2 +1,3 @@",
+            "typecheck-lint/v1",
+            "src/main.rs:7:22: error[E0425]: cannot find function `missing_helper`",
+            "warning: this expression creates a reference",
         ),
         (
-            "diagnostic/v1",
-            "src/main.rs:1:2 error[E1]: moved",
-            "src/lib.rs:2:3 note: moved here",
+            "test-output/v1",
+            "test budget::spends_its_payload ... FAILED",
+            "test result: FAILED. 3 passed; 1 failed",
         ),
         (
             "stack-trace/v1",
-            "ArtifactIntegrityError: corrupt",
-            "at verifyArtifact (src/store.ts:1:2)",
+            "TypeError: budget must be a number, received string",
+            "at loadBudget (/home/dev/work/js/throwing.js:3:15)",
         ),
         (
-            "source-code/v1",
-            "if (!committed) return \"commit-required\";",
-            "export function verify() {",
+            "unified-diff/v1",
+            "@@ -1,2 +1,3 @@",
+            "+    enforce_private_mode(root, 0o700);",
         ),
         (
-            "json/v1",
-            "\"failure_code\": \"STORE_CORRUPT\"",
-            "\"run_id\": \"run-1\"",
+            "api-json/v1",
+            "\"failure_code\": \"store_corrupt\",",
+            "\"run_id\": \"run-1\",",
         ),
         (
-            "unicode/v1",
-            "エラー: 保存に失敗",
-            "Résumé: Αθήνα, مرحبا, 🧪",
-        ),
-        (
-            "untrusted-text/v1",
-            "ACTUAL_RESULT_1: checksum failed",
-            "SOURCE_LABEL_1: untrusted",
+            "source-file/v1",
+            "pub fn verify(receipt: &Receipt) -> bool {",
+            "use crate::artifact::Receipt;",
         ),
     ];
-    for (profile, mandatory, optional) in cases {
+    for (profile, answer, context) in cases {
         let source = format!(
-            "header\n{}\n{}\n{}\ntail\n",
-            "noise\n".repeat(80),
-            optional,
-            mandatory
+            "header\n{}{context}\n{answer}\ntail\n",
+            "ordinary output line\n".repeat(80),
         );
-        let outcome = project(source.as_bytes(), &bytes(180), profile).expect(profile);
+        let outcome = project(source.as_bytes(), &bytes(220), profile).expect(profile);
         assert!(
-            outcome.visible.contains(mandatory),
-            "{profile} omitted mandatory content"
+            outcome.visible.contains(answer),
+            "{profile} omitted the answer-bearing line"
         );
         assert!(
-            outcome.visible.contains(optional),
-            "{profile} omitted optional content"
+            outcome.visible.contains(context),
+            "{profile} omitted its supporting line"
         );
-        assert!(outcome.visible_count <= 180);
+        assert!(outcome.visible_count <= 220);
         assert_eq!(outcome.fidelity, Fidelity::Extractive);
+        assert_eq!(outcome.applied_profile, profile);
     }
 }
 
 #[test]
 fn impossible_mandatory_content_fails_closed() {
-    let source = b"noise\nERROR E123: mandatory compiler diagnostic\nnoise\n";
-    let failure = project(source, &bytes(4), "build-log/v1").expect_err("unsatisfiable");
+    let source = b"noise\nerror[E0123]: mandatory compiler diagnostic\nnoise\n";
+    let failure = project(source, &bytes(4), "build-output/v1").expect_err("unsatisfiable");
     assert_eq!(failure.code, FailureCode::BudgetUnsatisfiable);
 }
 
@@ -259,9 +264,9 @@ fn unknown_profiles_and_tokenizers_are_distinct() {
 #[test]
 fn spans_cover_source_once_and_output_is_deterministic() {
     let source = b"head\nnoise\nERROR E1: critical\nnoise\nwarning W1: useful\nnoise\ntail\n";
-    let first = project(source, &bytes(50), "build-log/v1").expect("projection");
+    let first = project(source, &bytes(50), "build-output/v1").expect("projection");
     for _ in 0..100 {
-        let repeated = project(source, &bytes(50), "build-log/v1").expect("repeat");
+        let repeated = project(source, &bytes(50), "build-output/v1").expect("repeat");
         assert_eq!(repeated.visible, first.visible);
         assert_eq!(repeated.retained_spans, first.retained_spans);
         assert_eq!(repeated.omitted_spans, first.omitted_spans);
@@ -308,9 +313,9 @@ fn newline_dense_input_has_bounded_reducer_work_and_receipt_spans() {
     assert!(outcome.visible_count <= 128);
     assert!(outcome.retained_spans.len() <= 2);
 
-    let mandatory = "ERROR E1\n".repeat(MAX_REDUCER_SPANS + 1);
+    let mandatory = "error: E1\n".repeat(MAX_REDUCER_SPANS + 1);
     assert_eq!(
-        project(mandatory.as_bytes(), &bytes(64), "build-log/v1")
+        project(mandatory.as_bytes(), &bytes(64), "build-output/v1")
             .expect_err("mandatory span cap")
             .code,
         FailureCode::ResourceExhausted
@@ -322,7 +327,7 @@ fn optional_candidates_leave_room_for_boundary_spans() {
     let mut source = String::from("first boundary\nordinary separator\n");
     let mut selected_bytes = "first boundary\n".len() + "last boundary\n".len();
     for index in 0..MAX_REDUCER_SPANS {
-        let candidate = format!("warning W{index:03}\n");
+        let candidate = format!("warning: W{index:03}\n");
         selected_bytes += candidate.len();
         source.push_str(&candidate);
         source.push_str("ordinary separator\n");
@@ -332,7 +337,7 @@ fn optional_candidates_leave_room_for_boundary_spans() {
     let outcome = project(
         source.as_bytes(),
         &bytes(selected_bytes as u64),
-        "build-log/v1",
+        "build-output/v1",
     )
     .expect("bounded optional projection");
 
@@ -343,7 +348,12 @@ fn optional_candidates_leave_room_for_boundary_spans() {
 
 #[test]
 fn helpers_reject_invalid_spans_and_normalize_overlap() {
-    let failure = render(b"abc", &[ByteSpan { start: 1, end: 9 }]).expect_err("out-of-range span");
+    let failure = render(
+        b"abc",
+        &[ByteSpan { start: 1, end: 9 }],
+        &Aggregation::default(),
+    )
+    .expect_err("out-of-range span");
     assert_eq!(failure.code, FailureCode::InvariantBreach);
 
     let mut spans = vec![
@@ -360,9 +370,9 @@ fn helpers_reject_invalid_spans_and_normalize_overlap() {
 
 #[test]
 fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
-    let mut source = String::from("ERROR E1: mandatory fact\n");
+    let mut source = String::from("error[E1]: mandatory fact\n");
     for index in 0..MAX_REDUCER_SPANS {
-        source.push_str(&format!("warning W{index:03}: optional fact\n"));
+        source.push_str(&format!("warning: W{index:03} optional fact\n"));
         source.push_str("ordinary build output without policy facts\n");
     }
     while source.len() < 1024 * 1024 {
@@ -377,13 +387,13 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
     };
 
     let (baseline, baseline_evaluations) =
-        baseline_project(source.as_bytes(), &budget, "build-log/v1");
+        baseline_project(source.as_bytes(), &budget, "build-output/v1");
     let mut metrics = PlanningMetrics::default();
-    let planned = project_with_metrics(source.as_bytes(), &budget, "build-log/v1", &mut metrics)
+    let planned = project_with_metrics(source.as_bytes(), &budget, "build-output/v1", &mut metrics)
         .expect("planned projection");
     assert_eq!(planned.mandatory_fact_ids, baseline.mandatory_fact_ids);
-    assert!(planned.visible.contains("ERROR E1: mandatory fact"));
-    assert!(planned.visible.contains("warning W000: optional fact"));
+    assert!(planned.visible.contains("error[E1]: mandatory fact"));
+    assert!(planned.visible.contains("warning: W000 optional fact"));
 
     // The count carried through planning is the exact count of what is rendered.
     assert_eq!(
@@ -413,14 +423,14 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
         black_box(baseline_project(
             black_box(source.as_bytes()),
             black_box(&budget),
-            "build-log/v1",
+            "build-output/v1",
         ));
         let mut warmup_metrics = PlanningMetrics::default();
         black_box(
             project_with_metrics(
                 black_box(source.as_bytes()),
                 black_box(&budget),
-                "build-log/v1",
+                "build-output/v1",
                 &mut warmup_metrics,
             )
             .expect("planned warm-up"),
@@ -432,7 +442,7 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
             black_box(baseline_project(
                 black_box(source.as_bytes()),
                 black_box(&budget),
-                "build-log/v1",
+                "build-output/v1",
             ));
             started.elapsed()
         })
@@ -445,7 +455,7 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
                 project_with_metrics(
                     black_box(source.as_bytes()),
                     black_box(&budget),
-                    "build-log/v1",
+                    "build-output/v1",
                     &mut run_metrics,
                 )
                 .expect("measured planned projection"),
@@ -624,7 +634,7 @@ fn expansion_grows_line_groups_around_retained_content() {
     for index in 0..400 {
         source.push_str(&format!("filler line {index:03}\n"));
         if index == 200 {
-            source.push_str("ERROR E1: mandatory fact\n\n\n");
+            source.push_str("error[E1]: mandatory fact\n\n\n");
         }
     }
     source.push_str("last line\n");
@@ -634,9 +644,10 @@ fn expansion_grows_line_groups_around_retained_content() {
         reserved_envelope: 45,
         token_profile: Some(CL100K_PROFILE.to_owned()),
     };
-    let outcome = project(source.as_bytes(), &budget, "build-log/v1").expect("expanded projection");
+    let outcome =
+        project(source.as_bytes(), &budget, "build-output/v1").expect("expanded projection");
 
-    assert!(outcome.visible.contains("ERROR E1: mandatory fact"));
+    assert!(outcome.visible.contains("error[E1]: mandatory fact"));
     assert!(outcome.visible.starts_with("first line\n"));
     assert!(outcome.visible.ends_with("last line\n"));
     assert!(
@@ -656,7 +667,7 @@ fn expansion_grows_line_groups_around_retained_content() {
     }
 
     for _ in 0..100 {
-        let repeated = project(source.as_bytes(), &budget, "build-log/v1").expect("repeat");
+        let repeated = project(source.as_bytes(), &budget, "build-output/v1").expect("repeat");
         assert_eq!(repeated.visible, outcome.visible);
         assert_eq!(repeated.retained_spans, outcome.retained_spans);
         assert_eq!(repeated.omitted_spans, outcome.omitted_spans);
@@ -698,12 +709,12 @@ fn a_fragmented_selection_holds_the_receipt_span_ceiling() {
         }
         source.push_str(&format!("SELECT_ME block {block:02}\n"));
         for index in 0..32 {
-            source.push_str(&format!("warning W{block:02}{index:02}: optional fact\n"));
+            source.push_str(&format!("warning: W{block:02}{index:02} optional fact\n"));
             source.push_str("ordinary build output without policy facts\n");
         }
     }
 
-    let spec = ProjectionSpec::new("build-log/v1", &bytes(8_192)).expect("selection spec");
+    let spec = ProjectionSpec::new("build-output/v1", &bytes(8_192)).expect("selection spec");
     let outcome = project_selection(
         source.as_bytes(),
         &Selection::Pattern {
@@ -741,7 +752,12 @@ fn a_fragmented_selection_holds_the_receipt_span_ceiling() {
     // The visible payload is exactly the concatenation of the retained spans.
     assert_eq!(
         outcome.visible,
-        render(source.as_bytes(), &outcome.retained_spans).expect("retained render")
+        render(
+            source.as_bytes(),
+            &outcome.retained_spans,
+            &Aggregation::default()
+        )
+        .expect("retained render")
     );
 }
 
@@ -758,6 +774,7 @@ fn bridging_joins_a_candidate_to_its_nearest_retained_neighbour() {
             ByteSpan { start: 6, end: 12 },
             ByteSpan { start: 20, end: 26 },
         ],
+        &Aggregation::default(),
     );
 
     // A candidate after both spans bridges back from the nearest one.
@@ -780,6 +797,7 @@ fn bridging_joins_a_candidate_to_its_nearest_retained_neighbour() {
         spec,
         text,
         bridge(&plan, ByteSpan { start: 31, end: 39 }).expect("bridge"),
+        &Aggregation::default(),
     );
     assert_eq!(bridged.spans.len(), plan.spans.len());
     assert_eq!(
@@ -794,7 +812,7 @@ fn bridging_joins_a_candidate_to_its_nearest_retained_neighbour() {
 fn receipt_span_ceiling_merges_fragments_instead_of_dropping_them() {
     let mut source = String::from("first boundary\n");
     for index in 0..MAX_REDUCER_SPANS {
-        source.push_str(&format!("warning W{index:03}\n"));
+        source.push_str(&format!("warning: W{index:03}\n"));
         source.push_str("ordinary separator ordinary separator ordinary separator\n");
     }
     source.push_str("last boundary\n");
@@ -805,12 +823,13 @@ fn receipt_span_ceiling_merges_fragments_instead_of_dropping_them() {
         reserved_envelope: 450,
         token_profile: Some(CL100K_PROFILE.to_owned()),
     };
-    let outcome = project(source.as_bytes(), &budget, "build-log/v1").expect("ceiling projection");
+    let outcome =
+        project(source.as_bytes(), &budget, "build-output/v1").expect("ceiling projection");
 
     assert!(outcome.retained_spans.len() <= MAX_RECEIPT_SPANS);
     assert!(outcome.omitted_spans.len() <= MAX_RECEIPT_SPANS);
     assert!(outcome.visible_count <= 1_800);
-    assert!(outcome.visible.contains("warning W000"));
+    assert!(outcome.visible.contains("warning: W000"));
 
     // The partition stays exact at the ceiling.
     let mut coverage = vec![0_u8; source.len()];
@@ -824,4 +843,457 @@ fn receipt_span_ceiling_merges_fragments_instead_of_dropping_them() {
         }
     }
     assert!(coverage.iter().all(|count| *count == 1));
+}
+
+fn project_without_aggregation(
+    source: &[u8],
+    budget: &Budget,
+    profile: &str,
+) -> Result<Projection, Failure> {
+    ProjectionSpec::new(profile, budget)
+        .map(ProjectionSpec::without_aggregation)
+        .and_then(|spec| project_validated(source, spec))
+}
+
+/// US-011: classification decides from a bounded prefix, so bytes past that
+/// prefix cannot change the policy, and a 10 MiB observation costs the same
+/// decision as a small one.
+#[test]
+fn shape_detection_reads_a_bounded_prefix_within_its_deadline() {
+    let mut diff = String::from("diff --git a/src/main.rs b/src/main.rs\n@@ -1,2 +1,3 @@\n");
+    while diff.len() < 10 * 1024 * 1024 {
+        diff.push_str(" context line that never changes the decision\n");
+    }
+    assert_eq!(shape::detect(&diff), Shape::UnifiedDiff);
+
+    // A trailer past the inspected prefix cannot flip the decision.
+    let mut disguised = "ordinary log line without structure\n".repeat(4_096);
+    assert!(disguised.len() > shape::CLASSIFICATION_PREFIX_BYTES);
+    disguised.push_str("diff --git a/src/main.rs b/src/main.rs\n@@ -1,2 +1,3 @@\n");
+    assert_eq!(shape::detect(&disguised), Shape::TerminalLog);
+
+    for _ in 0..2 {
+        black_box(shape::detect(black_box(&diff)));
+    }
+    let elapsed = (0..20)
+        .map(|_| {
+            let started = Instant::now();
+            black_box(shape::detect(black_box(&diff)));
+            started.elapsed()
+        })
+        .collect::<Vec<_>>();
+    let measured = p95(elapsed);
+    assert!(
+        measured <= Duration::from_millis(SHAPE_DETECTION_DEADLINE_MS),
+        "classification P95 was {measured:?} on a 10 MiB source"
+    );
+}
+
+/// The documented classification deadline, measured on the unoptimized test
+/// profile so the gate bounds the worst build the project ships from.
+const SHAPE_DETECTION_DEADLINE_MS: u64 = 50;
+
+/// US-011: an input that matches no shape falls back to the line-structured
+/// policy instead of failing, and a non-UTF-8 source keeps its binary handling.
+#[test]
+fn unrecognized_and_binary_sources_keep_their_existing_handling() {
+    let prose = "the quick brown fox jumps over the lazy dog\n".repeat(8);
+    assert_eq!(shape::detect(&prose), Shape::TerminalLog);
+    let ambiguous = project(prose.as_bytes(), &bytes(64), AUTO_PROFILE).expect("ambiguous");
+    assert_eq!(ambiguous.applied_profile, "terminal-log/v1");
+    assert_eq!(ambiguous.fidelity, Fidelity::Extractive);
+
+    let binary = project(&[0xff_u8; 1_024], &bytes(64), AUTO_PROFILE).expect("binary");
+    assert_eq!(binary.fidelity, Fidelity::MetadataOnly);
+    assert_eq!(binary.applied_profile, "terminal-log/v1");
+    assert_eq!(binary.visible, "[binary source: 1024 bytes]");
+}
+
+/// Forty subjects that share no leading token, so the lines built from them are
+/// distinct observations rather than one template with a variable in it.
+const SUBJECTS: [&str; 40] = [
+    "acquisition",
+    "artifact",
+    "backoff",
+    "budget",
+    "cache",
+    "commit",
+    "counter",
+    "digest",
+    "envelope",
+    "expansion",
+    "fidelity",
+    "frontier",
+    "gate",
+    "handle",
+    "identity",
+    "journal",
+    "kernel",
+    "lineage",
+    "manifest",
+    "needle",
+    "omission",
+    "partition",
+    "quota",
+    "receipt",
+    "retention",
+    "scheduler",
+    "selector",
+    "shape",
+    "store",
+    "template",
+    "token",
+    "trace",
+    "unit",
+    "validator",
+    "verdict",
+    "walker",
+    "window",
+    "worker",
+    "yield",
+    "zone",
+];
+
+/// A build log whose progress lines differ only in their variable literals,
+/// followed by distinct observations that the budget can only reach once the
+/// redundancy stops paying for itself.
+fn redundant_build_output(distinct: usize) -> String {
+    let mut source = String::from("build started\n");
+    for index in 0..60 {
+        source.push_str(&format!("   Compiling crate_name v0.1.{index}\n"));
+    }
+    for subject in SUBJECTS.iter().take(distinct) {
+        source.push_str(&format!("{subject}: reported an unrepeated condition\n"));
+    }
+    source.push_str("build finished\n");
+    source
+}
+
+/// US-012: redundant lines collapse to one representative with the count of
+/// what was dropped, and the budget that frees buys distinct content.
+#[test]
+fn aggregation_collapses_repeated_lines_and_buys_distinct_content() {
+    let source = redundant_build_output(40);
+    let budget = bytes(700);
+    let aggregated = project(source.as_bytes(), &budget, "build-output/v1").expect("aggregated");
+    let verbatim =
+        project_without_aggregation(source.as_bytes(), &budget, "build-output/v1").expect("plain");
+
+    // The representative survives; the repeats become one stated annotation.
+    assert!(
+        aggregated
+            .visible
+            .contains("   Compiling crate_name v0.1.0\n")
+    );
+    assert_eq!(aggregated.aggregates.len(), 1);
+    let collapsed = aggregated.aggregates[0];
+    assert!(collapsed.lines >= 50);
+    assert!(aggregated.visible.contains(&format!(
+        "[distill: {} repeated lines omitted]",
+        collapsed.lines
+    )));
+
+    // The annotation is carried outside the span partition: the collapsed run
+    // is omitted source, and retained plus omitted still cover every byte once.
+    assert!(
+        aggregated
+            .omitted_spans
+            .iter()
+            .any(|span| { span.start <= collapsed.span.start && collapsed.span.end <= span.end })
+    );
+    assert_partitions(source.len(), &aggregated);
+
+    // The freed budget buys distinct facts the verbatim plan never reaches.
+    let distinct = |projection: &Projection| {
+        SUBJECTS
+            .iter()
+            .filter(|subject| projection.visible.contains(&format!("{subject}: reported")))
+            .count()
+    };
+    assert!(
+        distinct(&aggregated) > distinct(&verbatim),
+        "aggregation kept {} distinct facts against {}",
+        distinct(&aggregated),
+        distinct(&verbatim)
+    );
+    assert!(aggregated.visible_count <= 700);
+}
+
+/// US-012: a template that occurs once, or too few times to pay for its
+/// annotation, is never replaced by a count.
+#[test]
+fn aggregation_never_replaces_a_line_that_does_not_repeat() {
+    let mut source = String::new();
+    for (index, subject) in SUBJECTS.iter().enumerate() {
+        source.push_str(&format!("{subject}: appears exactly once\n"));
+        source.push_str(&format!("   Compiling crate_name v0.1.{index}\n"));
+    }
+    let outcome = project(source.as_bytes(), &bytes(400), "build-output/v1").expect("unique");
+    // Every collapsed run holds at least the documented minimum of lines, and no
+    // isolated repeat was ever replaced.
+    assert!(outcome.aggregates.iter().all(|run| run.lines >= 3));
+    assert!(!outcome.visible.contains("[distill: 1 repeated"));
+    assert!(!outcome.visible.contains("[distill: 2 repeated"));
+    assert_partitions(source.len(), &outcome);
+}
+
+/// US-012: without redundancy, aggregation changes nothing at all.
+#[test]
+fn output_without_redundancy_projects_exactly_as_it_did_without_aggregation() {
+    let mut source = String::new();
+    for subject in SUBJECTS {
+        source.push_str(&format!(
+            "{subject}: an unrepeatable observation of a distinct subject\n"
+        ));
+    }
+    let budget = bytes(600);
+    let aggregated = project(source.as_bytes(), &budget, "build-output/v1").expect("aggregated");
+    let verbatim =
+        project_without_aggregation(source.as_bytes(), &budget, "build-output/v1").expect("plain");
+    assert!(aggregated.aggregates.is_empty());
+    assert_eq!(aggregated.visible, verbatim.visible);
+    assert_eq!(aggregated.retained_spans, verbatim.retained_spans);
+    assert_eq!(aggregated.visible_count, verbatim.visible_count);
+}
+
+/// US-013: a shape policy applied to a malformed instance of that shape
+/// degrades to line-structured behavior instead of failing.
+#[test]
+fn a_malformed_instance_of_a_shape_degrades_instead_of_failing() {
+    let source = "not a diff at all\n".repeat(200);
+    for profile in [
+        "unified-diff/v1",
+        "api-json/v1",
+        "stack-trace/v1",
+        "test-output/v1",
+        "source-file/v1",
+    ] {
+        let outcome = project(source.as_bytes(), &bytes(400), profile).expect(profile);
+        assert_eq!(outcome.fidelity, Fidelity::Extractive);
+        assert!(outcome.visible_count <= 400);
+        assert!(outcome.visible.starts_with("not a diff at all\n"));
+        assert_partitions(source.len(), &outcome);
+    }
+}
+
+/// US-014: every retired identifier still resolves, and each one applies the
+/// shape policy that its needle table used to approximate. The conformance
+/// matrix is the source of the mapping, so the document and the engine cannot
+/// drift apart.
+#[test]
+fn retired_profile_identifiers_resolve_to_their_shape_policy() {
+    let matrix: serde_json::Value = serde_json::from_str(include_str!(
+        "../../docs/integrations/cli-conformance-v3.json"
+    ))
+    .expect("CLI conformance matrix");
+    let preservation = &matrix["preservation"];
+    assert_eq!(preservation["default_profile"], AUTO_PROFILE);
+
+    let retired = preservation["retired_profiles"]
+        .as_object()
+        .expect("retired profiles");
+    assert_eq!(retired.len(), 11);
+    for (identifier, applied) in retired {
+        let outcome = project(b"one line\n", &bytes(64), identifier).expect(identifier);
+        assert_eq!(
+            outcome.applied_profile,
+            applied.as_str().expect("shape policy"),
+            "{identifier}"
+        );
+    }
+    for shape in preservation["shape_profiles"]
+        .as_array()
+        .expect("shape profiles")
+    {
+        let identifier = shape.as_str().expect("shape profile");
+        let outcome = project(b"one line\n", &bytes(64), identifier).expect(identifier);
+        assert_eq!(outcome.applied_profile, identifier);
+    }
+    // `auto/v1` derives the policy instead of accepting a declared one.
+    let detected = project(
+        b"diff --git a/x b/x\n@@ -1 +1 @@\n",
+        &bytes(64),
+        AUTO_PROFILE,
+    )
+    .expect("detected profile");
+    assert_eq!(detected.applied_profile, "unified-diff/v1");
+}
+
+fn assert_partitions(source_len: usize, projection: &Projection) {
+    let mut coverage = vec![0_u8; source_len];
+    for span in projection
+        .retained_spans
+        .iter()
+        .chain(projection.omitted_spans.iter())
+    {
+        for byte in &mut coverage[span.start as usize..span.end as usize] {
+            *byte += 1;
+        }
+    }
+    assert!(coverage.iter().all(|count| *count == 1));
+    assert!(projection.retained_spans.len() <= MAX_RECEIPT_SPANS);
+    assert!(projection.omitted_spans.len() <= MAX_RECEIPT_SPANS);
+}
+
+/// US-012: aggregation stays inside its deadline on the largest real fixture,
+/// and it allocates a bounded map rather than one entry per line.
+#[test]
+fn aggregation_holds_its_deadline_on_the_largest_real_fixture() {
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("evaluation/corpus/real/fixtures");
+    let largest = std::fs::read_dir(&directory)
+        .expect("real corpus fixtures")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            std::fs::read(path)
+                .is_ok_and(|bytes| bytes.iter().filter(|byte| **byte == b'\n').count() >= 100)
+        })
+        .max_by_key(|path| path.metadata().map(|data| data.len()).unwrap_or(0))
+        .expect("largest line-structured fixture");
+    let source = std::fs::read(&largest).expect("fixture bytes");
+    assert!(source.len() > 64 * 1024, "{}", largest.display());
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 2_250,
+        reserved_envelope: 450,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+
+    let run = |aggregating: bool| {
+        if aggregating {
+            project(black_box(&source), &budget, "terminal-log/v1").expect("timed")
+        } else {
+            project_without_aggregation(black_box(&source), &budget, "terminal-log/v1")
+                .expect("timed")
+        }
+    };
+    for _ in 0..2 {
+        black_box(run(true));
+        black_box(run(false));
+    }
+    // The two conditions are interleaved round by round, so a machine that
+    // slows down mid-measurement moves both of them instead of one.
+    let mut aggregated_times = Vec::with_capacity(20);
+    let mut verbatim_times = Vec::with_capacity(20);
+    for _ in 0..20 {
+        let started = Instant::now();
+        black_box(run(true));
+        aggregated_times.push(started.elapsed());
+        let started = Instant::now();
+        black_box(run(false));
+        verbatim_times.push(started.elapsed());
+    }
+
+    let aggregated = p95(aggregated_times);
+    let verbatim = p95(verbatim_times);
+    eprintln!(
+        "aggregated P95 {aggregated:?} against {verbatim:?} on {}",
+        largest.display()
+    );
+    assert!(
+        aggregated.as_nanos() * 100 <= verbatim.as_nanos() * AGGREGATION_OVERHEAD_PERCENT,
+        "aggregation cost {aggregated:?} against {verbatim:?} on {}",
+        largest.display()
+    );
+    assert!(
+        aggregated <= Duration::from_millis(AGGREGATED_PROJECTION_DEADLINE_MS),
+        "aggregated projection P95 was {aggregated:?} on {}",
+        largest.display()
+    );
+}
+
+/// The grouping pass may cost a documented fraction over the same projection
+/// without it, measured on the largest line-structured fixture.
+const AGGREGATION_OVERHEAD_PERCENT: u128 = 150;
+
+/// The documented deadline for an aggregated projection of the largest corpus
+/// fixture, measured on the unoptimized test profile.
+const AGGREGATED_PROJECTION_DEADLINE_MS: u64 = 250;
+
+/// US-013: each shape reduces along its own structure. A trace collapses its
+/// library frames and keeps the project ones, a diff drops unchanged context
+/// before changed lines, a JSON document keeps its skeleton and elides long
+/// values, and a source file is cut only on line boundaries.
+#[test]
+fn each_shape_reduces_along_its_own_structure() {
+    let mut trace = String::from("TypeError: budget must be a number\n");
+    trace.push_str("    at loadBudget (/home/dev/work/js/throwing.js:3:15)\n");
+    for index in 0..12 {
+        trace.push_str(&format!(
+            "    at runMicrotasks (node:internal/process/task_queues:9{index}:5)\n"
+        ));
+    }
+    trace.push_str("    at settleBudget (/home/dev/work/js/settle.js:8:3)\n");
+    let projected = project(trace.as_bytes(), &bytes(190), "stack-trace/v1").expect("trace");
+    assert!(
+        projected
+            .visible
+            .contains("TypeError: budget must be a number")
+    );
+    assert!(projected.visible.contains("at loadBudget"));
+    assert_eq!(projected.aggregates.len(), 1);
+    assert!(projected.visible.contains("[distill: 1"));
+    assert!(projected.visible.contains("repeated lines omitted]"));
+    // The collapsed lines are library frames, not the project ones.
+    assert!(
+        !projected
+            .visible
+            .contains("at runMicrotasks (node:internal")
+    );
+
+    let mut diff = String::from("diff --git a/src/main.rs b/src/main.rs\n");
+    diff.push_str("--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,40 +1,41 @@\n");
+    for index in 0..40 {
+        diff.push_str(&format!(" unchanged context line {index:02}\n"));
+    }
+    diff.push_str("+    let budget = payload_limit();\n");
+    diff.push_str("-    let budget = 0;\n");
+    let projected = project(diff.as_bytes(), &bytes(240), "unified-diff/v1").expect("diff");
+    assert!(projected.visible.contains("@@ -1,40 +1,41 @@"));
+    assert!(
+        projected
+            .visible
+            .contains("+    let budget = payload_limit();")
+    );
+    assert!(projected.visible.contains("-    let budget = 0;"));
+    assert!(
+        !projected.visible.contains("unchanged context line 20"),
+        "context was kept before changed lines"
+    );
+    assert!(projected.aggregates.is_empty(), "a diff never aggregates");
+
+    let mut document = String::from("{\n  \"schema_version\": \"distill.status/v2\",\n");
+    document.push_str(&format!("  \"note\": \"{}\",\n", "long value ".repeat(24)));
+    document.push_str("  \"records\": [\n");
+    for index in 0..40 {
+        document.push_str(&format!(
+            "    {{ \"id\": \"record-{index:02}\", \"status\": \"ok\" }},\n"
+        ));
+    }
+    document.push_str("  ],\n  \"failure_code\": \"store_corrupt\"\n}\n");
+    let projected = project(document.as_bytes(), &bytes(200), "api-json/v1").expect("json");
+    assert!(projected.visible.contains("\"schema_version\""));
+    assert!(projected.visible.contains("\"failure_code\""));
+    assert!(
+        !projected.visible.contains("long value long value"),
+        "a long value survived its skeleton"
+    );
+
+    let mut file = String::from("use crate::artifact::Receipt;\n\n");
+    for index in 0..40 {
+        file.push_str(&format!(
+            "pub fn helper_{index:02}(value: u64) -> u64 {{\n    value.saturating_add({index})\n}}\n\n"
+        ));
+    }
+    let projected = project(file.as_bytes(), &bytes(400), "source-file/v1").expect("source");
+    assert!(projected.aggregates.is_empty(), "source never aggregates");
+    for span in &projected.retained_spans {
+        if span.start > 0 {
+            assert_eq!(file.as_bytes()[span.start as usize - 1], b'\n');
+        }
+        if (span.end as usize) < file.len() {
+            assert_eq!(file.as_bytes()[span.end as usize - 1], b'\n');
+        }
+    }
+    assert_partitions(file.len(), &projected);
 }

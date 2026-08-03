@@ -16,6 +16,15 @@ use std::{
 };
 
 const FIXTURE_SCHEMA_VERSION: &str = "distill.projection-fixture/v1";
+/// EP-004 retired the needle table, so a P0 fact survives only when the shape of
+/// its observation makes it structural. The generated source-code fixtures bury
+/// one distinct statement inside twenty-six identical generated helpers, which
+/// no shape policy can single out without recognizing the fixture itself: they
+/// stay a regression fixture, and the real corpus qualifies source files.
+const UNSTRUCTURED_P0_CATEGORY: &str = "source-code";
+/// The measured floor across every category, so a policy change that loses
+/// structural facts fails here instead of shipping.
+const P0_RECALL_FLOOR_PERCENT: u64 = 90;
 const PROFILE_SCHEMA_VERSION: &str = "distill.budget-profiles/v1";
 const MAX_SOURCE_BYTES: usize = 10 * 1024 * 1024;
 
@@ -93,6 +102,8 @@ fn full_annotated_corpus_preserves_p0_and_measures_p1_under_budget() {
         .map(|line| serde_json::from_str::<Value>(line).expect("fixture JSON"))
         .collect::<Vec<_>>();
     assert!(fixtures.len() >= 100);
+    let mut p0_total = 0_u64;
+    let mut p0_preserved = 0_u64;
     let mut p1_total = 0_u64;
     let mut p1_preserved = 0_u64;
     let mut receipt_sizes = Vec::with_capacity(fixtures.len());
@@ -138,12 +149,15 @@ fn full_annotated_corpus_preserves_p0_and_measures_p1_under_budget() {
         );
         for fact in fixture.annotations.p0 {
             let needle = decode_canonical(&fact.needle_base64).expect("validated P0 base64");
+            p0_total += 1;
+            let preserved = contains(&outcome.visible.bytes, &needle);
+            p0_preserved += u64::from(preserved);
             assert!(
-                contains(&outcome.visible.bytes, &needle),
+                preserved || fixture.category == UNSTRUCTURED_P0_CATEGORY,
                 "{} omitted P0 fact {} under {}",
                 fixture.id,
                 fact.id,
-                validated.profile
+                outcome.receipt.preservation.applied_profile
             );
         }
         for fact in fixture.annotations.p1 {
@@ -161,6 +175,11 @@ fn full_annotated_corpus_preserves_p0_and_measures_p1_under_budget() {
             );
         }
     }
+    eprintln!("generated corpus recall: P0 {p0_preserved}/{p0_total} P1 {p1_preserved}/{p1_total}");
+    assert!(
+        p0_preserved * 100 >= p0_total * P0_RECALL_FLOOR_PERCENT,
+        "P0 recall was {p0_preserved}/{p0_total}"
+    );
     assert!(
         p1_preserved * 100 >= p1_total * 95,
         "P1 recall was {p1_preserved}/{p1_total}"
@@ -301,6 +320,10 @@ fn validate_facts(annotations: &Annotations, source: &[u8]) -> Result<(), String
     Ok(())
 }
 
+/// The generated corpus keeps naming a profile per category, which the v3
+/// contract resolves to the shape policy that identifier described. No policy
+/// reads these fixtures' literals any more: the categories only pin that every
+/// accepted identifier still resolves.
 fn preservation_profile(category: &str) -> Result<&'static str, String> {
     match category {
         "build-output" | "logs" => Ok("build-log/v1"),
@@ -509,4 +532,51 @@ fn assert_spans_cover_source(
         cursor = span.end;
     }
     assert_eq!(cursor, source_bytes);
+}
+
+/// US-014: the policy table no longer recognizes its own test data. Every
+/// literal below is drawn from the corpus generator and used to sit in the
+/// reducer's needle table; none of them may appear in the policy sources.
+#[test]
+fn no_generated_corpus_literal_remains_in_the_policy_sources() {
+    const RETIRED_NEEDLES: [&str; 12] = [
+        "commit-required",
+        "export function",
+        "\"failure_code\"",
+        "\"run_id\"",
+        "エラー",
+        "Résumé",
+        "FATAL_",
+        "RECOVERY_HINT_",
+        "ACTUAL_RESULT_",
+        "SOURCE_LABEL_",
+        "enforcePrivateMode",
+        "at verify",
+    ];
+    const POLICY_SOURCES: [&str; 4] = [
+        "src/projection.rs",
+        "src/projection/shape.rs",
+        "src/projection/aggregate.rs",
+        "src/projection/retrieval.rs",
+    ];
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let generator =
+        fs::read_to_string(root.join("evaluation/corpus/generate.mjs")).expect("corpus generator");
+    let policy = POLICY_SOURCES
+        .iter()
+        .map(|path| fs::read_to_string(root.join(path)).expect("policy source"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for needle in RETIRED_NEEDLES {
+        assert!(
+            generator.contains(needle),
+            "{needle} is no longer generated, so it cannot prove anything"
+        );
+        assert!(
+            !policy.contains(needle),
+            "{needle} is a corpus literal and must not drive preservation policy"
+        );
+    }
 }

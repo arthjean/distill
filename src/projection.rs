@@ -1,107 +1,119 @@
 use crate::{
     contract::MAX_RECEIPT_SPANS,
-    types::{Budget, ByteSpan, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity},
+    types::{
+        AggregateSpan, Budget, ByteSpan, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity,
+    },
 };
+use aggregate::{Aggregation, Templates};
+use shape::{LineClass, Shape};
 use tiktoken_rs::cl100k_base_singleton;
 
+mod aggregate;
 mod retrieval;
+mod shape;
 
 pub(crate) use retrieval::Selection;
 
 const MAX_REDUCER_SPANS: usize = 256;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LineRule {
-    Never,
-    Contains(&'static str),
-    ContainsAny(&'static [&'static str]),
-    StartsWith(&'static str),
-    AddedPrivateMode,
-}
-
-impl LineRule {
-    fn matches(self, line: &str) -> bool {
-        match self {
-            Self::Never => false,
-            Self::Contains(needle) => line.contains(needle),
-            Self::ContainsAny(needles) => needles.iter().any(|needle| line.contains(needle)),
-            Self::StartsWith(prefix) => line.starts_with(prefix),
-            Self::AddedPrivateMode => {
-                line.starts_with('+')
-                    && !line.starts_with("+++")
-                    && line.contains("enforceprivatemode")
-            }
-        }
-    }
-}
+/// The profile both product surfaces send: the policy is derived from the
+/// detected shape of the observation rather than declared by the caller.
+pub const AUTO_PROFILE: &str = "auto/v1";
 
 #[derive(Clone, Copy, Debug)]
 struct Policy {
     id: &'static str,
-    mandatory: LineRule,
-    optional: LineRule,
+    /// The shape this identifier fixes, or `None` when the shape is detected.
+    shape: Option<Shape>,
 }
 
+/// The preservation profiles the contract accepts.
+///
+/// The first group names the observation shapes the projector recognizes. The
+/// second is the retired identifier set: `distill.context/v3` keeps every one of
+/// them accepted by resolving it to the shape policy it used to approximate, so
+/// no caller breaks and no literal fixture needle survives.
 const POLICIES: &[Policy] = &[
     Policy {
-        id: "plain-text/v1",
-        mandatory: LineRule::Never,
-        optional: LineRule::Never,
+        id: AUTO_PROFILE,
+        shape: None,
     },
     Policy {
-        id: "build-log/v1",
-        mandatory: LineRule::Contains("error "),
-        optional: LineRule::ContainsAny(&["warning ", " warn "]),
+        id: "build-output/v1",
+        shape: Some(Shape::BuildOutput),
     },
     Policy {
-        id: "test-log/v1",
-        mandatory: LineRule::ContainsAny(&["fail ", "expected "]),
-        optional: LineRule::Contains("tests:"),
+        id: "test-output/v1",
+        shape: Some(Shape::TestOutput),
     },
     Policy {
-        id: "diff/v1",
-        mandatory: LineRule::AddedPrivateMode,
-        optional: LineRule::StartsWith("@@"),
-    },
-    Policy {
-        id: "diagnostic/v1",
-        mandatory: LineRule::Contains(" error["),
-        optional: LineRule::Contains(" note:"),
+        id: "typecheck-lint/v1",
+        shape: Some(Shape::TypecheckLint),
     },
     Policy {
         id: "stack-trace/v1",
-        mandatory: LineRule::Contains("error:"),
-        optional: LineRule::Contains("at verify"),
+        shape: Some(Shape::StackTrace),
     },
     Policy {
-        id: "source-code/v1",
-        mandatory: LineRule::Contains("commit-required"),
-        optional: LineRule::Contains("export function"),
+        id: "unified-diff/v1",
+        shape: Some(Shape::UnifiedDiff),
+    },
+    Policy {
+        id: "api-json/v1",
+        shape: Some(Shape::ApiJson),
+    },
+    Policy {
+        id: "source-file/v1",
+        shape: Some(Shape::SourceFile),
+    },
+    Policy {
+        id: "terminal-log/v1",
+        shape: Some(Shape::TerminalLog),
+    },
+    // Retired identifiers, resolved by the v3 contract.
+    Policy {
+        id: "plain-text/v1",
+        shape: Some(Shape::TerminalLog),
+    },
+    Policy {
+        id: "build-log/v1",
+        shape: Some(Shape::BuildOutput),
+    },
+    Policy {
+        id: "test-log/v1",
+        shape: Some(Shape::TestOutput),
+    },
+    Policy {
+        id: "diagnostic/v1",
+        shape: Some(Shape::TypecheckLint),
+    },
+    Policy {
+        id: "diff/v1",
+        shape: Some(Shape::UnifiedDiff),
     },
     Policy {
         id: "json/v1",
-        mandatory: LineRule::Contains("\"failure_code\""),
-        optional: LineRule::Contains("\"run_id\""),
+        shape: Some(Shape::ApiJson),
+    },
+    Policy {
+        id: "source-code/v1",
+        shape: Some(Shape::SourceFile),
     },
     Policy {
         id: "unicode/v1",
-        mandatory: LineRule::Contains("エラー"),
-        optional: LineRule::Contains("résumé"),
+        shape: Some(Shape::TerminalLog),
     },
     Policy {
         id: "binary/v1",
-        mandatory: LineRule::Contains("fatal_"),
-        optional: LineRule::Contains("recovery_hint_"),
+        shape: Some(Shape::TerminalLog),
     },
     Policy {
         id: "untrusted-text/v1",
-        mandatory: LineRule::Contains("actual_result_"),
-        optional: LineRule::Contains("source_label_"),
+        shape: Some(Shape::TerminalLog),
     },
     Policy {
         id: "none/v1",
-        mandatory: LineRule::Never,
-        optional: LineRule::Never,
+        shape: Some(Shape::TerminalLog),
     },
 ];
 
@@ -109,6 +121,7 @@ const POLICIES: &[Policy] = &[
 struct Analysis {
     mandatory: Vec<ByteSpan>,
     candidates: Vec<ByteSpan>,
+    aggregation: Aggregation,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -126,12 +139,20 @@ struct SpanPlan {
     spans: Vec<PlanSpan>,
     byte_count: u64,
     visible_count: u64,
+    /// What the annotations of the collapsed runs between these spans add to
+    /// the payload. It is the only visible content that is not source bytes.
+    annotation_count: u64,
 }
 
 impl SpanPlan {
-    fn new(spec: ProjectionSpec, text: &str, spans: &[ByteSpan]) -> Self {
+    fn new(
+        spec: ProjectionSpec,
+        text: &str,
+        spans: &[ByteSpan],
+        aggregation: &Aggregation,
+    ) -> Self {
         spans.iter().fold(Self::default(), |plan, span| {
-            plan.with_candidate(spec, text, *span)
+            plan.with_candidate(spec, text, *span, aggregation)
         })
     }
 
@@ -140,6 +161,7 @@ impl SpanPlan {
             spans: vec![PlanSpan { span, count }],
             byte_count: span.end.saturating_sub(span.start),
             visible_count: count,
+            annotation_count: 0,
         }
     }
 
@@ -147,10 +169,22 @@ impl SpanPlan {
         self.spans.iter().map(|entry| entry.span).collect()
     }
 
+    /// Everything the plan would render: the retained source plus the
+    /// annotation of every run it collapsed.
+    fn payload_count(&self) -> u64 {
+        self.visible_count.saturating_add(self.annotation_count)
+    }
+
     /// Merges one candidate into the plan, counting only the source the plan
     /// did not already cover. Overlapping and touching spans are absorbed, so
     /// the plan stays sorted and disjoint.
-    fn with_candidate(&self, spec: ProjectionSpec, text: &str, candidate: ByteSpan) -> Self {
+    fn with_candidate(
+        &self,
+        spec: ProjectionSpec,
+        text: &str,
+        candidate: ByteSpan,
+        aggregation: &Aggregation,
+    ) -> Self {
         let candidate = spec.anchor(text, candidate);
         let first = self
             .spans
@@ -191,10 +225,12 @@ impl SpanPlan {
             count,
         });
         spans.extend_from_slice(&self.spans[first + absorbed..]);
+        let annotation_count = aggregation.annotation_count(spec, &spans);
         Self {
             spans,
             byte_count: self.byte_count - released_bytes + (end - start),
             visible_count: self.visible_count - released + count,
+            annotation_count,
         }
     }
 }
@@ -238,7 +274,7 @@ thread_local! {
 }
 
 fn planned_count(plan: &SpanPlan) -> u64 {
-    let planned = plan.visible_count;
+    let planned = plan.payload_count();
     #[cfg(test)]
     let planned = planned + PLAN_COUNT_BIAS.with(std::cell::Cell::get);
     planned
@@ -252,7 +288,17 @@ enum Counter {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ProjectionSpec {
-    policy: &'static Policy,
+    /// The profile identifier the request named, which the receipt keeps
+    /// distinct from the policy that ran.
+    requested: &'static str,
+    /// The shape in force. It is the profile's own shape, or the line-structured
+    /// fallback until detection resolves `auto/v1`.
+    shape: Shape,
+    /// Whether the shape still has to be detected from the observation.
+    detect: bool,
+    /// Whether template aggregation may collapse redundant lines. Bounded
+    /// retrieval clears it: a caller who asks for a region wants that region.
+    aggregate: bool,
     counter: Counter,
     total_visible_limit: u64,
     reserved_envelope: u64,
@@ -298,12 +344,30 @@ impl ProjectionSpec {
             }
         };
         Ok(Self {
-            policy,
+            requested: policy.id,
+            shape: policy.shape.unwrap_or(Shape::TerminalLog),
+            detect: policy.shape.is_none(),
+            aggregate: true,
             counter,
             total_visible_limit: budget.total_visible_limit,
             reserved_envelope: budget.reserved_envelope,
             span_ceiling: MAX_RECEIPT_SPANS,
         })
+    }
+
+    /// Resolves the policy against the observation itself. A profile that names
+    /// a shape keeps it; `auto/v1` derives it from a bounded prefix of the text,
+    /// and falls back to the line-structured policy when there is no text to
+    /// inspect. Resolution is idempotent.
+    fn resolved(self, text: Option<&str>) -> Self {
+        if !self.detect {
+            return self;
+        }
+        Self {
+            shape: text.map_or(Shape::TerminalLog, shape::detect),
+            detect: false,
+            ..self
+        }
     }
 
     /// Reserves room for the spans that translation back into source offsets
@@ -313,6 +377,18 @@ impl ProjectionSpec {
             span_ceiling: MAX_RECEIPT_SPANS.saturating_sub(regions).max(1),
             ..self
         }
+    }
+
+    /// Bounded retrieval returns the region the caller selected, verbatim.
+    fn without_aggregation(self) -> Self {
+        Self {
+            aggregate: false,
+            ..self
+        }
+    }
+
+    fn aggregates(self) -> bool {
+        self.aggregate && self.shape.aggregates()
     }
 
     pub(crate) fn unit(self) -> CountUnit {
@@ -326,8 +402,14 @@ impl ProjectionSpec {
         matches!(self.counter, Counter::Cl100k).then(|| CL100K_PROFILE.to_owned())
     }
 
+    /// The profile the request named.
     pub(crate) fn profile(self) -> &'static str {
-        self.policy.id
+        self.requested
+    }
+
+    /// The policy that ran, which names the shape it was derived from.
+    pub(crate) fn applied_profile(self) -> &'static str {
+        self.shape.profile()
     }
 
     fn count(self, text: &str) -> u64 {
@@ -382,6 +464,11 @@ pub(crate) struct Projection {
     pub retained_spans: Vec<ByteSpan>,
     pub omitted_spans: Vec<ByteSpan>,
     pub mandatory_fact_ids: Vec<String>,
+    /// The policy that ran, derived from the detected shape.
+    pub applied_profile: &'static str,
+    /// The runs the payload states as collapsed. They stay outside the span
+    /// partition: every one of them is inside `omitted_spans`.
+    pub aggregates: Vec<AggregateSpan>,
 }
 
 pub(crate) fn project_validated(
@@ -396,6 +483,7 @@ pub(crate) fn project_validated(
         ));
     }
     if let Ok(text) = std::str::from_utf8(source) {
+        let spec = spec.resolved(Some(text));
         let original_count = spec.count(text);
         if original_count <= payload_limit {
             return Ok(Projection {
@@ -408,15 +496,17 @@ pub(crate) fn project_validated(
                     end: source.len() as u64,
                 }],
                 omitted_spans: Vec::new(),
-                mandatory_fact_ids: mandatory_spans(source, spec.policy)?
+                mandatory_fact_ids: mandatory_spans(source, spec.shape)?
                     .into_iter()
-                    .map(|span| fact_id(spec.policy.id, span))
+                    .map(|span| fact_id(spec.applied_profile(), span))
                     .collect(),
+                applied_profile: spec.applied_profile(),
+                aggregates: Vec::new(),
             });
         }
         return project_text(source, text, spec, payload_limit, original_count);
     }
-    project_binary(source, spec, payload_limit)
+    project_binary(source, spec.resolved(None), payload_limit)
 }
 
 /// Projects a bounded selection of a committed artifact through the same
@@ -434,6 +524,7 @@ pub(crate) fn project_selection(
             "artifact selector requires a UTF-8 source",
         )
     })?;
+    let spec = spec.resolved(Some(text)).without_aggregation();
     let original_count = spec.count(text);
     let regions = retrieval::select_regions(text, selection);
     if regions.is_empty() {
@@ -445,6 +536,8 @@ pub(crate) fn project_selection(
             retained_spans: Vec::new(),
             omitted_spans: complement(source.len(), &[]),
             mandatory_fact_ids: Vec::new(),
+            applied_profile: spec.applied_profile(),
+            aggregates: Vec::new(),
         });
     }
 
@@ -476,11 +569,13 @@ pub(crate) fn project_selection(
         fidelity,
         retained_spans,
         omitted_spans,
-        mandatory_fact_ids: mandatory_spans(&selected, spec.policy)?
+        mandatory_fact_ids: mandatory_spans(&selected, spec.shape)?
             .into_iter()
             .flat_map(|span| retrieval::translate_spans(&regions, &[span]))
-            .map(|span| fact_id(spec.policy.id, span))
+            .map(|span| fact_id(spec.applied_profile(), span))
             .collect(),
+        applied_profile: spec.applied_profile(),
+        aggregates: Vec::new(),
     })
 }
 
@@ -495,10 +590,11 @@ fn project_text(
     payload_limit: u64,
     original_count: u64,
 ) -> Result<Projection, Failure> {
-    let analysis = analyze(source, spec.policy)?;
+    let analysis = analyze(source, text, spec)?;
     let mandatory = analysis.mandatory;
-    let mut retained = SpanPlan::new(spec, text, &mandatory);
-    if retained.visible_count > payload_limit {
+    let aggregation = &analysis.aggregation;
+    let mut retained = SpanPlan::new(spec, text, &mandatory, aggregation);
+    if retained.payload_count() > payload_limit {
         return Err(Failure::new(
             FailureCode::BudgetUnsatisfiable,
             "mandatory facts exceed the projection payload budget",
@@ -506,7 +602,15 @@ fn project_text(
     }
 
     for candidate in analysis.candidates {
-        retained = accept_candidate(spec, source.len(), text, retained, candidate, payload_limit);
+        retained = accept_candidate(
+            spec,
+            source.len(),
+            text,
+            retained,
+            candidate,
+            payload_limit,
+            aggregation,
+        );
     }
 
     if retained.spans.is_empty() {
@@ -524,13 +628,40 @@ fn project_text(
             }
         }
     } else {
-        retained = fill_payload_budget(spec, source.len(), text, retained, payload_limit);
+        // Collapsed redundancy is stepped over first, so the budget buys
+        // distinct content. Only when that pass runs out of source rather than
+        // out of budget does the remainder get spent on the collapsed lines
+        // themselves: unspent budget helps nobody, but budget spent on
+        // redundancy is exactly what aggregation exists to prevent.
+        let filled = fill_payload_budget(
+            spec,
+            source.len(),
+            text,
+            retained,
+            payload_limit,
+            aggregation,
+            Growth::OverCollapsed,
+        );
+        retained = if filled.budget_bound {
+            filled.plan
+        } else {
+            fill_payload_budget(
+                spec,
+                source.len(),
+                text,
+                filled.plan,
+                payload_limit,
+                aggregation,
+                Growth::Contiguous,
+            )
+            .plan
+        };
     }
 
     // The single full-render tokenization of the projection: it verifies the
     // count planning carried, rather than producing it.
     let ranges = retained.ranges();
-    let visible = render(source, &ranges)?;
+    let visible = render(source, &ranges, aggregation)?;
     #[cfg(test)]
     record_full_render_count_evaluation();
     let visible_count = spec.count(&visible);
@@ -554,11 +685,13 @@ fn project_text(
         visible_count,
         fidelity: Fidelity::Extractive,
         omitted_spans: complement(source.len(), &ranges),
+        aggregates: aggregation.collapsed(&ranges),
         retained_spans: ranges,
         mandatory_fact_ids: mandatory
             .iter()
-            .map(|span| fact_id(spec.policy.id, *span))
+            .map(|span| fact_id(spec.applied_profile(), *span))
             .collect(),
+        applied_profile: spec.applied_profile(),
     })
 }
 
@@ -568,7 +701,7 @@ fn project_binary(
     payload_limit: u64,
 ) -> Result<Projection, Failure> {
     let encoded = encode_binary(source);
-    let mandatory = mandatory_spans(source, spec.policy)?;
+    let mandatory = mandatory_spans(source, spec.shape)?;
     let encoded_count = spec.count(&encoded);
     let original_count = match spec.unit() {
         CountUnit::Bytes => source.len() as u64,
@@ -587,8 +720,10 @@ fn project_binary(
             }],
             mandatory_fact_ids: mandatory
                 .iter()
-                .map(|span| fact_id(spec.policy.id, *span))
+                .map(|span| fact_id(spec.applied_profile(), *span))
                 .collect(),
+            applied_profile: spec.applied_profile(),
+            aggregates: Vec::new(),
         });
     }
     if !mandatory.is_empty() {
@@ -616,18 +751,20 @@ fn project_binary(
             end: source.len() as u64,
         }],
         mandatory_fact_ids: Vec::new(),
+        applied_profile: spec.applied_profile(),
+        aggregates: Vec::new(),
     })
 }
 
-fn mandatory_spans(source: &[u8], policy: &Policy) -> Result<Vec<ByteSpan>, Failure> {
-    if policy.mandatory == LineRule::Never {
-        return Ok(Vec::new());
-    }
+/// The mandatory facts of a source that is not planned line by line: an exact
+/// projection, which keeps everything, and an encoded binary one, which keeps
+/// nothing it could reduce.
+fn mandatory_spans(source: &[u8], shape: Shape) -> Result<Vec<ByteSpan>, Failure> {
     let mut spans = Vec::new();
     for span in line_spans(source) {
-        let line = &source[span.start as usize..span.end as usize];
-        let normalized = String::from_utf8_lossy(line).to_ascii_lowercase();
-        if policy.mandatory.matches(&normalized) {
+        let line = String::from_utf8_lossy(&source[span.start as usize..span.end as usize]);
+        let lowercase = line.to_ascii_lowercase();
+        if shape.classify(&line, &lowercase) == LineClass::Mandatory {
             if spans.len() == MAX_REDUCER_SPANS {
                 return Err(Failure::new(
                     FailureCode::ResourceExhausted,
@@ -640,29 +777,37 @@ fn mandatory_spans(source: &[u8], policy: &Policy) -> Result<Vec<ByteSpan>, Fail
     Ok(spans)
 }
 
-fn analyze(source: &[u8], policy: &Policy) -> Result<Analysis, Failure> {
+/// Ranks every line of the source under the resolved shape policy, and groups
+/// the redundant ones in the same pass.
+fn analyze(source: &[u8], text: &str, spec: ProjectionSpec) -> Result<Analysis, Failure> {
     let mut mandatory = Vec::new();
     let mut candidates = Vec::new();
     let mut first = None;
     let mut last = None;
+    let mut templates = Templates::new(spec.aggregates());
     for span in line_spans(source) {
         first.get_or_insert(span);
         last = Some(span);
-        let line = &source[span.start as usize..span.end as usize];
-        let normalized = String::from_utf8_lossy(line).to_ascii_lowercase();
-        if policy.mandatory.matches(&normalized) {
-            if mandatory.len() == MAX_REDUCER_SPANS {
-                return Err(Failure::new(
-                    FailureCode::ResourceExhausted,
-                    "mandatory fact count exceeds the reducer work limit",
-                ));
+        let line = &text[span.start as usize..span.end as usize];
+        let lowercase = line.to_ascii_lowercase();
+        let class = spec.shape.classify(line, &lowercase);
+        match class {
+            LineClass::Mandatory => {
+                if mandatory.len() == MAX_REDUCER_SPANS {
+                    return Err(Failure::new(
+                        FailureCode::ResourceExhausted,
+                        "mandatory fact count exceeds the reducer work limit",
+                    ));
+                }
+                mandatory.push(span);
             }
-            mandatory.push(span);
+            LineClass::Preferred if candidates.len() < MAX_REDUCER_SPANS => candidates.push(span),
+            LineClass::Preferred | LineClass::Ordinary => {}
         }
-        if candidates.len() < MAX_REDUCER_SPANS && policy.optional.matches(&normalized) {
-            candidates.push(span);
-        }
+        templates.observe(span, line, class);
     }
+    // The boundaries of an observation are always offered: they are what an
+    // agent reads first when it cannot read everything.
     if let Some(first) = first {
         candidates.push(first);
     }
@@ -672,9 +817,11 @@ fn analyze(source: &[u8], policy: &Policy) -> Result<Analysis, Failure> {
     Ok(Analysis {
         mandatory,
         candidates,
+        aggregation: templates.finish([first, last]),
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn accept_candidate(
     spec: ProjectionSpec,
     source_len: usize,
@@ -682,10 +829,11 @@ fn accept_candidate(
     plan: SpanPlan,
     candidate: ByteSpan,
     payload_limit: u64,
+    aggregation: &Aggregation,
 ) -> SpanPlan {
-    let proposed = plan.with_candidate(spec, text, candidate);
+    let proposed = plan.with_candidate(spec, text, candidate, aggregation);
     if receipt_shape_fits(spec, source_len, &proposed.spans) {
-        return if proposed.visible_count <= payload_limit {
+        return if proposed.payload_count() <= payload_limit {
             proposed
         } else {
             plan
@@ -697,9 +845,9 @@ fn accept_candidate(
     let Some(bridged) = bridge(&plan, candidate) else {
         return plan;
     };
-    let proposed = plan.with_candidate(spec, text, bridged);
+    let proposed = plan.with_candidate(spec, text, bridged, aggregation);
     if receipt_shape_fits(spec, source_len, &proposed.spans)
-        && proposed.visible_count <= payload_limit
+        && proposed.payload_count() <= payload_limit
     {
         proposed
     } else {
@@ -740,6 +888,24 @@ fn bridge(plan: &SpanPlan, candidate: ByteSpan) -> Option<ByteSpan> {
     nearest
 }
 
+/// How expansion treats the runs aggregation collapsed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Growth {
+    /// Step over a collapsed run and keep its annotation, so the budget buys
+    /// distinct content instead of redundancy.
+    OverCollapsed,
+    /// Grow through everything. Collapsing frees budget; when nothing distinct
+    /// is left to spend it on, the collapsed lines themselves are what remains.
+    Contiguous,
+}
+
+/// A filled plan, with what stopped it: a pass that ran out of budget has
+/// nothing left to spend, while a pass that ran out of source may still have.
+struct Filled {
+    plan: SpanPlan,
+    budget_bound: bool,
+}
+
 /// Spends whatever payload budget selection left by growing the retained spans
 /// outward one line group at a time, alternating between frontiers so the
 /// visible payload keeps both the head and the tail of the observation.
@@ -749,7 +915,10 @@ fn fill_payload_budget(
     text: &str,
     mut plan: SpanPlan,
     payload_limit: u64,
-) -> SpanPlan {
+    aggregation: &Aggregation,
+    growth: Growth,
+) -> Filled {
+    let mut budget_bound = false;
     let mut frontiers = plan
         .spans
         .iter()
@@ -775,14 +944,15 @@ fn fill_payload_budget(
             if !frontier.active {
                 continue;
             }
-            let Some(target) = growth_target(text, *frontier) else {
+            let Some(target) = growth_target(text, *frontier, aggregation, growth) else {
                 frontier.active = false;
                 continue;
             };
-            let proposed = plan.with_candidate(spec, text, target);
-            if proposed.visible_count > payload_limit
+            let proposed = plan.with_candidate(spec, text, target, aggregation);
+            if proposed.payload_count() > payload_limit
                 || !receipt_shape_fits(spec, source_len, &proposed.spans)
             {
+                budget_bound = true;
                 frontier.active = false;
                 continue;
             }
@@ -791,22 +961,45 @@ fn fill_payload_budget(
             progressed = true;
         }
         if !progressed {
-            return plan;
+            return Filled { plan, budget_bound };
         }
     }
 }
 
-fn growth_target(text: &str, frontier: Frontier) -> Option<ByteSpan> {
-    let offset = frontier.offset as usize;
+/// The next whole line a frontier can grow onto, stepping over a collapsed run
+/// rather than retaining it. Runs are maximal, so one step always lands on a
+/// line the plan may keep.
+fn growth_target(
+    text: &str,
+    frontier: Frontier,
+    aggregation: &Aggregation,
+    growth: Growth,
+) -> Option<ByteSpan> {
+    let collapsed = |offset| {
+        (growth == Growth::OverCollapsed)
+            .then(|| {
+                if frontier.forward {
+                    aggregation.run_from(offset).map(|run| run.end)
+                } else {
+                    aggregation.run_to(offset).map(|run| run.start)
+                }
+            })
+            .flatten()
+            .unwrap_or(offset)
+    };
     if frontier.forward {
+        let start = collapsed(frontier.offset);
+        let offset = start as usize;
         (offset < text.len()).then(|| ByteSpan {
-            start: frontier.offset,
+            start,
             end: next_line_start(text, offset) as u64,
         })
     } else {
+        let end = collapsed(frontier.offset);
+        let offset = end as usize;
         (offset > 0).then(|| ByteSpan {
             start: previous_line_start(text, offset) as u64,
-            end: frontier.offset,
+            end,
         })
     }
 }
@@ -901,9 +1094,16 @@ fn normalize_spans(spans: &mut Vec<ByteSpan>) {
     *spans = normalized;
 }
 
-fn render(source: &[u8], spans: &[ByteSpan]) -> Result<String, Failure> {
+fn render(source: &[u8], spans: &[ByteSpan], aggregation: &Aggregation) -> Result<String, Failure> {
     let mut visible = Vec::new();
+    let mut previous_end = None;
     for span in spans {
+        if let Some(previous_end) = previous_end
+            && let Some(annotation) = aggregation.annotation_before(previous_end, span.start)
+        {
+            visible.extend_from_slice(annotation.as_bytes());
+        }
+        previous_end = Some(span.end);
         let start = usize::try_from(span.start)
             .map_err(|_| Failure::new(FailureCode::InvariantBreach, "retained span is invalid"))?;
         let end = usize::try_from(span.end)
@@ -1031,8 +1231,10 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
         reserved_envelope: 0,
         token_profile: None,
     };
-    let result = ProjectionSpec::new("plain-text/v1", &budget)
-        .and_then(|spec| project_validated(data, spec));
+    // The executed profile: the shape of untrusted bytes is detected, never
+    // declared, so the classifier is fuzzed with everything else.
+    let result =
+        ProjectionSpec::new(AUTO_PROFILE, &budget).and_then(|spec| project_validated(data, spec));
     if matches!(
         result,
         Err(Failure {
@@ -1050,7 +1252,7 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
     )
     .into_owned();
     if !pattern.is_empty()
-        && let Ok(spec) = ProjectionSpec::new("plain-text/v1", &budget)
+        && let Ok(spec) = ProjectionSpec::new(AUTO_PROFILE, &budget)
         && matches!(
             project_selection(
                 data,
@@ -1077,18 +1279,13 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
 }
 
 #[cfg(test)]
-fn validated_policy(profile: &str, budget: &Budget) -> Result<&'static Policy, Failure> {
-    ProjectionSpec::new(profile, budget).map(|spec| spec.policy)
-}
-
-#[cfg(test)]
 fn count(text: &str, budget: &Budget) -> Result<u64, Failure> {
-    ProjectionSpec::new("plain-text/v1", budget).map(|spec| spec.count(text))
+    ProjectionSpec::new(AUTO_PROFILE, budget).map(|spec| spec.count(text))
 }
 
 #[cfg(test)]
 fn fitting_prefix(text: &str, budget: &Budget, limit: u64) -> Result<usize, Failure> {
-    ProjectionSpec::new("plain-text/v1", budget)
+    ProjectionSpec::new(AUTO_PROFILE, budget)
         .map(|spec| fitting_prefix_validated(text, spec, limit, spec.count(text)).0)
 }
 

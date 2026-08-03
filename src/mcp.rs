@@ -687,6 +687,22 @@ mod tests {
             false
         );
 
+        // US-014: the surface declares no content class. The matrix pins the
+        // shape-derived default, every retired identifier it resolves, and the
+        // receipt fields that record what actually ran.
+        let preservation = &matrix["preservation"];
+        assert_eq!(preservation["default_profile"], distill::AUTO_PROFILE);
+        assert_eq!(
+            preservation["default_profile"],
+            crate::surface::DEFAULT_PRESERVATION_PROFILE
+        );
+        assert_eq!(preservation["policy_version"], distill::POLICY_VERSION);
+        assert_eq!(
+            preservation["receipt_schema_version"],
+            distill::RECEIPT_SCHEMA_VERSION
+        );
+        assert_eq!(preservation["published_profile_argument"], false);
+
         let temp = TempDir::new().expect("temp");
         let responses = exchange(
             config(&temp),

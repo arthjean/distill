@@ -365,7 +365,7 @@ impl ProductionRuntime {
                 reserved_envelope: 0,
                 token_profile: None,
             },
-            preservation_profile: "plain-text/v1".to_owned(),
+            preservation_profile: crate::projection::AUTO_PROFILE.to_owned(),
             retention: Retention::default(),
         };
         let prepared = request_policy::prepare(request, &self.request_config)

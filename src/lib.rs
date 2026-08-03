@@ -14,13 +14,14 @@ pub use contract::{
     DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
     MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES,
 };
+pub use projection::AUTO_PROFILE;
 pub use request_policy::{
     MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES,
     MAX_PROCESS_TIMEOUT_MS, MAX_SOURCE_BYTES, MIN_PROCESS_TIMEOUT_MS, validate_artifact_selector,
 };
 pub use types::{
-    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ArtifactSelector, ArtifactTrace,
-    BinaryPolicy, Budget, ByteSpan, ByteString, CL100K_PROFILE, CONTRACT_VERSION,
+    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, AggregateSpan, ArtifactRef, ArtifactSelector,
+    ArtifactTrace, BinaryPolicy, Budget, ByteSpan, ByteString, CL100K_PROFILE, CONTRACT_VERSION,
     CONTRACT_VERSION_V2, CountUnit, EngineConfig, EngineStatus, Failure, FailureCode, Fidelity,
     GC_SCHEMA_VERSION, GarbageCollection, MAX_ARTIFACT_LINEAGE_BYTES, MAX_LINEAGE_BYTES, Outcome,
     POLICY_VERSION, PROJECTION_VERSION, PreservationResult, ProcessReceipt, ProcessStream,
@@ -271,7 +272,9 @@ fn build_outcome(
         omitted_spans: projection.omitted_spans,
         preservation: PreservationResult {
             profile: projection_spec.profile().to_owned(),
+            applied_profile: projection.applied_profile.to_owned(),
             mandatory_fact_ids: projection.mandatory_fact_ids,
+            aggregates: projection.aggregates,
         },
         acquisition: acquired.receipt.into_receipt(),
     };

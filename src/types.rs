@@ -12,13 +12,21 @@ pub fn supported_contract_version(version: &str) -> bool {
     version == CONTRACT_VERSION || version == CONTRACT_VERSION_V2
 }
 pub const ARTIFACT_SCHEMA_VERSION: &str = "distill.artifact/v1";
-pub const RECEIPT_SCHEMA_VERSION: &str = "distill.receipt/v1";
+pub const RECEIPT_SCHEMA_VERSION: &str = "distill.receipt/v2";
+/// The preceding receipt schema stays readable. v2 only adds the applied policy
+/// and the collapsed-run annotations, so lineage recorded before this release
+/// still verifies, still traces, and is never rewritten.
+pub const RECEIPT_SCHEMA_VERSION_V1: &str = "distill.receipt/v1";
 pub const RESTORE_SCHEMA_VERSION: &str = "distill.restore/v1";
 pub const TRACE_SCHEMA_VERSION: &str = "distill.trace/v1";
 pub const STATUS_SCHEMA_VERSION: &str = "distill.status/v2";
 pub const GC_SCHEMA_VERSION: &str = "distill.gc/v2";
 pub const PROJECTION_VERSION: &str = "distill.extractive/v1";
-pub const POLICY_VERSION: &str = "distill.preservation/v1";
+/// Preservation policy derived from the detected shape of the observation. The
+/// preceding version identifies the retired needle table, and receipts that
+/// carry it stay readable.
+pub const POLICY_VERSION: &str = "distill.preservation/v2";
+pub const POLICY_VERSION_V1: &str = "distill.preservation/v1";
 pub const CL100K_PROFILE: &str = "cl100k_base@js-tiktoken-1.0.15";
 pub const MAX_LINEAGE_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_ARTIFACT_LINEAGE_BYTES: u64 = 1024 * 1024;
@@ -343,8 +351,28 @@ pub struct ByteSpan {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PreservationResult {
+    /// The preservation profile the request named.
     pub profile: String,
+    /// The policy that ran. Under `auto/v1` it names the detected shape, so the
+    /// receipt records both what was asked and what was applied. Receipts
+    /// written before the shape policies carry an empty value.
+    #[serde(default)]
+    pub applied_profile: String,
     pub mandatory_fact_ids: Vec<String>,
+    /// Runs of redundant lines the visible payload states as collapsed. They
+    /// are the only visible content that is not a verbatim source slice, they
+    /// stay inside `omitted_spans`, and they never change the partition.
+    #[serde(default)]
+    pub aggregates: Vec<AggregateSpan>,
+}
+
+/// One collapsed run: the source range the payload replaced with an annotation,
+/// and the number of lines that annotation reports.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AggregateSpan {
+    pub span: ByteSpan,
+    pub lines: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

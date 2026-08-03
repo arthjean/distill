@@ -60,8 +60,8 @@ fn exact_content_round_trips_through_artifact_source() {
 #[test]
 fn impossible_budget_returns_committed_artifact() {
     let (_directory, engine) = fixture();
-    let mut candidate = request(b"ERROR critical\nnoise\n", 2);
-    candidate.preservation_profile = "build-log/v1".to_owned();
+    let mut candidate = request(b"error: critical\nnoise\n", 2);
+    candidate.preservation_profile = "build-output/v1".to_owned();
     let failure = engine.handle(candidate).expect_err("budget failure");
     assert_eq!(failure.code, FailureCode::BudgetUnsatisfiable);
     assert!(failure.artifact.is_some());
@@ -340,8 +340,10 @@ fn public_types_round_trip_without_information_loss() {
             retained_spans: vec![ByteSpan { start: 0, end: 2 }],
             omitted_spans: Vec::new(),
             preservation: PreservationResult {
-                profile: "plain-text/v1".to_owned(),
+                profile: crate::AUTO_PROFILE.to_owned(),
+                applied_profile: "terminal-log/v1".to_owned(),
                 mandatory_fact_ids: Vec::new(),
+                aggregates: Vec::new(),
             },
             acquisition: AcquisitionReceipt {
                 variant: SourceVariant::Inline,
@@ -368,7 +370,7 @@ fn receipt_fields_are_stable_across_one_hundred_repetitions() {
         b"head\nnoise noise noise\nERROR E1: critical\nwarning W1: useful\ntail\n",
         48,
     );
-    candidate.preservation_profile = "build-log/v1".to_owned();
+    candidate.preservation_profile = "build-output/v1".to_owned();
     let first = engine.handle(candidate.clone()).expect("first");
     for _ in 0..99 {
         let repeated = engine.handle(candidate.clone()).expect("repeat");
@@ -1039,8 +1041,8 @@ fn selection_over_the_largest_observation_stays_within_its_envelope() {
 fn failures_and_receipts_never_copy_raw_source() {
     let (_directory, engine) = fixture();
     let secret = "DISTILL_TEST_SECRET_5f19";
-    let mut candidate = request(format!("ERROR {secret}: mandatory\n").as_bytes(), 1);
-    candidate.preservation_profile = "build-log/v1".to_owned();
+    let mut candidate = request(format!("error: {secret} is mandatory\n").as_bytes(), 1);
+    candidate.preservation_profile = "build-output/v1".to_owned();
     let failure = engine.handle(candidate).expect_err("budget failure");
     let encoded = serde_json::to_string(&failure).expect("failure JSON");
     assert!(!encoded.contains(secret));

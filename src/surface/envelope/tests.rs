@@ -34,8 +34,10 @@ fn outcome() -> Outcome {
             retained_spans: Vec::new(),
             omitted_spans: Vec::new(),
             preservation: PreservationResult {
-                profile: "plain-text/v1".to_owned(),
+                profile: distill::AUTO_PROFILE.to_owned(),
+                applied_profile: "terminal-log/v1".to_owned(),
                 mandatory_fact_ids: Vec::new(),
+                aggregates: Vec::new(),
             },
             acquisition: AcquisitionReceipt {
                 variant: SourceVariant::File,

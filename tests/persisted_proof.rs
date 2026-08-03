@@ -1,21 +1,32 @@
 #![allow(clippy::expect_used)]
 
 use distill::{
-    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ByteSpan, CL100K_PROFILE, CountUnit,
-    Fidelity, MAX_ARTIFACT_LINEAGE_BYTES, MAX_LINEAGE_BYTES, POLICY_VERSION, PROJECTION_VERSION,
-    PreservationResult, ProcessReceipt, ProcessStream, RECEIPT_SCHEMA_VERSION, Receipt,
-    SourceVariant, StreamEvent,
+    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, AggregateSpan, ArtifactRef, ByteSpan,
+    CL100K_PROFILE, CountUnit, Fidelity, MAX_ARTIFACT_LINEAGE_BYTES, MAX_LINEAGE_BYTES,
+    POLICY_VERSION, PROJECTION_VERSION, PreservationResult, ProcessReceipt, ProcessStream,
+    RECEIPT_SCHEMA_VERSION, Receipt, SourceVariant, StreamEvent,
 };
 
-const PROFILES: [&str; 12] = [
+/// Every profile identifier the contract accepts, shapes first and retired
+/// aliases after, so the frozen budget covers the longest receipt any of them
+/// can produce.
+const PROFILES: [&str; 20] = [
+    distill::AUTO_PROFILE,
+    "build-output/v1",
+    "test-output/v1",
+    "typecheck-lint/v1",
+    "stack-trace/v1",
+    "unified-diff/v1",
+    "api-json/v1",
+    "source-file/v1",
+    "terminal-log/v1",
     "plain-text/v1",
     "build-log/v1",
     "test-log/v1",
-    "diff/v1",
     "diagnostic/v1",
-    "stack-trace/v1",
-    "source-code/v1",
+    "diff/v1",
     "json/v1",
+    "source-code/v1",
     "unicode/v1",
     "binary/v1",
     "untrusted-text/v1",
@@ -117,9 +128,17 @@ fn deterministic_receipt_generator_freezes_lineage_budgets() {
                         omitted_spans,
                         preservation: PreservationResult {
                             profile: profile.to_owned(),
+                            applied_profile: "typecheck-lint/v1".to_owned(),
                             mandatory_fact_ids: (0..256)
                                 .map(|index| format!("fact-{index:03}"))
                                 .collect(),
+                            aggregates: vec![
+                                AggregateSpan {
+                                    span: ByteSpan { start: 0, end: 1 },
+                                    lines: u64::MAX,
+                                };
+                                span_count
+                            ],
                         },
                         acquisition: acquisition.clone(),
                     };

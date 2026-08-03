@@ -25,6 +25,17 @@ fn codex_setup_conforms_to_adapter_and_versioned_fixture() {
         fixture["host_output_cap"]["distill_maximum_tokens"],
         codex::SAFE_OUTPUT_CAP_TOKENS
     );
+    // US-014: the hook declares no content class either; the engine derives the
+    // policy from the shape of the observation it captured.
+    assert_eq!(
+        fixture["preservation"]["default_profile"],
+        crate::surface::DEFAULT_PRESERVATION_PROFILE
+    );
+    assert_eq!(
+        fixture["preservation"]["policy_version"],
+        distill::POLICY_VERSION
+    );
+    assert_eq!(fixture["preservation"]["declared_content_class"], false);
     assert_eq!(fixture["setup"]["matcher"], codex::SETUP_MATCHER);
     assert_eq!(
         fixture["setup"]["timeout_seconds"],

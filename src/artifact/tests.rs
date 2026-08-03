@@ -133,8 +133,10 @@ fn projection_receipt(reference: &ArtifactRef, request_id: String) -> Receipt {
         }],
         omitted_spans: Vec::new(),
         preservation: PreservationResult {
-            profile: "plain-text/v1".to_owned(),
+            profile: crate::AUTO_PROFILE.to_owned(),
+            applied_profile: "terminal-log/v1".to_owned(),
             mandatory_fact_ids: Vec::new(),
+            aggregates: Vec::new(),
         },
         acquisition: receipt(),
     }

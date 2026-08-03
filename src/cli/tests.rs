@@ -414,6 +414,24 @@ fn cli_conformance_matrix_pins_retrieval_and_selector_bounds() {
     assert_eq!(matrix["surface_schema_version"], CLI_SCHEMA_VERSION);
     assert_eq!(matrix["request_contract_version"], CONTRACT_VERSION);
     assert_eq!(matrix["retrieval"]["pattern_language"], "literal");
+
+    // US-014: the CLI pins the same shape-derived preservation contract, and
+    // every retired identifier it still accepts resolves to a shape policy.
+    let preservation = &matrix["preservation"];
+    assert_eq!(preservation["default_profile"], distill::AUTO_PROFILE);
+    assert_eq!(
+        preservation["default_profile"],
+        crate::surface::DEFAULT_PRESERVATION_PROFILE
+    );
+    assert_eq!(preservation["policy_version"], distill::POLICY_VERSION);
+    assert_eq!(
+        preservation["receipt_schema_version"],
+        distill::RECEIPT_SCHEMA_VERSION
+    );
+    assert_eq!(
+        preservation["unsupported_profile_failure"],
+        "invalid_request"
+    );
     assert_eq!(
         matrix["retrieval"]["unbounded_recovery_command"],
         "distill artifact get"

@@ -13,7 +13,9 @@ pub(crate) use envelope::{
 };
 
 pub(crate) const BROKEN_PIPE_EXIT: i32 = 74;
-pub(crate) const DEFAULT_PRESERVATION_PROFILE: &str = "plain-text/v1";
+/// Both product surfaces let the engine derive the policy from the shape of the
+/// observation. Neither declares a content class it cannot know.
+pub(crate) const DEFAULT_PRESERVATION_PROFILE: &str = distill::AUTO_PROFILE;
 
 pub(crate) fn budget_for(unit: CountUnit, total: u64, reserved: u64) -> Budget {
     Budget {

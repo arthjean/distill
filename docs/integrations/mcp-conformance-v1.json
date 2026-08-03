@@ -36,5 +36,58 @@
       "min_line_count": 1,
       "out_of_bounds_failure": "invalid_request"
     }
+  },
+  "preservation": {
+    "owner": "Engine::handle",
+    "default_profile": "auto/v1",
+    "derivation": "shape-detected from a bounded prefix of the observation",
+    "policy_version": "distill.preservation/v2",
+    "receipt_schema_version": "distill.receipt/v2",
+    "receipt_fields": [
+      "preservation.profile",
+      "preservation.applied_profile",
+      "preservation.aggregates"
+    ],
+    "shape_profiles": [
+      "build-output/v1",
+      "test-output/v1",
+      "typecheck-lint/v1",
+      "stack-trace/v1",
+      "unified-diff/v1",
+      "api-json/v1",
+      "source-file/v1",
+      "terminal-log/v1"
+    ],
+    "retired_profiles": {
+      "plain-text/v1": "terminal-log/v1",
+      "build-log/v1": "build-output/v1",
+      "test-log/v1": "test-output/v1",
+      "diagnostic/v1": "typecheck-lint/v1",
+      "diff/v1": "unified-diff/v1",
+      "json/v1": "api-json/v1",
+      "source-code/v1": "source-file/v1",
+      "unicode/v1": "terminal-log/v1",
+      "binary/v1": "terminal-log/v1",
+      "untrusted-text/v1": "terminal-log/v1",
+      "none/v1": "terminal-log/v1"
+    },
+    "unsupported_profile_failure": "invalid_request",
+    "aggregation": {
+      "annotated_shapes": [
+        "build-output/v1",
+        "test-output/v1",
+        "typecheck-lint/v1",
+        "stack-trace/v1",
+        "terminal-log/v1"
+      ],
+      "verbatim_shapes": [
+        "unified-diff/v1",
+        "api-json/v1",
+        "source-file/v1"
+      ],
+      "selected_retrieval_aggregates": false,
+      "minimum_collapsed_lines": 3
+    },
+    "published_profile_argument": false
   }
 }

@@ -76,5 +76,12 @@
     "off": "No event decoding, capture, evaluation, or replacement.",
     "observe": "Capture and evaluate supported events without replacing the original result.",
     "active": "Replace supported over-budget results with bounded projection feedback; never label a failed projection as success."
+  },
+  "preservation": {
+    "owner": "Engine::handle",
+    "default_profile": "auto/v1",
+    "derivation": "shape-detected from a bounded prefix of the observation",
+    "policy_version": "distill.preservation/v2",
+    "declared_content_class": false
   }
 }

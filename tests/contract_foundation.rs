@@ -94,7 +94,7 @@ fn public_projection_matrix_freezes_fidelity_budget_and_receipt_claims() {
     );
 
     let extractive_source =
-        b"head\nnoise noise noise\nERROR E1: critical\nwarning W1: useful\ntail\n";
+        b"head\nnoise noise noise\nerror[E1]: critical\nwarning: W1 is useful\ntail\n";
     let extractive = engine
         .handle(request(
             "extractive",
@@ -106,7 +106,7 @@ fn public_projection_matrix_freezes_fidelity_budget_and_receipt_claims() {
     assert_eq!(extractive.receipt.fidelity, Fidelity::Extractive);
     assert_eq!(
         extractive.receipt.preservation.mandatory_fact_ids,
-        ["build-log/v1:23-42"]
+        ["build-output/v1:23-43"]
     );
     assert_partition(
         extractive_source.len() as u64,
@@ -173,7 +173,7 @@ fn repeated_public_runs_have_byte_identical_projection_and_equivalent_claims() {
     let (_directory, engine) = engine();
     let candidate = request(
         "repeat",
-        b"head\nnoise noise noise\nERROR E1: critical\nwarning W1: useful\ntail\n".to_vec(),
+        b"head\nnoise noise noise\nerror[E1]: critical\nwarning: W1 is useful\ntail\n".to_vec(),
         byte_budget(48, 0),
         "build-log/v1",
     );
@@ -261,10 +261,15 @@ fn projection_matrix_reports_budget_utilization_and_retention() {
             "over-budget-utilization",
             source.clone(),
             token_budget_with_envelope(225, 45),
-            "plain-text/v1",
+            distill::AUTO_PROFILE,
         ))
         .expect("over-budget projection");
     let receipt = &over_budget.receipt;
+    // EP-004: the executed profile is `auto/v1`, and the matrix source is a
+    // source file, so the receipt records the policy the shape selected.
+    assert_eq!(receipt.preservation.profile, distill::AUTO_PROFILE);
+    assert_eq!(receipt.preservation.applied_profile, "source-file/v1");
+    assert!(receipt.preservation.aggregates.is_empty());
     assert_eq!(receipt.fidelity, Fidelity::Extractive);
     assert!(
         receipt.original_count > OVER_BUDGET_PAYLOAD_LIMIT,
@@ -288,7 +293,7 @@ fn projection_matrix_reports_budget_utilization_and_retention() {
     assert_eq!(receipt.retained_spans.len(), 2);
     assert_eq!(receipt.omitted_spans.len(), 1);
     assert_spends_payload_budget(
-        "plain-text/v1",
+        distill::AUTO_PROFILE,
         receipt.visible_count,
         OVER_BUDGET_PAYLOAD_LIMIT,
     );
@@ -328,11 +333,11 @@ fn over_budget_projection_must_spend_its_payload_budget() {
             "utilization-floor",
             line_structured_source(),
             token_budget_with_envelope(225, 45),
-            "plain-text/v1",
+            distill::AUTO_PROFILE,
         ))
         .expect("over-budget projection");
     assert_spends_payload_budget(
-        "plain-text/v1",
+        distill::AUTO_PROFILE,
         outcome.receipt.visible_count,
         OVER_BUDGET_PAYLOAD_LIMIT,
     );
