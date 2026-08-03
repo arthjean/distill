@@ -1,0 +1,40 @@
+{
+  "schema_version": "distill.mcp-conformance/v1",
+  "surface_schema_version": "distill.mcp/v1",
+  "request_contract_version": "distill.context/v3",
+  "protocol_version": "2025-06-18",
+  "tools": [
+    "distill_read",
+    "distill_run",
+    "distill_artifact_slice",
+    "distill_artifact_search"
+  ],
+  "retrieval": {
+    "owner": "Engine::handle",
+    "pattern_language": "literal",
+    "budget_required": true,
+    "argument_decode_failure": "isError",
+    "unbounded_recovery_is_published": false,
+    "tools": [
+      {
+        "name": "distill_artifact_slice",
+        "required": ["artifact_id", "start_line", "line_count", "budget"]
+      },
+      {
+        "name": "distill_artifact_search",
+        "required": ["artifact_id", "pattern", "budget"]
+      }
+    ],
+    "selector_bounds": {
+      "artifact_id_length": 32,
+      "max_pattern_bytes": 512,
+      "max_context_lines": 16,
+      "max_matches": 32,
+      "default_context_lines": 2,
+      "default_matches": 8,
+      "min_start_line": 1,
+      "min_line_count": 1,
+      "out_of_bounds_failure": "invalid_request"
+    }
+  }
+}

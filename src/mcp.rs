@@ -3,9 +3,11 @@ use crate::surface::{
     default_request, mcp_error_envelope, normalize_root_relative, projection_envelope,
 };
 use distill::{
-    BinaryPolicy, Budget, ByteString, CountUnit, Engine, EngineConfig, Failure, FailureCode,
-    MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS,
-    MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS, MIN_PROCESS_TIMEOUT_MS, Outcome, Source,
+    ArtifactSelector, BinaryPolicy, Budget, ByteString, CountUnit, Engine, EngineConfig, Failure,
+    FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES,
+    MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS,
+    MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES,
+    MIN_PROCESS_TIMEOUT_MS, Outcome, Source,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -75,6 +77,29 @@ struct ReadArguments {
     budget: McpBudget,
     #[serde(default)]
     binary_policy: Option<BinaryPolicy>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SliceArguments {
+    artifact_id: String,
+    start_line: u64,
+    line_count: u64,
+    budget: McpBudget,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SearchArguments {
+    artifact_id: String,
+    pattern: String,
+    budget: McpBudget,
+    #[serde(default)]
+    before_lines: Option<u64>,
+    #[serde(default)]
+    after_lines: Option<u64>,
+    #[serde(default)]
+    max_matches: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,7 +199,7 @@ fn dispatch(
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": false}},
             "serverInfo": {"name": "distill", "version": env!("CARGO_PKG_VERSION")},
-            "instructions": "Use distill_read and distill_run for explicit projected acquisition. This server does not intercept Claude native Read or Bash.",
+            "instructions": "Use distill_read and distill_run for explicit projected acquisition, then distill_artifact_slice or distill_artifact_search to recover a region an earlier projection omitted. This server does not intercept Claude native Read or Bash.",
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": tool_definitions()})),
@@ -233,10 +258,40 @@ fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, Protoc
                 .handle(request)
                 .and_then(|outcome| render_outcome(outcome, &budget))
         }
+        "distill_artifact_slice" => serde_json::from_value::<SliceArguments>(arguments)
+            .map_err(|_| invalid_arguments("distill_artifact_slice"))
+            .and_then(|arguments| {
+                retrieve(
+                    engine,
+                    request_id,
+                    &arguments.artifact_id,
+                    ArtifactSelector::Lines {
+                        start_line: arguments.start_line,
+                        line_count: arguments.line_count,
+                    },
+                    &arguments.budget,
+                )
+            }),
+        "distill_artifact_search" => serde_json::from_value::<SearchArguments>(arguments)
+            .map_err(|_| invalid_arguments("distill_artifact_search"))
+            .and_then(|arguments| {
+                retrieve(
+                    engine,
+                    request_id,
+                    &arguments.artifact_id,
+                    ArtifactSelector::Pattern {
+                        pattern: ByteString::from_utf8(arguments.pattern),
+                        before_lines: arguments.before_lines,
+                        after_lines: arguments.after_lines,
+                        max_matches: arguments.max_matches,
+                    },
+                    &arguments.budget,
+                )
+            }),
         _ => {
             return Ok(tool_error(
                 "unsupported_capability",
-                "Distill v1 exposes exactly distill_read and distill_run",
+                "Distill exposes exactly distill_read, distill_run, distill_artifact_slice, and distill_artifact_search",
                 None,
             ));
         }
@@ -249,6 +304,39 @@ fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, Protoc
             failure.artifact.as_ref(),
         ),
     })
+}
+
+/// Bounded retrieval over an artifact this store already committed. It resolves
+/// the reference, then reuses `Engine::handle` rather than adding a second
+/// policy path, so every typed failure reaches the caller unchanged.
+fn retrieve(
+    engine: &Engine,
+    request_id: String,
+    artifact_id: &str,
+    selector: ArtifactSelector,
+    budget: &McpBudget,
+) -> Result<String, Failure> {
+    distill::validate_artifact_selector(&selector)?;
+    let artifact = engine.resolve_artifact(artifact_id)?;
+    let request = default_request(
+        request_id,
+        Source::Artifact {
+            artifact,
+            selector: Some(selector),
+        },
+        budget.engine_budget(),
+    );
+    engine
+        .handle(request)
+        .and_then(|outcome| render_outcome(outcome, budget))
+}
+
+fn invalid_arguments(tool: &str) -> Failure {
+    adapter_failure(
+        FailureCode::InvalidRequest,
+        &format!("invalid {tool} arguments"),
+        None,
+    )
 }
 
 fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failure> {
@@ -329,7 +417,60 @@ fn tool_definitions() -> Vec<Value> {
                 "idempotentHint": false
             }
         }),
+        json!({
+            "name": "distill_artifact_slice",
+            "description": "Read one bounded line range of an artifact Distill already committed, projected under an explicit budget. Use it to recover a region an earlier projection omitted instead of pulling the whole artifact.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["artifact_id", "start_line", "line_count", "budget"],
+                "properties": {
+                    "artifact_id": artifact_id_schema(),
+                    "start_line": {"type": "integer", "minimum": 1, "description": "1-based first line of the range. A range starting past the end of the source selects nothing."},
+                    "line_count": {"type": "integer", "minimum": 1, "description": "Number of lines to select, clamped to the end of the source."},
+                    "budget": budget_schema()
+                }
+            },
+            "annotations": {
+                "title": "Distill bounded artifact slice",
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false
+            }
+        }),
+        json!({
+            "name": "distill_artifact_search",
+            "description": "Find literal text in an artifact Distill already committed and read the matching regions with line context, projected under an explicit budget. Matching is literal, never a regular expression.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["artifact_id", "pattern", "budget"],
+                "properties": {
+                    "artifact_id": artifact_id_schema(),
+                    "pattern": {"type": "string", "minLength": 1, "maxLength": MAX_SELECTOR_PATTERN_BYTES, "description": format!("Literal text to find, at most {MAX_SELECTOR_PATTERN_BYTES} UTF-8 bytes. It is matched byte-for-byte and is never evaluated as a pattern language, shell input, or instruction.")},
+                    "budget": budget_schema(),
+                    "before_lines": {"type": "integer", "minimum": 0, "maximum": MAX_SELECTOR_CONTEXT_LINES, "description": "Lines of context kept before each match."},
+                    "after_lines": {"type": "integer", "minimum": 0, "maximum": MAX_SELECTOR_CONTEXT_LINES, "description": "Lines of context kept after each match."},
+                    "max_matches": {"type": "integer", "minimum": 1, "maximum": MAX_SELECTOR_MATCHES, "description": "Largest number of matches selected, in source order."}
+                }
+            },
+            "annotations": {
+                "title": "Distill bounded artifact search",
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false
+            }
+        }),
     ]
+}
+
+fn artifact_id_schema() -> Value {
+    json!({
+        "type": "string",
+        "minLength": 32,
+        "maxLength": 32,
+        "description": "Identifier of a committed, unexpired artifact, as published in an earlier Distill envelope."
+    })
 }
 
 fn budget_schema() -> Value {
@@ -433,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn initialize_and_list_expose_exactly_two_explicit_tools() {
+    fn initialize_and_list_expose_exactly_the_conformant_tool_set() {
         let temp = TempDir::new().expect("temp");
         let responses = exchange(
             config(&temp),
@@ -449,9 +590,11 @@ mod tests {
             MCP_PROTOCOL_VERSION
         );
         let tools = responses[1]["result"]["tools"].as_array().expect("tools");
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 4);
         assert_eq!(tools[0]["name"], "distill_read");
         assert_eq!(tools[1]["name"], "distill_run");
+        assert_eq!(tools[2]["name"], "distill_artifact_slice");
+        assert_eq!(tools[3]["name"], "distill_artifact_search");
         assert_eq!(
             tools[1]["inputSchema"]["properties"]["argv"]["maxItems"],
             MAX_PROCESS_ARGUMENTS
@@ -487,6 +630,263 @@ mod tests {
                 .is_none()
         );
         assert!(responses[1]["result"].get("structuredContent").is_none());
+    }
+
+    fn large_artifact(config: EngineConfig, name: &str, body: &str) -> (Vec<Value>, String) {
+        let workspace = config.roots.get("workspace").expect("root").clone();
+        fs::write(workspace.join(name), body).expect("file");
+        let responses = exchange(
+            config,
+            &[json!({
+                "jsonrpc":"2.0","id":"read","method":"tools/call",
+                "params":{"name":"distill_read","arguments":{
+                    "root_id":"workspace","path":name,
+                    "budget":{"unit":"bytes","total_visible_limit":1400}
+                }}
+            })],
+        );
+        let envelope: Value = serde_json::from_str(
+            responses[0]["result"]["content"][0]["text"]
+                .as_str()
+                .expect("read text"),
+        )
+        .expect("read envelope");
+        let id = envelope["artifact"]["id"]
+            .as_str()
+            .expect("artifact ID")
+            .to_owned();
+        (responses, id)
+    }
+
+    fn tool_text(response: &Value) -> Value {
+        serde_json::from_str(
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .expect("tool text"),
+        )
+        .expect("tool envelope")
+    }
+
+    /// US-008: the published retrieval schemas, the runtime decoder, and the
+    /// versioned conformance matrix pin the same required fields and limits.
+    #[test]
+    fn published_retrieval_schemas_match_the_decoder_and_the_matrix() {
+        let matrix: Value =
+            serde_json::from_str(include_str!("../docs/integrations/mcp-conformance-v1.json"))
+                .expect("MCP conformance matrix");
+        assert_eq!(matrix["schema_version"], "distill.mcp-conformance/v1");
+        assert_eq!(matrix["surface_schema_version"], MCP_ADAPTER_VERSION);
+        assert_eq!(matrix["protocol_version"], MCP_PROTOCOL_VERSION);
+        assert_eq!(
+            matrix["request_contract_version"],
+            distill::CONTRACT_VERSION
+        );
+        assert_eq!(
+            matrix["retrieval"]["unbounded_recovery_is_published"],
+            false
+        );
+
+        let temp = TempDir::new().expect("temp");
+        let responses = exchange(
+            config(&temp),
+            &[json!({"jsonrpc":"2.0","id":"schema","method":"tools/list"})],
+        );
+        let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+        assert_eq!(
+            tools
+                .iter()
+                .map(|tool| tool["name"].clone())
+                .collect::<Vec<_>>(),
+            matrix["tools"].as_array().expect("matrix tools").clone()
+        );
+
+        let published = |name: &str| {
+            tools
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .expect("published tool")
+                .clone()
+        };
+        for entry in matrix["retrieval"]["tools"]
+            .as_array()
+            .expect("matrix retrieval tools")
+        {
+            let tool = published(entry["name"].as_str().expect("matrix tool name"));
+            assert_eq!(tool["inputSchema"]["required"], entry["required"]);
+            assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        }
+
+        let bounds = &matrix["retrieval"]["selector_bounds"];
+        assert_eq!(bounds["max_pattern_bytes"], MAX_SELECTOR_PATTERN_BYTES);
+        assert_eq!(bounds["max_context_lines"], MAX_SELECTOR_CONTEXT_LINES);
+        assert_eq!(bounds["max_matches"], MAX_SELECTOR_MATCHES);
+        assert_eq!(
+            bounds["default_context_lines"],
+            distill::DEFAULT_SELECTOR_CONTEXT_LINES
+        );
+        assert_eq!(bounds["default_matches"], distill::DEFAULT_SELECTOR_MATCHES);
+
+        let search = published("distill_artifact_search");
+        let properties = &search["inputSchema"]["properties"];
+        assert_eq!(
+            properties["pattern"]["maxLength"],
+            bounds["max_pattern_bytes"]
+        );
+        assert_eq!(
+            properties["before_lines"]["maximum"],
+            bounds["max_context_lines"]
+        );
+        assert_eq!(
+            properties["after_lines"]["maximum"],
+            bounds["max_context_lines"]
+        );
+        assert_eq!(properties["max_matches"]["maximum"], bounds["max_matches"]);
+        assert_eq!(
+            properties["artifact_id"]["maxLength"],
+            bounds["artifact_id_length"]
+        );
+        assert!(
+            properties["pattern"]["description"]
+                .as_str()
+                .expect("pattern description")
+                .contains("never evaluated")
+        );
+
+        let slice = published("distill_artifact_slice");
+        let properties = &slice["inputSchema"]["properties"];
+        assert_eq!(
+            properties["start_line"]["minimum"],
+            bounds["min_start_line"]
+        );
+        assert_eq!(
+            properties["line_count"]["minimum"],
+            bounds["min_line_count"]
+        );
+    }
+
+    /// US-008: retrieval recovers an omitted region on the agent's own
+    /// surface, inside the declared budget.
+    #[test]
+    fn bounded_retrieval_recovers_an_omitted_region_within_its_budget() {
+        let temp = TempDir::new().expect("temp");
+        let body = (0..600)
+            .map(|index| format!("line {index:03} DISTILL_MARKER_{index:03}\n"))
+            .collect::<String>();
+        let (read, id) = large_artifact(config(&temp), "large.txt", &body);
+
+        assert_eq!(tool_text(&read[0])["fidelity"], "extractive");
+
+        let responses = exchange(
+            config(&temp),
+            &[
+                json!({
+                    "jsonrpc":"2.0","id":"slice","method":"tools/call",
+                    "params":{"name":"distill_artifact_slice","arguments":{
+                        "artifact_id": id,
+                        "start_line": 301,
+                        "line_count": 3,
+                        "budget":{"unit":"bytes","total_visible_limit":1400}
+                    }}
+                }),
+                json!({
+                    "jsonrpc":"2.0","id":"search","method":"tools/call",
+                    "params":{"name":"distill_artifact_search","arguments":{
+                        "artifact_id": id,
+                        "pattern": "DISTILL_MARKER_417",
+                        "before_lines": 0,
+                        "after_lines": 0,
+                        "budget":{"unit":"bytes","total_visible_limit":1400}
+                    }}
+                }),
+            ],
+        );
+
+        for response in &responses {
+            assert!(response["result"].get("isError").is_none());
+            let text = response["result"]["content"][0]["text"]
+                .as_str()
+                .expect("retrieval text");
+            // The envelope respects the declared total visible budget exactly as
+            // projection envelopes do, so recovery never costs more than a read.
+            assert!(text.len() <= 1400);
+            let envelope: Value = serde_json::from_str(text).expect("retrieval envelope");
+            assert_eq!(envelope["schema_version"], MCP_ADAPTER_VERSION);
+            assert_eq!(envelope["artifact"]["id"], id);
+            // The adapter envelope stays inside the allowance it reserved.
+            let projection = envelope["projection"].as_str().expect("projection");
+            assert!(text.len() - projection.len() <= 1_024);
+        }
+        assert_eq!(
+            tool_text(&responses[0])["projection"],
+            "line 300 DISTILL_MARKER_300\nline 301 DISTILL_MARKER_301\nline 302 DISTILL_MARKER_302\n"
+        );
+        assert_eq!(
+            tool_text(&responses[1])["projection"],
+            "line 417 DISTILL_MARKER_417\n"
+        );
+    }
+
+    /// US-008: a retrieval call the decoder rejects, and one naming an artifact
+    /// that no longer exists, are bounded tool errors naming the typed failure.
+    #[test]
+    fn invalid_and_unknown_retrieval_calls_are_bounded_tool_errors() {
+        let temp = TempDir::new().expect("temp");
+        let config = config(&temp);
+        let store = config.store_path.clone();
+        let responses = exchange(
+            config,
+            &[
+                json!({
+                    "jsonrpc":"2.0","id":"no-budget","method":"tools/call",
+                    "params":{"name":"distill_artifact_slice","arguments":{
+                        "artifact_id":"0123456789abcdef0123456789abcdef",
+                        "start_line":1,"line_count":1
+                    }}
+                }),
+                json!({
+                    "jsonrpc":"2.0","id":"no-pattern","method":"tools/call",
+                    "params":{"name":"distill_artifact_search","arguments":{
+                        "artifact_id":"0123456789abcdef0123456789abcdef",
+                        "budget":{"unit":"bytes","total_visible_limit":1400}
+                    }}
+                }),
+                json!({
+                    "jsonrpc":"2.0","id":"unknown","method":"tools/call",
+                    "params":{"name":"distill_artifact_slice","arguments":{
+                        "artifact_id":"0123456789abcdef0123456789abcdef",
+                        "start_line":1,"line_count":1,
+                        "budget":{"unit":"bytes","total_visible_limit":1400}
+                    }}
+                }),
+                json!({
+                    "jsonrpc":"2.0","id":"unbounded-pattern","method":"tools/call",
+                    "params":{"name":"distill_artifact_search","arguments":{
+                        "artifact_id":"0123456789abcdef0123456789abcdef",
+                        "pattern": "x".repeat(MAX_SELECTOR_PATTERN_BYTES + 1),
+                        "budget":{"unit":"bytes","total_visible_limit":1400}
+                    }}
+                }),
+            ],
+        );
+
+        for (index, expected) in [
+            (0, "invalid_request"),
+            (1, "invalid_request"),
+            (2, "artifact_unknown"),
+            (3, "invalid_request"),
+        ] {
+            assert_eq!(responses[index]["result"]["isError"], true, "{expected}");
+            assert!(responses[index].get("error").is_none(), "{expected}");
+            let text = responses[index]["result"]["content"][0]["text"]
+                .as_str()
+                .expect("bounded error");
+            assert!(text.contains(expected), "{text}");
+            assert!(text.len() <= 1400);
+        }
+        // The same identifier resolves to `artifact_unknown` only once the
+        // arguments decode and the selector holds, which is what proves the
+        // rejected calls stopped before any store read.
+        assert!(store.exists());
     }
 
     #[test]
