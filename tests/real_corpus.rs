@@ -1,6 +1,10 @@
-//! EP-002 evidence on the executed path: the real tool-output corpus projected
-//! through `Engine::handle` at the budget the Codex hook runs, measured against
-//! the frozen `evaluation/baseline/projection-baseline-v1.json` behavior.
+//! Evidence on the executed path: the real tool-output corpus projected through
+//! `Engine::handle` at the budget the Codex hook runs, measured against the
+//! frozen `evaluation/baseline/projection-baseline-v1.json` behavior.
+//!
+//! EP-002 proved the budget is spent. EP-004 moves the executed profile to
+//! `auto/v1`, so the same measurements now qualify the shape-derived policy the
+//! surfaces actually run, and the manifest labels qualify the classifier.
 
 #![allow(clippy::expect_used, clippy::panic)]
 
@@ -13,7 +17,7 @@ use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
 const REAL_CORPUS_SCHEMA_VERSION: &str = "distill.real-corpus/v1";
-const EXECUTED_PROFILE: &str = "plain-text/v1";
+const EXECUTED_PROFILE: &str = distill::AUTO_PROFILE;
 
 /// The executed Codex hook default: 2250 total visible tokens with a 450-token
 /// reserved envelope, so 1800 tokens of payload.
@@ -26,11 +30,14 @@ const HOOK_PAYLOAD_LIMIT: u64 = HOOK_TOTAL_VISIBLE_LIMIT - HOOK_RESERVED_ENVELOP
 const UTILIZATION_FLOOR_BASIS_POINTS: u64 = 8_500;
 const BASELINE_MEDIAN_UTILIZATION_BASIS_POINTS: u64 = 77;
 
+/// US-011 requires the detected shape to match the manifest label for at least
+/// 95% of the real corpus.
+const SHAPE_AGREEMENT_FLOOR_PERCENT: usize = 95;
+
 #[derive(Debug, Deserialize)]
 struct RealFixture {
     schema_version: String,
     id: String,
-    #[allow(dead_code)]
     shape: String,
     byte_length: usize,
     sha256: String,
@@ -186,6 +193,68 @@ fn the_measured_fixtures_reproduce_the_recorded_gain() {
             measured / 100,
             measured % 100
         );
+    }
+}
+
+/// US-011: the shape `auto/v1` detects must agree with the label the corpus
+/// manifest recorded from the capture command, for at least 95% of fixtures.
+/// The receipt is the only observation point, which also proves it records the
+/// policy that ran.
+#[test]
+fn detected_shapes_agree_with_the_real_corpus_labels() {
+    let (_directory, engine) = engine();
+    let corpus = real_corpus();
+    let mut agreed = 0_usize;
+    let mut disagreements = Vec::new();
+
+    for (fixture, bytes) in &corpus {
+        let outcome = engine
+            .handle(request(&fixture.id, bytes.clone()))
+            .unwrap_or_else(|failure| panic!("{} failed: {failure}", fixture.id));
+        let preservation = &outcome.receipt.preservation;
+        assert_eq!(preservation.profile, EXECUTED_PROFILE, "{}", fixture.id);
+        let expected = format!("{}/v1", fixture.shape);
+        if preservation.applied_profile == expected {
+            agreed += 1;
+        } else {
+            disagreements.push(format!(
+                "{}: labelled {expected}, detected {}",
+                fixture.id, preservation.applied_profile
+            ));
+        }
+    }
+
+    eprintln!(
+        "shape agreement {agreed}/{} disagreements={disagreements:?}",
+        corpus.len()
+    );
+    assert!(
+        agreed * 100 >= corpus.len() * SHAPE_AGREEMENT_FLOOR_PERCENT,
+        "shape classification agreed on {agreed} of {} fixtures: {disagreements:?}",
+        corpus.len()
+    );
+}
+
+/// US-011: identical bytes always detect the same shape, so a projection cannot
+/// change policy between two reads of the same observation.
+#[test]
+fn shape_detection_is_stable_across_repeated_classification() {
+    let (_directory, engine) = engine();
+    for (fixture, bytes) in real_corpus().into_iter().take(4) {
+        let first = engine
+            .handle(request(&fixture.id, bytes.clone()))
+            .expect("first classification");
+        let applied = first.receipt.preservation.applied_profile;
+        for _ in 0..100 {
+            let repeated = engine
+                .handle(request(&fixture.id, bytes.clone()))
+                .expect("repeated classification");
+            assert_eq!(
+                repeated.receipt.preservation.applied_profile, applied,
+                "{}",
+                fixture.id
+            );
+        }
     }
 }
 
