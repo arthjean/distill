@@ -8,7 +8,9 @@ use tiktoken_rs::cl100k_base_singleton;
 
 mod envelope;
 
-pub(crate) use envelope::{codex_error_envelope, mcp_error_envelope, projection_envelope};
+pub(crate) use envelope::{
+    Recovery, codex_error_envelope, mcp_error_envelope, projection_envelope,
+};
 
 pub(crate) const BROKEN_PIPE_EXIT: i32 = 74;
 pub(crate) const DEFAULT_PRESERVATION_PROFILE: &str = "plain-text/v1";

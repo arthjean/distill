@@ -1,5 +1,5 @@
 use crate::surface::{
-    SurfaceError, adapter_failure, bounded_correlation_id, budget_for, count_visible,
+    Recovery, SurfaceError, adapter_failure, bounded_correlation_id, budget_for, count_visible,
     default_request, mcp_error_envelope, normalize_root_relative, projection_envelope,
 };
 use distill::{
@@ -344,6 +344,7 @@ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failur
         MCP_ADAPTER_VERSION,
         &outcome,
         Some(&outcome.receipt.acquisition),
+        Recovery::McpTools,
     ))
     .map_err(|_| {
         adapter_failure(
@@ -764,8 +765,9 @@ mod tests {
         );
     }
 
-    /// US-008: retrieval recovers an omitted region on the agent's own
-    /// surface, inside the declared budget.
+    /// US-008 and US-009: retrieval recovers an omitted region on the agent's
+    /// own surface, inside the declared budget, and the omitting envelope names
+    /// the bounded tools rather than an unbounded command.
     #[test]
     fn bounded_retrieval_recovers_an_omitted_region_within_its_budget() {
         let temp = TempDir::new().expect("temp");
@@ -774,7 +776,19 @@ mod tests {
             .collect::<String>();
         let (read, id) = large_artifact(config(&temp), "large.txt", &body);
 
-        assert_eq!(tool_text(&read[0])["fidelity"], "extractive");
+        let projection = tool_text(&read[0]);
+        assert_eq!(projection["fidelity"], "extractive");
+        let recovery = projection["recovery"].as_str().expect("recovery");
+        assert!(recovery.contains("distill_artifact_slice"));
+        assert!(recovery.contains("distill_artifact_search"));
+        assert!(recovery.contains(&id));
+        assert!(!recovery.contains("artifact get"));
+        assert!(
+            projection["accounting"]["omitted"]
+                .as_u64()
+                .expect("omitted")
+                > 0
+        );
 
         let responses = exchange(
             config(&temp),

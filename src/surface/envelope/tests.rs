@@ -50,6 +50,14 @@ fn outcome() -> Outcome {
     }
 }
 
+fn omitting(fidelity: Fidelity) -> Outcome {
+    let mut outcome = outcome();
+    outcome.receipt.fidelity = fidelity;
+    outcome.receipt.original_count = 120;
+    outcome.receipt.visible_count = 7;
+    outcome
+}
+
 #[test]
 fn shared_projection_envelopes_preserve_existing_wire_encoding() {
     let outcome = outcome();
@@ -71,13 +79,13 @@ fn shared_projection_envelopes_preserve_existing_wire_encoding() {
             "projection_version": outcome.receipt.projection_version,
             "policy_version": outcome.receipt.policy_version,
         },
-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
     });
     assert_eq!(
         serde_json::to_string(&projection_envelope(
             "distill.codex-projection/v1",
             &outcome,
             None,
+            Recovery::CliCommands,
         ))
         .expect("shared Codex envelope"),
         serde_json::to_string(&expected_codex).expect("expected Codex envelope"),
@@ -111,21 +119,85 @@ fn shared_projection_envelopes_preserve_existing_wire_encoding() {
             "relative_path": outcome.receipt.acquisition.relative_path,
             "process": process,
         },
-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
     });
     assert_eq!(
         serde_json::to_string(&projection_envelope(
             "distill.mcp/v1",
             &outcome,
             Some(&outcome.receipt.acquisition),
+            Recovery::McpTools,
         ))
         .expect("shared MCP envelope"),
         serde_json::to_string(&expected_mcp).expect("expected MCP envelope"),
     );
 }
 
+/// US-009: an exact projection omits nothing, so it advertises no recovery and
+/// reports no omission.
 #[test]
-fn shared_error_envelopes_preserve_existing_wire_encoding() {
+fn an_exact_projection_emits_no_recovery_instruction() {
+    for recovery in [Recovery::McpTools, Recovery::CliCommands] {
+        let envelope = projection_envelope("distill.mcp/v1", &outcome(), None, recovery);
+        assert!(envelope.get("recovery").is_none());
+        assert!(envelope["accounting"].get("omitted").is_none());
+    }
+}
+
+/// US-009: an omitting projection reports the omission in the request's count
+/// unit and names the bounded operation available on its own surface.
+#[test]
+fn an_omitting_projection_names_a_bounded_surface_operation() {
+    let outcome = omitting(Fidelity::Extractive);
+    let id = &outcome.artifact.id;
+
+    let mcp = projection_envelope(
+        "distill.mcp/v1",
+        &outcome,
+        Some(&outcome.receipt.acquisition),
+        Recovery::McpTools,
+    );
+    assert_eq!(mcp["accounting"]["omitted"], 113);
+    assert_eq!(mcp["accounting"]["unit"], "bytes");
+    let mcp_recovery = mcp["recovery"].as_str().expect("MCP recovery");
+    assert!(mcp_recovery.contains("distill_artifact_slice"));
+    assert!(mcp_recovery.contains("distill_artifact_search"));
+    assert!(mcp_recovery.contains(id));
+    assert!(!mcp_recovery.contains("artifact get"));
+
+    let codex = projection_envelope(
+        "distill.codex-projection/v1",
+        &outcome,
+        None,
+        Recovery::CliCommands,
+    );
+    assert_eq!(codex["accounting"]["omitted"], 113);
+    let codex_recovery = codex["recovery"].as_str().expect("Codex recovery");
+    assert!(codex_recovery.contains("distill artifact slice"));
+    assert!(codex_recovery.contains("--budget"));
+    assert!(codex_recovery.contains(id));
+    assert!(!codex_recovery.contains("artifact get"));
+}
+
+/// US-009: a committed artifact whose bytes bounded retrieval cannot select
+/// still reports its omission, without naming an operation that would fail.
+#[test]
+fn an_unretrievable_projection_states_omission_without_an_operation() {
+    for fidelity in [Fidelity::Encoded, Fidelity::MetadataOnly] {
+        let outcome = omitting(fidelity);
+        let envelope = projection_envelope(
+            "distill.mcp/v1",
+            &outcome,
+            Some(&outcome.receipt.acquisition),
+            Recovery::McpTools,
+        );
+        assert!(envelope["artifact"].is_object());
+        assert_eq!(envelope["accounting"]["omitted"], 113);
+        assert!(envelope.get("recovery").is_none());
+    }
+}
+
+#[test]
+fn shared_error_envelopes_name_bounded_recovery_per_surface() {
     let outcome = outcome();
     let expected = json!({
         "schema_version": "distill.mcp/v1",
@@ -135,7 +207,7 @@ fn shared_error_envelopes_preserve_existing_wire_encoding() {
             "artifact": outcome.artifact,
         },
         "raw_content_included": false,
-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
+        "recovery": Recovery::McpTools.instruction(&outcome.artifact),
     });
     assert_eq!(
         mcp_error_envelope(
@@ -146,4 +218,23 @@ fn shared_error_envelopes_preserve_existing_wire_encoding() {
         ),
         serde_json::to_string(&expected).expect("expected envelope"),
     );
+
+    let codex = codex_error_envelope(
+        "distill.codex-projection/v1",
+        "budget_unsatisfiable",
+        "bounded",
+        Some(&outcome.artifact),
+    );
+    assert!(codex.contains("distill artifact slice"));
+    assert!(!codex.contains("artifact get"));
+
+    // Without a committed artifact there is nothing to retrieve.
+    let uncommitted: Value = serde_json::from_str(&mcp_error_envelope(
+        "distill.mcp/v1",
+        "invalid_request",
+        "x",
+        None,
+    ))
+    .expect("uncommitted envelope");
+    assert_eq!(uncommitted["recovery"], Value::Null);
 }

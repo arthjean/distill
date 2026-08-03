@@ -1,6 +1,6 @@
 use crate::surface::{
-    SurfaceError, adapter_failure, bounded_correlation_id, budget_for, codex_error_envelope,
-    count_visible, default_request, projection_envelope, write_json_line,
+    Recovery, SurfaceError, adapter_failure, bounded_correlation_id, budget_for,
+    codex_error_envelope, count_visible, default_request, projection_envelope, write_json_line,
 };
 use distill::{
     ByteString, CountUnit, Engine, EngineConfig, Failure, FailureCode, Fidelity, Outcome, Source,
@@ -285,6 +285,7 @@ fn render_projection(outcome: &Outcome) -> String {
         PROJECTION_SCHEMA_VERSION,
         outcome,
         None,
+        Recovery::CliCommands,
     ))
     .unwrap_or_else(|_| {
         compact_feedback(
@@ -430,6 +431,22 @@ mod tests {
         assert!(feedback.contains("artifact"));
         assert!(!feedback.contains("secret-middle-500"));
         assert!(token_count(feedback) <= SAFE_OUTPUT_CAP_TOKENS);
+        // US-009: the envelope, including its bounded recovery instruction and
+        // its omission accounting, still fits the reserved allowance the engine
+        // was told to subtract.
+        let envelope: Value = serde_json::from_str(feedback).expect("projection envelope");
+        let projection = envelope["projection"].as_str().expect("projection");
+        assert!(
+            envelope["recovery"]
+                .as_str()
+                .expect("recovery")
+                .contains("distill artifact slice")
+        );
+        assert!(envelope["accounting"]["omitted"].as_u64().expect("omitted") > 0);
+        assert!(
+            token_count(feedback) - token_count(projection) <= DEFAULT_RESERVED_TOKENS,
+            "hook envelope overhead exceeds its reserved allowance"
+        );
 
         let (result, output) = invoke(config(&temp), "active", &event("Bash", json!("small")));
         assert!(result.is_ok());
