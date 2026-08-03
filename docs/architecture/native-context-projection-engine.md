@@ -91,10 +91,29 @@ profiles. It preserves mandatory spans, selects optional spans within the
 remaining budget, and emits a receipt that maps visible and omitted spans to the
 source digest. Closed v1 profile identifiers and line rules are one internal
 policy table. Over-budget text is scanned once for mandatory and optional
-candidates, then planned with normalized spans and reusable byte accounting.
-Token-budget proposals still receive exact full tokenization when selection
-depends on it. The planner enforces the persisted receipt span limit before it
-returns a projection, including both retained and omitted partitions.
+candidates, then planned as a set of spans carrying their own counts.
+
+Planning is incremental. A plan's count is the sum of its span counts, which is
+exact because every span boundary is anchored to an additive offset: the start
+of the text, its end, or a line break followed by a line that reaches a
+non-whitespace character before any further line break. `cl100k` joins a line
+break with the whitespace run that the next break closes, so those are the only
+offsets where token counts add. Accepting a candidate therefore counts only the
+source the plan did not already cover, and a projection tokenizes its rendered
+payload exactly once, to verify the count planning carried. A disagreement
+returns `invariant_breach` instead of a payload.
+
+Selection then spends whatever payload budget it left. Retained spans grow
+outward one line group at a time, alternating between frontiers so the visible
+payload keeps both the head and the tail of the observation, until no further
+line group fits. A frontier that fails is retired, because the remaining budget
+never grows back. Selection that finds no candidate at all still falls back to
+the longest fitting prefix, cut on a UTF-8 boundary.
+
+The planner enforces the persisted receipt span limit before it returns a
+projection, including both retained and omitted partitions. At the ceiling a
+candidate is bridged to its nearest retained neighbour, so a fragment is merged
+rather than dropped and the partition stays exact.
 
 Byte budgets are exact. Token budgets accept only the versioned
 `cl100k_base@js-tiktoken-1.0.15` profile. An unknown tokenizer fails with
