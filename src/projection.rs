@@ -107,44 +107,99 @@ struct Analysis {
     candidates: Vec<ByteSpan>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
+struct PlanSpan {
+    span: ByteSpan,
+    /// Exact count of the source slice the span covers, under the plan counter.
+    count: u64,
+}
+
+/// A retained selection together with the exact count of the payload it would
+/// render. Every span boundary sits on an additive offset, so the payload count
+/// is the sum of the span counts and stays exact as candidates are accepted.
+#[derive(Clone, Debug, Default)]
 struct SpanPlan {
-    spans: Vec<ByteSpan>,
+    spans: Vec<PlanSpan>,
     byte_count: u64,
+    visible_count: u64,
 }
 
 impl SpanPlan {
-    fn new(mut spans: Vec<ByteSpan>) -> Self {
-        normalize_spans(&mut spans);
-        let byte_count = span_byte_count(&spans);
-        Self { spans, byte_count }
+    fn new(spec: ProjectionSpec, text: &str, spans: &[ByteSpan]) -> Self {
+        spans.iter().fold(Self::default(), |plan, span| {
+            plan.with_candidate(spec, text, *span)
+        })
     }
 
-    fn with_candidate(&self, candidate: ByteSpan) -> Self {
-        let mut spans = Vec::with_capacity(self.spans.len() + 1);
-        let mut merged = candidate;
-        let mut inserted = false;
-        for span in self.spans.iter().copied() {
-            if span.end < merged.start {
-                spans.push(span);
-            } else if merged.end < span.start {
-                if !inserted {
-                    spans.push(merged);
-                    inserted = true;
-                }
-                spans.push(span);
-            } else {
-                merged.start = merged.start.min(span.start);
-                merged.end = merged.end.max(span.end);
+    fn prefix(span: ByteSpan, count: u64) -> Self {
+        Self {
+            spans: vec![PlanSpan { span, count }],
+            byte_count: span.end.saturating_sub(span.start),
+            visible_count: count,
+        }
+    }
+
+    fn ranges(&self) -> Vec<ByteSpan> {
+        self.spans.iter().map(|entry| entry.span).collect()
+    }
+
+    /// Merges one candidate into the plan, counting only the source the plan
+    /// did not already cover. Overlapping and touching spans are absorbed, so
+    /// the plan stays sorted and disjoint.
+    fn with_candidate(&self, spec: ProjectionSpec, text: &str, candidate: ByteSpan) -> Self {
+        let candidate = spec.anchor(text, candidate);
+        let first = self
+            .spans
+            .partition_point(|entry| entry.span.end < candidate.start);
+        let absorbed = self.spans[first..]
+            .iter()
+            .take_while(|entry| entry.span.start <= candidate.end)
+            .count();
+        let merged = &self.spans[first..first + absorbed];
+        let start = merged.first().map_or(candidate.start, |entry| {
+            candidate.start.min(entry.span.start)
+        });
+        let end = merged
+            .last()
+            .map_or(candidate.end, |entry| candidate.end.max(entry.span.end));
+
+        let mut count = 0;
+        let mut released = 0;
+        let mut released_bytes = 0;
+        let mut cursor = start;
+        for entry in merged {
+            if cursor < entry.span.start {
+                count += spec.count(&text[cursor as usize..entry.span.start as usize]);
             }
+            count += entry.count;
+            released += entry.count;
+            released_bytes += entry.span.end.saturating_sub(entry.span.start);
+            cursor = entry.span.end;
         }
-        if !inserted {
-            spans.push(merged);
+        if cursor < end {
+            count += spec.count(&text[cursor as usize..end as usize]);
         }
-        let byte_count = span_byte_count(&spans);
-        Self { spans, byte_count }
+
+        let mut spans = Vec::with_capacity(self.spans.len() + 1);
+        spans.extend_from_slice(&self.spans[..first]);
+        spans.push(PlanSpan {
+            span: ByteSpan { start, end },
+            count,
+        });
+        spans.extend_from_slice(&self.spans[first + absorbed..]);
+        Self {
+            spans,
+            byte_count: self.byte_count - released_bytes + (end - start),
+            visible_count: self.visible_count - released + count,
+        }
     }
 }
+
+/// Planning keeps a running count of the payload it would render, so a
+/// projection tokenizes that payload exactly once, to verify the running total,
+/// however many candidates it accepted.
+#[cfg(test)]
+const MAX_PLAN_FULL_RENDER_COUNTS: usize = 1;
 
 #[cfg(test)]
 #[derive(Default)]
@@ -160,6 +215,20 @@ thread_local! {
 #[cfg(test)]
 fn record_full_render_count_evaluation() {
     FULL_RENDER_COUNT_EVALUATIONS.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test-only perturbation of the planned count, so the guard that compares
+    /// it against the rendered payload can be proven to fail closed.
+    static PLAN_COUNT_BIAS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn planned_count(plan: &SpanPlan) -> u64 {
+    let planned = plan.visible_count;
+    #[cfg(test)]
+    let planned = planned + PLAN_COUNT_BIAS.with(std::cell::Cell::get);
+    planned
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -241,6 +310,33 @@ impl ProjectionSpec {
         }
     }
 
+    /// Whether counts of the text before and after `offset` add to the count of
+    /// the whole. Byte counts add anywhere; token counts add only on the
+    /// offsets `additive_token_offset` accepts.
+    fn additive(self, text: &str, offset: usize) -> bool {
+        match self.counter {
+            Counter::Bytes => true,
+            Counter::Cl100k => additive_token_offset(text, offset),
+        }
+    }
+
+    /// Widens a line-aligned span until both boundaries are additive, so the
+    /// plan that retains it can be counted by addition.
+    fn anchor(self, text: &str, span: ByteSpan) -> ByteSpan {
+        let mut start = span.start as usize;
+        while !self.additive(text, start) {
+            start = previous_line_start(text, start);
+        }
+        let mut end = span.end as usize;
+        while !self.additive(text, end) {
+            end = next_line_start(text, end);
+        }
+        ByteSpan {
+            start: start as u64,
+            end: end as u64,
+        }
+    }
+
     fn payload_limit(self) -> u64 {
         self.total_visible_limit - self.reserved_envelope
     }
@@ -305,8 +401,8 @@ fn project_text(
 ) -> Result<Projection, Failure> {
     let analysis = analyze(source, spec.policy)?;
     let mandatory = analysis.mandatory;
-    let mut retained = SpanPlan::new(mandatory.clone());
-    if !plan_fits(source, &retained, spec, payload_limit)? {
+    let mut retained = SpanPlan::new(spec, text, &mandatory);
+    if retained.visible_count > payload_limit {
         return Err(Failure::new(
             FailureCode::BudgetUnsatisfiable,
             "mandatory facts exceed the projection payload budget",
@@ -314,27 +410,36 @@ fn project_text(
     }
 
     for candidate in analysis.candidates {
-        let proposed = retained.with_candidate(candidate);
-        if receipt_shape_fits(source.len(), &proposed.spans)
-            && plan_fits(source, &proposed, spec, payload_limit)?
-        {
-            retained = proposed;
-        }
+        retained = accept_candidate(spec, source.len(), text, retained, candidate, payload_limit);
     }
 
     if retained.spans.is_empty() && payload_limit > 0 {
-        let prefix_end = fitting_prefix_validated(text, spec, payload_limit);
+        let (prefix_end, prefix_count) =
+            fitting_prefix_validated(text, spec, payload_limit, original_count);
         if prefix_end > 0 {
-            retained = SpanPlan::new(vec![ByteSpan {
-                start: 0,
-                end: prefix_end as u64,
-            }]);
+            retained = SpanPlan::prefix(
+                ByteSpan {
+                    start: 0,
+                    end: prefix_end as u64,
+                },
+                prefix_count,
+            );
         }
     }
-    let visible = render(source, &retained.spans)?;
+
+    // The single full-render tokenization of the projection: it verifies the
+    // count planning carried, rather than producing it.
+    let ranges = retained.ranges();
+    let visible = render(source, &ranges)?;
     #[cfg(test)]
     record_full_render_count_evaluation();
     let visible_count = spec.count(&visible);
+    if visible_count != planned_count(&retained) {
+        return Err(Failure::new(
+            FailureCode::InvariantBreach,
+            "planned count disagreed with the rendered payload",
+        ));
+    }
     if visible_count > payload_limit
         || visible_count.saturating_add(spec.reserved_envelope) > spec.total_visible_limit
     {
@@ -348,8 +453,8 @@ fn project_text(
         original_count,
         visible_count,
         fidelity: Fidelity::Extractive,
-        retained_spans: retained.spans.clone(),
-        omitted_spans: complement(source.len(), &retained.spans),
+        omitted_spans: complement(source.len(), &ranges),
+        retained_spans: ranges,
         mandatory_fact_ids: mandatory
             .iter()
             .map(|span| fact_id(spec.policy.id, *span))
@@ -470,32 +575,20 @@ fn analyze(source: &[u8], policy: &Policy) -> Result<Analysis, Failure> {
     })
 }
 
-fn plan_fits(
-    source: &[u8],
-    plan: &SpanPlan,
+fn accept_candidate(
     spec: ProjectionSpec,
+    source_len: usize,
+    text: &str,
+    plan: SpanPlan,
+    candidate: ByteSpan,
     payload_limit: u64,
-) -> Result<bool, Failure> {
-    match spec.unit() {
-        CountUnit::Bytes => Ok(plan.byte_count <= payload_limit),
-        CountUnit::Tokens => {
-            // Every ordinary cl100k token consumes at least one UTF-8 byte, so
-            // byte length is a safe upper bound when it already fits.
-            if plan.byte_count <= payload_limit {
-                return Ok(true);
-            }
-            #[cfg(test)]
-            record_full_render_count_evaluation();
-            Ok(spec.count(&render(source, &plan.spans)?) <= payload_limit)
-        }
+) -> SpanPlan {
+    let proposed = plan.with_candidate(spec, text, candidate);
+    if receipt_shape_fits(source_len, &proposed.spans) && proposed.visible_count <= payload_limit {
+        proposed
+    } else {
+        plan
     }
-}
-
-fn span_byte_count(spans: &[ByteSpan]) -> u64 {
-    spans
-        .iter()
-        .map(|span| span.end.saturating_sub(span.start))
-        .sum()
 }
 
 fn line_spans(source: &[u8]) -> impl Iterator<Item = ByteSpan> + '_ {
@@ -511,6 +604,45 @@ fn line_spans(source: &[u8]) -> impl Iterator<Item = ByteSpan> + '_ {
         })
 }
 
+fn previous_line_start(text: &str, offset: usize) -> usize {
+    text.as_bytes()[..offset.saturating_sub(1)]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |index| index + 1)
+}
+
+fn next_line_start(text: &str, offset: usize) -> usize {
+    text.as_bytes()[offset..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(text.len(), |index| offset + index + 1)
+}
+
+/// cl100k joins a line break with the whitespace run that the next line break
+/// closes, so token counts add across a line boundary only when the following
+/// line reaches a non-whitespace character first. The start and the end of the
+/// text are additive by definition.
+fn additive_token_offset(text: &str, offset: usize) -> bool {
+    if offset == 0 || offset == text.len() {
+        return true;
+    }
+    if !text.is_char_boundary(offset) || text.as_bytes()[offset - 1] != b'\n' {
+        return false;
+    }
+    for character in text[offset..].chars() {
+        if character == '\n' || character == '\r' {
+            return false;
+        }
+        if !character.is_whitespace() {
+            return true;
+        }
+    }
+    true
+}
+
+/// Selection builds sorted disjoint plans by construction; the fuzz harness and
+/// the planning tests still normalize arbitrary span sets.
+#[cfg(any(test, feature = "fuzzing"))]
 fn normalize_spans(spans: &mut Vec<ByteSpan>) {
     spans.sort_by_key(|span| span.start);
     let mut normalized: Vec<ByteSpan> = Vec::with_capacity(spans.len());
@@ -570,16 +702,39 @@ fn complement(source_len: usize, retained: &[ByteSpan]) -> Vec<ByteSpan> {
     omitted
 }
 
-fn receipt_shape_fits(source_len: usize, retained: &[ByteSpan]) -> bool {
-    retained.len() <= MAX_RECEIPT_SPANS
-        && complement(source_len, retained).len() <= MAX_RECEIPT_SPANS
+fn complement_len(source_len: usize, retained: &[PlanSpan]) -> usize {
+    let mut omitted = 0;
+    let mut cursor = 0_u64;
+    for entry in retained {
+        if entry.span.start > cursor {
+            omitted += 1;
+        }
+        cursor = entry.span.end;
+    }
+    if cursor < source_len as u64 {
+        omitted += 1;
+    }
+    omitted
 }
 
-fn fitting_prefix_validated(text: &str, spec: ProjectionSpec, limit: u64) -> usize {
+fn receipt_shape_fits(source_len: usize, retained: &[PlanSpan]) -> bool {
+    retained.len() <= MAX_RECEIPT_SPANS && complement_len(source_len, retained) <= MAX_RECEIPT_SPANS
+}
+
+/// The longest prefix that fits, with its exact count, so the fallback plan
+/// needs no separate accounting pass. `whole` is the caller's already measured
+/// count of the full text.
+fn fitting_prefix_validated(
+    text: &str,
+    spec: ProjectionSpec,
+    limit: u64,
+    whole: u64,
+) -> (usize, u64) {
     let mut low = 0_usize;
+    let mut low_count = 0_u64;
     let mut high = text.len();
-    if spec.count(text) <= limit {
-        return high;
+    if whole <= limit {
+        return (high, whole);
     }
     while low + 1 < high {
         let mut middle = low + (high - low) / 2;
@@ -588,20 +743,22 @@ fn fitting_prefix_validated(text: &str, spec: ProjectionSpec, limit: u64) -> usi
         }
         if middle == low {
             let Some(next) = text[low..].chars().next() else {
-                return low;
+                return (low, low_count);
             };
             middle = low + next.len_utf8();
             if middle >= high {
-                return low;
+                return (low, low_count);
             }
         }
-        if spec.count(&text[..middle]) <= limit {
+        let count = spec.count(&text[..middle]);
+        if count <= limit {
             low = middle;
+            low_count = count;
         } else {
             high = middle;
         }
     }
-    low
+    (low, low_count)
 }
 
 fn encode_binary(source: &[u8]) -> String {
@@ -661,7 +818,7 @@ fn count(text: &str, budget: &Budget) -> Result<u64, Failure> {
 #[cfg(test)]
 fn fitting_prefix(text: &str, budget: &Budget, limit: u64) -> Result<usize, Failure> {
     ProjectionSpec::new("plain-text/v1", budget)
-        .map(|spec| fitting_prefix_validated(text, spec, limit))
+        .map(|spec| fitting_prefix_validated(text, spec, limit, spec.count(text)).0)
 }
 
 #[cfg(test)]

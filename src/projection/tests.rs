@@ -359,7 +359,7 @@ fn helpers_reject_invalid_spans_and_normalize_overlap() {
 }
 
 #[test]
-fn policy_heavy_planning_reuses_analysis_without_latency_regression() {
+fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
     let mut source = String::from("ERROR E1: mandatory fact\n");
     for index in 0..MAX_REDUCER_SPANS {
         source.push_str(&format!("warning W{index:03}: optional fact\n"));
@@ -381,6 +381,7 @@ fn policy_heavy_planning_reuses_analysis_without_latency_regression() {
     let mut metrics = PlanningMetrics::default();
     let planned = project_with_metrics(source.as_bytes(), &budget, "build-log/v1", &mut metrics)
         .expect("planned projection");
+    // Incremental accounting selects exactly what full-render accounting does.
     assert_eq!(planned.visible, baseline.visible);
     assert_eq!(planned.visible_count, baseline.visible_count);
     assert_eq!(planned.retained_spans, baseline.retained_spans);
@@ -388,9 +389,21 @@ fn policy_heavy_planning_reuses_analysis_without_latency_regression() {
     assert_eq!(planned.mandatory_fact_ids, baseline.mandatory_fact_ids);
     assert!(planned.visible.contains("ERROR E1: mandatory fact"));
     assert!(planned.visible.contains("warning W000: optional fact"));
+
+    // The count carried through planning is the exact count of what is rendered.
+    assert_eq!(
+        planned.visible_count,
+        count(&planned.visible, &budget).expect("planned payload count")
+    );
+    // Accepting one candidate at a time costs full renders proportional to the
+    // candidate count; the incremental ledger costs a documented constant.
     assert!(
-        metrics.full_render_count_evaluations * 2 <= baseline_evaluations,
-        "{} optimized evaluations did not halve the {baseline_evaluations} baseline",
+        baseline_evaluations > 200,
+        "{baseline_evaluations} naive evaluations do not exercise the bound"
+    );
+    assert!(
+        metrics.full_render_count_evaluations <= MAX_PLAN_FULL_RENDER_COUNTS,
+        "{} full-render tokenizations exceed the {MAX_PLAN_FULL_RENDER_COUNTS} bound",
         metrics.full_render_count_evaluations
     );
 
@@ -443,5 +456,118 @@ fn policy_heavy_planning_reuses_analysis_without_latency_regression() {
     assert!(
         planned_p95.as_nanos() * 100 <= baseline_p95.as_nanos() * 105,
         "planned P95 {planned_p95:?} regressed beyond baseline P95 {baseline_p95:?}"
+    );
+}
+
+fn token_spec(total: u64, reserved: u64) -> ProjectionSpec {
+    ProjectionSpec::new(
+        "plain-text/v1",
+        &Budget {
+            unit: CountUnit::Tokens,
+            total_visible_limit: total,
+            reserved_envelope: reserved,
+            token_profile: Some(CL100K_PROFILE.to_owned()),
+        },
+    )
+    .expect("token spec")
+}
+
+/// The ledger sums span counts instead of tokenizing the render, which is exact
+/// only on the offsets `additive_token_offset` accepts. Splitting every real
+/// fixture on exactly those offsets must reproduce its whole-text count.
+#[test]
+fn additive_offsets_partition_the_real_corpus_without_changing_its_count() {
+    let spec = token_spec(1_000_000, 0);
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("evaluation/corpus/real/fixtures");
+    let mut inspected = 0;
+    for entry in std::fs::read_dir(&directory).expect("real corpus fixtures") {
+        let path = entry.expect("fixture entry").path();
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let text = std::str::from_utf8(&bytes).expect("fixture is UTF-8");
+
+        let mut cuts = vec![0_usize];
+        for (index, byte) in bytes.iter().enumerate() {
+            let offset = index + 1;
+            if *byte == b'\n' && offset < bytes.len() && additive_token_offset(text, offset) {
+                cuts.push(offset);
+            }
+        }
+        cuts.push(bytes.len());
+        let summed = cuts
+            .windows(2)
+            .map(|pair| spec.count(&text[pair[0]..pair[1]]))
+            .sum::<u64>();
+        assert_eq!(
+            summed,
+            spec.count(text),
+            "{} does not count additively across its additive offsets",
+            path.display()
+        );
+        inspected += 1;
+    }
+    assert!(inspected >= 40, "{inspected} real fixtures inspected");
+}
+
+#[test]
+fn additive_offsets_hold_across_line_shapes() {
+    let spec = token_spec(1_000_000, 0);
+    let additive = [
+        ("a\n", "b\n"),
+        ("a\n", "  b\n"),
+        ("a\n", "\tb\n"),
+        (");\n", "}\n"),
+        ("   \n", "b\n"),
+        ("a\r\n", "b\r\n"),
+        ("a\n", "é\n"),
+        ("héllo wörld\n", "  → ok\n"),
+        ("-----\n", "x\n"),
+        ("\n", "x\n"),
+        ("a\n\n\n", "x\n"),
+        ("0123\n", "4567\n"),
+        ("f(\n", ")\n"),
+        ("\"json\": [\n", "  1,\n"),
+    ];
+    for (left, right) in additive {
+        let joined = format!("{left}{right}");
+        assert!(additive_token_offset(&joined, left.len()));
+        assert_eq!(
+            spec.count(&joined),
+            spec.count(left) + spec.count(right),
+            "{left:?} ++ {right:?} does not count additively"
+        );
+    }
+
+    // A following line that reaches a line break before any other character
+    // merges with the break that precedes it, so those offsets are rejected.
+    // Rejection is conservative: the joined count is never larger than the sum,
+    // and the blank line proves the merge is real.
+    for (left, right) in [("a\n", "\n"), ("a\n", " \n"), ("a\n", "\r\n")] {
+        let joined = format!("{left}{right}");
+        assert!(!additive_token_offset(&joined, left.len()));
+        assert!(spec.count(&joined) <= spec.count(left) + spec.count(right));
+    }
+    assert!(spec.count("a\n\n") < spec.count("a\n") + spec.count("\n"));
+}
+
+/// US-004: a plan whose carried count disagrees with the payload it renders is
+/// a broken ledger, and must fail closed instead of returning that payload.
+#[test]
+fn a_disagreeing_planned_count_fails_closed() {
+    let source = "let value = 1;\n".repeat(400);
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 225,
+        reserved_envelope: 45,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+    project(source.as_bytes(), &budget, "plain-text/v1").expect("agreeing plan");
+
+    PLAN_COUNT_BIAS.with(|bias| bias.set(1));
+    let failure = project(source.as_bytes(), &budget, "plain-text/v1");
+    PLAN_COUNT_BIAS.with(|bias| bias.set(0));
+    assert_eq!(
+        failure.expect_err("disagreeing plan").code,
+        FailureCode::InvariantBreach
     );
 }
