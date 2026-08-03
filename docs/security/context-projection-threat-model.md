@@ -256,6 +256,27 @@ Artifact retrieval returns verified bytes as data. A caller choosing to execute
 retrieved bytes is outside the engine contract and must make that authority
 explicit.
 
+## Agent-supplied selectors
+
+An artifact selector is caller-controlled input that an agent, not the operator,
+usually writes. It is inert data on the same terms as stored bytes: a line range
+and a literal pattern are never evaluated as a pattern language, shell input,
+configuration, template, or model instruction.
+
+Denial of service through a selector is bounded structurally rather than by a
+timeout. Matching is literal substring search over one pass of the artifact, so
+no regular-expression engine exists to backtrack; a pattern is capped at 512
+UTF-8 bytes, context at 16 lines on each side, and selection at 32 matches. A
+selection therefore holds at most 32 regions, and peak retrieval allocation is
+one copy of the selected region bytes plus a 32-entry region table, under the
+unchanged 10 MiB observation ceiling. Every bound is enforced before any store
+read, on every surface, and a violation fails with `invalid_request`.
+
+Selection cannot widen authority. It reads one already committed artifact
+through the existing verified-retrieval path, so expired, unknown, corrupt, and
+partial artifacts keep their typed failures, and a partial capture stays
+diagnosis-only. It cannot name a filesystem path, a root, or a process.
+
 ## Verification requirements
 
 The language spikes and selected engine must supply automated evidence for:
@@ -266,7 +287,8 @@ The language spikes and selected engine must supply automated evidence for:
 3. argv preservation, option-shaped values, command-injection strings, timeout,
    output cap, signal, and child cleanup;
 4. invalid UTF-8, binary bytes, prompt-injection-shaped content, maximum lengths,
-   integer overflow, and corrupted store pages;
+   integer overflow, corrupted store pages, and out-of-bounds or
+   pattern-language-shaped artifact selectors;
 5. disk full, lock timeout, killed writer at each commit boundary, and eight
    concurrent writers;
 6. zero outbound connections during capture, projection, retrieval, trace, and

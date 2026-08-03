@@ -103,7 +103,16 @@ distill \
   run --cwd-root workspace --cwd . --budget 4096 -- cargo test
 ```
 
-Recover and inspect artifacts:
+Recover an omitted region under a budget:
+
+```bash
+distill artifact slice <artifact-id> --start-line 120 --lines 40 --budget 2048
+distill artifact search <artifact-id> --pattern 'error[E0308]' --budget 2048
+```
+
+`--pattern` is literal text, never a regular expression.
+
+Recover and inspect whole artifacts:
 
 ```bash
 distill artifact get <artifact-id> --json
@@ -145,13 +154,17 @@ distill setup claude \
   --root workspace=/absolute/path/to/project
 ```
 
-Claude receives two explicit tools:
+Claude receives four explicit tools:
 
 - `distill_read`: bounded file acquisition under a configured root;
-- `distill_run`: bounded argv-only process acquisition.
+- `distill_run`: bounded argv-only process acquisition;
+- `distill_artifact_slice`: bounded line range of an artifact already committed;
+- `distill_artifact_search`: bounded literal search over that artifact.
 
-Distill does not intercept Claude's native `Read` or `Bash`. Selecting those
-tools bypasses projection. MCP stdout contains JSON-RPC only.
+The retrieval pair recovers a region an earlier projection omitted without
+leaving Distill, under its own declared budget. Distill does not intercept
+Claude's native `Read` or `Bash`. Selecting those tools bypasses projection. MCP
+stdout contains JSON-RPC only.
 
 ## Supported and unsupported surfaces
 
@@ -161,6 +174,7 @@ tools bypasses projection. MCP stdout contains JSON-RPC only.
 | macOS arm64                                       | Qualified          | Embedded npm executable                                        |
 | Codex supported local `PostToolUse` events        | Qualified          | Automatic off, observe, or active mode                          |
 | Claude `distill_read` and `distill_run`           | Qualified          | Explicit MCP acquisition                                       |
+| Claude `distill_artifact_slice` and `distill_artifact_search` | Qualified | Bounded MCP retrieval                                |
 | Codex hosted tools without a supported hook event | Unsupported        | No interception and no Distill diagnostic                      |
 | Claude native `Read` and `Bash`                   | Unsupported        | Bypass Distill                                                 |
 | Windows, macOS x86_64, Linux arm64, Linux musl    | Unsupported        | No release claim                                               |

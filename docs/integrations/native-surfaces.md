@@ -3,12 +3,18 @@
 The native `distill` binary exposes the same Rust `Engine` through three thin
 surfaces:
 
-- CLI: `project`, `artifact get`, `artifact trace`, `status`, `gc`, `read`, and
-  argv-only `run`.
+- CLI: `project`, `artifact get`, `artifact trace`, `artifact slice`,
+  `artifact search`, `status`, `gc`, `read`, and argv-only `run`.
 - Codex: `codex-hook --mode off|observe|active`, installed into a versioned
   `PostToolUse` hook with `distill setup codex`.
-- Claude Code: stdio MCP with exactly `distill_read` and `distill_run`, installed
-  with `distill setup claude`.
+- Claude Code: stdio MCP with exactly `distill_read`, `distill_run`,
+  `distill_artifact_slice`, and `distill_artifact_search`, installed with
+  `distill setup claude`.
+
+Requests use `distill.context/v3`. Its only addition is the optional artifact
+selector, so a `distill.context/v2` request that names no selector behaves
+exactly as before; one that names a selector is refused with
+`schema_unsupported`.
 
 Both setup targets require an explicit absolute configuration path, support
 `--dry-run`, preserve an exact first-install backup, are idempotent, and restore
@@ -43,11 +49,41 @@ executable-plus-argv, and 100-through-300,000-ms timeout limits. Its `argv`
 field is required by both the published schema and runtime decoder, including
 when the literal argument vector is empty.
 
+## Bounded recovery
+
+Every surface that can return an omitting projection offers bounded retrieval on
+that same surface, and no envelope advertises an unbounded recovery path. An
+omitting envelope reports how much of the source it omitted, in the request's
+count unit, and names the operation available where it is read: the two MCP
+tools on Claude Code, and `distill artifact slice` or `distill artifact search`
+on the Codex hook. An exact projection omits nothing and names nothing. An
+encoded or metadata-only projection of a non-UTF-8 source reports its omission
+without naming an operation, because selection is line and literal-text based.
+
+`distill artifact get` is unchanged and remains the operator-facing full
+recovery path outside the agent loop; it is published on no agent surface.
+
+Retrieval selectors are bounded and literal. A pattern is at most 512 UTF-8
+bytes, keeps at most 16 context lines on each side, and selects at most 32
+matches; a value outside those bounds fails with `invalid_request` before any
+store read, on both surfaces. Matching uses literal substring search: the binary
+contains no regular-expression engine, so an agent-supplied pattern cannot
+describe a catastrophic search. A pattern and a slice range are inert data and
+are never evaluated as shell input, configuration, template, or instruction.
+
+MCP retrieval arguments the decoder rejects produce a bounded `isError` tool
+result naming the typed failure, rather than a JSON-RPC protocol error, so the
+agent can correct the call from its own surface. The published retrieval schemas
+are bound to [`mcp-conformance-v1.json`](mcp-conformance-v1.json).
+
 CLI JSON uses `distill.cli/v2` and is bound to
-[`cli-conformance-v2.json`](cli-conformance-v2.json). Failure framing is selected
+[`cli-conformance-v3.json`](cli-conformance-v3.json), which supersedes the
+closed [`cli-conformance-v2.json`](cli-conformance-v2.json) matrix and adds the
+retrieval forms and selector bounds. Failure framing is selected
 only by a parsed Distill `--json` option.
 Values after the `run -- EXECUTABLE` delimiter remain literal child argv and
-cannot select Distill output mode.
+cannot select Distill output mode, and a `--pattern` value that looks like a
+Distill option stays a literal pattern.
 Configured-root membership is validated only by `Engine::handle`, so CLI and
 MCP expose the same typed `unsafe_root` engine failure.
 

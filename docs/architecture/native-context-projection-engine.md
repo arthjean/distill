@@ -115,6 +115,36 @@ projection, including both retained and omitted partitions. At the ceiling a
 candidate is bridged to its nearest retained neighbour, so a fragment is merged
 rather than dropped and the partition stays exact.
 
+## Bounded artifact retrieval
+
+`src/projection/retrieval.rs` resolves a `distill.context/v3` artifact selector
+into line-aligned source regions. A line selector yields one contiguous region.
+A pattern selector scans the artifact once with `str::match_indices`, whose
+two-way substring search is linear in the source length, expands each occurrence
+to whole lines plus its bounded context, and merges regions that overlap or
+touch. Matching is literal: no regular-expression engine exists in the binary,
+so an agent-supplied pattern cannot describe catastrophic backtracking.
+
+Retrieval reuses `Engine::handle` rather than adding a second policy path. The
+selected regions are concatenated and projected by the same planner, then the
+retained spans are translated back into original source offsets. Because
+translation can split one planned span at each region boundary, the planner
+receives a span ceiling reduced by the region count, which keeps both persisted
+partitions inside the receipt limit. The omitted complement is recomputed over
+the whole source, so a selected projection still partitions the artifact
+exactly, and `original_count` still counts the complete artifact.
+
+Work is bounded by the selector rather than by the source: at most 32 matches
+and at most 16 context lines on each side, so a selection holds at most 32
+regions and the retrieval allocation is one copy of the selected region bytes
+plus a 32-entry region table. The 10 MiB observation ceiling therefore bounds
+peak retrieval allocation at one additional source copy, and a single linear
+scan over a 10 MiB artifact stays far inside the 500 ms P95 retrieval envelope.
+
+Selection applies to valid UTF-8 artifacts. A selector over a non-UTF-8 artifact
+fails with `invalid_request`, and the envelope of a binary projection therefore
+states its omission without naming a retrieval operation it cannot serve.
+
 Byte budgets are exact. Token budgets accept only the versioned
 `cl100k_base@js-tiktoken-1.0.15` profile. An unknown tokenizer fails with
 `token_profile_unsupported`; there is no silent fallback.
@@ -143,7 +173,7 @@ lifecycle mechanics are isolated in `src/runtime/process.rs`:
 ## Adapters
 
 `src/cli.rs` exposes `project`, `artifact get`, `artifact
-trace`, `status`, `gc`, `read`, and `run`.
+trace`, `artifact slice`, `artifact search`, `status`, `gc`, `read`, and `run`.
 
 `src/codex.rs` translates supported Codex `PostToolUse`
 events. It supports off, observe, and active modes and keeps blocking feedback
@@ -152,9 +182,13 @@ family are classified positively; any received unknown surface fails closed
 with `unsupported_surface`. It cannot observe hosted or specialized tools that
 emit no supported event.
 
-`src/mcp.rs` exposes only `distill_read` and `distill_run`.
-They own acquisition and therefore can project before bytes enter Claude's
-context. Native Claude `Read` and `Bash` remain outside Distill.
+`src/mcp.rs` exposes only `distill_read`, `distill_run`,
+`distill_artifact_slice`, and `distill_artifact_search`. The first two own
+acquisition and therefore can project before bytes enter Claude's context.
+Native Claude `Read` and `Bash` remain outside Distill. The retrieval pair
+resolves an artifact identifier and reuses `Engine::handle` with a selector, so
+recovering an omitted region never leaves the agent's own surface and never
+publishes the unbounded `artifact get` path.
 
 `src/setup.rs` performs explicit, idempotent configuration
 installation with dry-run, byte-exact backup, and restore. Codex setup accepts

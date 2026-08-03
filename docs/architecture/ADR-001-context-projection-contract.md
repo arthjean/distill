@@ -56,7 +56,11 @@ Request {
 ```
 
 `contract_version` selects the complete public semantics. The current contract
-is `distill.context/v2`. A syntactically decodable `distill.context/v1` request
+is `distill.context/v3`. `distill.context/v2` remains accepted and behaves
+exactly as it did: v3 adds only the optional artifact selector described below,
+so a v2 request that names no selector produces the same outcome and the same
+receipt. A `distill.context/v2` request that does carry a selector fails with
+`schema_unsupported`. A syntactically decodable `distill.context/v1` request
 fails with `schema_unsupported`; there is no compatibility path that drops v1
 fields. Unknown versions fail the same way.
 
@@ -94,6 +98,7 @@ Source =
     }
   | artifact {
       artifact: ArtifactRef
+      selector: ArtifactSelector?
     }
 ```
 
@@ -105,7 +110,8 @@ Source =
   from local engine configuration, not accepted as an arbitrary request path.
 - `process` launches one executable with an argv vector. It never implies a
   command shell, string interpolation, or configuration evaluation.
-- `artifact` reuses a previously committed, unexpired source artifact.
+- `artifact` reuses a previously committed, unexpired source artifact. Its
+  optional `selector` restricts the region that becomes visible.
 
 Request policy validation precedes clock reads, file opens, process spawn,
 artifact ID generation, and store mutation. A process accepts at most 4,096
@@ -123,6 +129,73 @@ but cannot select a different contract failure for the same limit.
 
 An adapter may expose any subset of these variants. It may not change the
 semantics of a variant or fabricate unsupported acquisition metadata.
+
+### ArtifactSelector
+
+```text
+ArtifactSelector =
+  | lines {
+      start_line: PositiveInteger
+      line_count: PositiveInteger
+    }
+  | pattern {
+      pattern: ByteSequence
+      before_lines: NonNegativeInteger?
+      after_lines: NonNegativeInteger?
+      max_matches: PositiveInteger?
+    }
+```
+
+A selector is bounded retrieval over an already committed artifact, not a second
+acquisition path and not a second policy path. It names a region of the stored
+source; the engine then projects that region under the request budget through
+the same `handle` operation.
+
+- `lines` selects one contiguous region: `line_count` lines starting at the
+  1-based `start_line`. A range that starts past the end of the source selects
+  nothing.
+- `pattern` selects the regions around literal occurrences of `pattern`.
+  Matching is literal byte-for-byte text search with no pattern language: no
+  regular expressions, globs, character classes, anchors, backreferences, or
+  case folding. A pattern is inert data and is never evaluated as code,
+  configuration, template, shell input, or model instruction.
+- Each match expands to whole lines, plus `before_lines` preceding and
+  `after_lines` following lines. Overlapping or touching expansions merge.
+  Defaults are 2 leading and 2 trailing lines, and 8 matches.
+
+Bounds, validated before any store read:
+
+| Field | Bound | Failure when violated |
+|---|---|---|
+| `pattern` | 1 through 512 bytes, valid UTF-8 | `invalid_request` |
+| `before_lines`, `after_lines` | at most 16 each | `invalid_request` |
+| `max_matches` | 1 through 32 | `invalid_request` |
+| `start_line` | at least 1 | `invalid_request` |
+| `line_count` | at least 1 | `invalid_request` |
+
+Selection applies to a valid UTF-8 artifact. A selector over a source that is
+not valid UTF-8 fails with `invalid_request` after retrieval, because line
+ranges and literal text patterns have no meaning over arbitrary bytes. Binary
+sources remain readable through unselected artifact projection, which keeps its
+existing `encoded` and `metadata_only` handling.
+
+Selection changes what is visible, never what is accounted:
+
+- `original_count` remains the count of the complete artifact, so the omission
+  the caller sees covers everything outside the selection as well as everything
+  the budget dropped inside it.
+- `retained_spans` reference offsets into the original committed source, never
+  offsets into the selected region, and the partition invariant is unchanged:
+  retained and omitted spans together cover every source byte exactly once, and
+  neither list exceeds the receipt span ceiling.
+- `fidelity` is `exact` only when the selection covers the whole source and the
+  budget required no reduction. Any strict selection is `extractive`.
+- A selector that matches nothing is a success with an empty visible payload,
+  not a failure.
+
+An expired, unknown, corrupt, or partial artifact returns its existing typed
+failure unchanged. A selector never resurrects a partial artifact: it remains
+diagnosis-only.
 
 ### Budget
 
