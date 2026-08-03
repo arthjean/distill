@@ -597,11 +597,58 @@ fn accept_candidate(
     payload_limit: u64,
 ) -> SpanPlan {
     let proposed = plan.with_candidate(spec, text, candidate);
+    if receipt_shape_fits(source_len, &proposed.spans) {
+        return if proposed.visible_count <= payload_limit {
+            proposed
+        } else {
+            plan
+        };
+    }
+    // The receipt span ceiling is reached. Bridging the candidate to its
+    // nearest retained neighbour merges the fragment instead of dropping it,
+    // which keeps both partitions inside the ceiling.
+    let Some(bridged) = bridge(&plan, candidate) else {
+        return plan;
+    };
+    let proposed = plan.with_candidate(spec, text, bridged);
     if receipt_shape_fits(source_len, &proposed.spans) && proposed.visible_count <= payload_limit {
         proposed
     } else {
         plan
     }
+}
+
+/// The span that joins a candidate to its nearest retained neighbour. Ties
+/// resolve to the preceding neighbour so selection stays deterministic.
+fn bridge(plan: &SpanPlan, candidate: ByteSpan) -> Option<ByteSpan> {
+    let mut nearest = None;
+    let mut distance = u64::MAX;
+    for entry in &plan.spans {
+        let (bridged, gap) = if entry.span.end <= candidate.start {
+            (
+                ByteSpan {
+                    start: entry.span.end,
+                    end: candidate.end,
+                },
+                candidate.start - entry.span.end,
+            )
+        } else if candidate.end <= entry.span.start {
+            (
+                ByteSpan {
+                    start: candidate.start,
+                    end: entry.span.start,
+                },
+                entry.span.start - candidate.end,
+            )
+        } else {
+            continue;
+        };
+        if gap < distance {
+            distance = gap;
+            nearest = Some(bridged);
+        }
+    }
+    nearest
 }
 
 /// Spends whatever payload budget selection left by growing the retained spans

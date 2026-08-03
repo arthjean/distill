@@ -686,3 +686,84 @@ fn an_oversized_first_line_keeps_the_prefix_fallback() {
     );
     assert!(outcome.visible_count <= 180);
 }
+
+/// US-006: at the receipt span ceiling a candidate is joined to the nearest
+/// retained span, in either direction, so no fragment is dropped.
+#[test]
+fn bridging_joins_a_candidate_to_its_nearest_retained_neighbour() {
+    let spec = token_spec(1_000_000, 0);
+    let text = "alpha\nbravo\ncharlie\ndelta\necho\nfoxtrot\n";
+    let plan = SpanPlan::new(
+        spec,
+        text,
+        &[
+            ByteSpan { start: 6, end: 12 },
+            ByteSpan { start: 20, end: 26 },
+        ],
+    );
+
+    // A candidate after both spans bridges back from the nearest one.
+    assert_eq!(
+        bridge(&plan, ByteSpan { start: 31, end: 39 }),
+        Some(ByteSpan { start: 26, end: 39 })
+    );
+    // A candidate before both bridges forward to the nearest one.
+    assert_eq!(
+        bridge(&plan, ByteSpan { start: 0, end: 6 }),
+        Some(ByteSpan { start: 0, end: 6 })
+    );
+    // Ties resolve to the preceding neighbour.
+    assert_eq!(
+        bridge(&plan, ByteSpan { start: 13, end: 19 }),
+        Some(ByteSpan { start: 12, end: 19 })
+    );
+    // Bridging a candidate keeps the retained span count unchanged.
+    let bridged = plan.with_candidate(
+        spec,
+        text,
+        bridge(&plan, ByteSpan { start: 31, end: 39 }).expect("bridge"),
+    );
+    assert_eq!(bridged.spans.len(), plan.spans.len());
+    assert_eq!(
+        bridge(&SpanPlan::default(), ByteSpan { start: 0, end: 6 }),
+        None
+    );
+}
+
+/// US-006: selection at the receipt span ceiling merges fragments rather than
+/// dropping them, and expansion never returns an unpersistable receipt.
+#[test]
+fn receipt_span_ceiling_merges_fragments_instead_of_dropping_them() {
+    let mut source = String::from("first boundary\n");
+    for index in 0..MAX_REDUCER_SPANS {
+        source.push_str(&format!("warning W{index:03}\n"));
+        source.push_str("ordinary separator ordinary separator ordinary separator\n");
+    }
+    source.push_str("last boundary\n");
+
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 2_250,
+        reserved_envelope: 450,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+    let outcome = project(source.as_bytes(), &budget, "build-log/v1").expect("ceiling projection");
+
+    assert!(outcome.retained_spans.len() <= MAX_RECEIPT_SPANS);
+    assert!(outcome.omitted_spans.len() <= MAX_RECEIPT_SPANS);
+    assert!(outcome.visible_count <= 1_800);
+    assert!(outcome.visible.contains("warning W000"));
+
+    // The partition stays exact at the ceiling.
+    let mut coverage = vec![0_u8; source.len()];
+    for span in outcome
+        .retained_spans
+        .iter()
+        .chain(outcome.omitted_spans.iter())
+    {
+        for byte in &mut coverage[span.start as usize..span.end as usize] {
+            *byte += 1;
+        }
+    }
+    assert!(coverage.iter().all(|count| *count == 1));
+}
