@@ -1,0 +1,9 @@
+1 | function loadBudget(raw) {
+2 |   if (typeof raw !== "number") {
+3 |     throw new TypeError(`budget must be a number, received ${typeof raw}`);
+                  ^
+TypeError: budget must be a number, received string
+      at loadBudget (/home/dev/work/js/throwing.js:3:15)
+      at /home/dev/work/js/throwing.js:12:13
+
+Bun v1.3.14 (Linux x64)

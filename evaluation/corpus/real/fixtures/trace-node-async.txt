@@ -1,0 +1,19 @@
+file:///home/dev/work/js/async-throwing.mjs:2
+  throw new Error("real corpus manifest digest mismatch", {
+        ^
+
+Error: real corpus manifest digest mismatch
+    at readManifest (file:///home/dev/work/js/async-throwing.mjs:2:9)
+    at verifyCorpus (file:///home/dev/work/js/async-throwing.mjs:8:9)
+    ... 3 lines matching cause stack trace ...
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  [cause]: Error: sha256 disagreed for fixture source-artifact-rs
+      at readManifest (file:///home/dev/work/js/async-throwing.mjs:3:12)
+      at verifyCorpus (file:///home/dev/work/js/async-throwing.mjs:8:9)
+      at file:///home/dev/work/js/async-throwing.mjs:11:7
+      at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+      at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+}
+
+Node.js v22.23.1

@@ -1,0 +1,39 @@
+warning: writing `&String` instead of `&str` involves a new object where a slice will do
+ --> src/main.rs:1:20
+  |
+1 | fn describe(label: &String) -> String {
+  |                    ^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#ptr_arg
+  = note: `#[warn(clippy::ptr_arg)]` on by default
+help: change this to
+  |
+1 ~ fn describe(label: &str) -> String {
+2 ~     label.to_owned()
+  |
+
+warning: length comparison to zero
+ --> src/main.rs:7:8
+  |
+7 |     if values.len() == 0 {
+  |        ^^^^^^^^^^^^^^^^^ help: using `is_empty` is clearer and more explicit: `values.is_empty()`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#len_zero
+  = note: `#[warn(clippy::len_zero)]` on by default
+
+warning: the loop variable `index` is only used to index `values`
+  --> src/main.rs:13:18
+   |
+13 |     for index in 0..values.len() {
+   |                  ^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+   = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator
+   |
+13 -     for index in 0..values.len() {
+13 +     for <item> in &values {
+   |
+
+warning: `lintable-crate` (bin "lintable-crate") generated 3 warnings (run `cargo clippy --fix --bin "lintable-crate" -p lintable-crate -- ` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s

@@ -1,0 +1,22 @@
+1800
+
+thread 'main' (3181548) panicked at src/main.rs:3:10:
+budget must be an unsigned integer of visible units: ParseIntError { kind: InvalidDigit }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+   2: core::result::unwrap_failed
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+   3: <core::result::Result<u64, core::num::error::ParseIntError>>::expect
+             at /home/dev/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:1185:23
+   4: panicking_crate::parse_budget
+             at ./src/main.rs:3:10
+   5: panicking_crate::payload_budget
+             at ./src/main.rs:7:5
+   6: panicking_crate::main
+             at ./src/main.rs:12:20
+   7: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /home/dev/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.

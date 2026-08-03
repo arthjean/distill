@@ -1,0 +1,18 @@
+--- before.txt	2026-08-03 13:26:00.143259570 +0000
++++ after.txt	2026-08-03 13:26:00.143292830 +0000
+@@ -2,11 +2,13 @@
+ total_visible_limit = 2250
+ reserved_envelope = 450
+ unit = "tokens"
+-profile = "plain-text/v1"
++profile = "auto/v1"
++focus = "why did the build fail"
+ 
+ [retention]
+-ttl_seconds = 3600
++ttl_seconds = 7200
+ 
+ [store]
+ path = "artifacts.db"
+ mode = "0600"
++wal = true

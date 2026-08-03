@@ -1,0 +1,2 @@
+   Compiling checksum-crate v0.1.0 (/home/dev/work/rust-tests)
+    Finished `release` profile [optimized] target(s) in 0.08s

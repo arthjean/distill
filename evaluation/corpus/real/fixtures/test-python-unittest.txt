@@ -1,0 +1,17 @@
+test_baseline_utilization (test_budget.BudgetTest.test_baseline_utilization) ... FAIL
+test_payload_budget (test_budget.BudgetTest.test_payload_budget) ... ok
+test_reserved_envelope_is_positive (test_budget.BudgetTest.test_reserved_envelope_is_positive) ... ok
+
+======================================================================
+FAIL: test_baseline_utilization (test_budget.BudgetTest.test_baseline_utilization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dev/work/py/test_budget.py", line 12, in test_baseline_utilization
+    self.assertAlmostEqual(7 / 1800 * 100, 85.0, places=1)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0.3888888888888889 != 85.0 within 1 places (84.61111111111111 difference)
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+FAILED (failures=1)

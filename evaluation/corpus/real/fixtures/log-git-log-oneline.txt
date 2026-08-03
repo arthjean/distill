@@ -1,0 +1,100 @@
+5f228cd refactor(adapters): centralize surface contracts
+8e6626d refactor(setup): split configuration responsibilities
+e06dbf9 refactor(store): isolate artifact verification
+9ef670d refactor(types): centralize acquisition decoding
+2272231 docs: document hardened engine and surface contracts
+7d92b47 fix(setup): verify managed Codex hook ownership
+b127b7c fix(codex): fail closed on unknown tool surfaces
+3369be0 fix(cli): use engine root failure contract
+461eead refactor(tests): split library test module
+1b50648 refactor(runtime): model acquisition states exhaustively
+ae19630 fix(store): migrate legacy schemas atomically
+1ba6743 fix(projection): enforce receipt span limits
+3fc15dd fix(codex): fail closed on response serialization
+7ce28fd fix(cli): accept projection options in any order
+98b873f refactor(runtime): model typed process terminal states
+6570e05 refactor(store): enforce verified steady-state access
+4ae6a0c refactor(tests): split oversized module suites
+e5ea046 refactor(store): separate persistence responsibilities
+bbdc573 refactor(core): model validated acquisition states
+d966d08 fix(contract): define inline media type semantics
+40a02de fix(store): preserve sqlite sidecar path bytes
+e1472e5 fix(surface): truncate correlation ids safely
+16ceebb refactor(core): enforce validated engine boundaries
+e3c0b24 refactor(setup): model valid target states
+c00cfd2 refactor(surface): decouple shared host errors
+037d7bd ci(release): add npm trusted publishing
+96dde1d docs(release): record npm publication
+8a4008f docs(release): record npm package qualification
+8084c13 test(release): preregister npm package qualification
+49c4f8a docs(release): record native npm qualification
+eb28149 fix(packaging): support Bun tarball output
+0f6e86f fix(release): bind receipts to release executables
+a0604c4 test(release): preregister corrected npm qualification
+00e31e5 fix(release): align fuzz lockfile version
+36f9813 fix(release): route macos npm qualification
+040c8b2 test(release): preregister native npm qualification
+cba0928 feat(distribution): add native npm package
+6b41343 docs(readme): restore public logo
+1b8ba60 chore(repo): ignore local architecture reports
+dd78257 test(core): restore architecture qualification coverage
+0362861 feat(core): harden architecture contracts
+b869800 refactor(rust): move distill crate to repository root
+9858f10 chore(tooling): remove retired JavaScript residue
+02df814 docs(readme): use vector Distill logo
+969f8ef feat(brand): add Distill logo assets
+8e017e1 docs: convert architecture diagrams to Mermaid
+7c5f3b3 chore(tooling): remove root JavaScript facade
+0a7c78e docs(agents): add canonical repository guidance
+f64dd0a chore: remove agent instruction files
+2f381bf chore: remove unused workspace artifacts
+512f7ae Merge pull request #4 from Example Developer/agent/us020-retire-mcp-legacy
+11170a1 fix(ci): keep dependency audit non-blocking
+c838a98 refactor(migration): retire MCP-first legacy
+19f079f Merge pull request #3 from Example Developer/agent/ep005-macos-qualification
+bcd30cc docs(release): record native distribution v2 qualification [skip ci]
+875c21a fix(release): reconcile accepted native run [skip ci]
+2a6ad76 docs(mcp): align legacy README with native migration
+6efa6e4 fix(release): preregister native distribution v2 [skip ci]
+6b3afcd test(release): record native distribution no-go
+69bd3e5 chore(release): preregister native qualification
+2b2bbcb test(native): cover request without source
+241e4f9 feat(migration): prepare native distribution and legacy retirement
+704d50d test(evaluation): record US-018 v5 qualification evidence
+ba6e47f chore(evaluation): consume US-018 v5 authorization
+80097dd feat(evaluation): preregister US-018 v5 qualification
+49220fb chore(evaluation): record US-018 v4 NO-GO evidence
+f912331 chore(evaluation): consume US-018 v4 authorization
+7015d6a feat(evaluation): preregister US-018 v4 qualification
+bda89f7 chore(evaluation): record US-018 v3 NO-GO evidence
+a04a4db chore(evaluation): consume US-018 v3 authorization
+3444008 feat(evaluation): preregister US-018 v3 qualification
+fa85bcb chore(evaluation): record US-018 v2 NO-GO evidence
+11fe9a0 chore(evaluation): consume US-018 v2 authorization
+dc31d3a feat(evaluation): preregister US-018 v2 qualification
+502ca9a test(release): record macOS qualification evidence
+c0f813a fix(native): qualify macOS process execution
+94a6db1 fix(ci): use canonical macOS temp root
+394b655 fix(ci): install native qualification components
+8f3149a test(release): add EP-005 qualification gates
+d2292ec docs(integrations): document native product surfaces
+f73d373 feat(native): add CLI and agent integration surfaces
+463f0e6 feat(native): expose artifact lifecycle APIs
+8101b62 chore: ignore paneflow-managed .codex local state
+ae2de46 chore(scripts): add check-native.sh quality gate
+1d50905 test(native): add libFuzzer harness for the projection engine
+5795a7e feat(native): add distill-core context projection engine crate
+1653453 docs(security): add context projection threat model
+6c17737 docs(architecture): add context projection engine ADRs
+fbf8ecc chore(spikes): add Rust and Zig projection engine spikes
+fb0b158 chore(evaluation): add projection corpus and legacy baseline
+9afe1d5 chore: update GitHub references to renamed Example Developer account
+5f31d10 chore(release): v0.11.2
+934fee9 feat(conversation): preserve binding constraints through compaction
+1a2563d feat(retrieve): opt-in reversibility via origin store and ctx.restore
+9e6e416 feat(compress): query-aware semantic compression via task hint
+f4757f4 feat(smart-file-read): structural skeletons for JSON and YAML configs
+99ba5c7 feat(stats): surface per-call and session token-savings telemetry
+dd8d399 chore(release): v0.11.1
+1cd521e fix(cli): harden argument parsing and top-level error handling
+ffd53ca refactor(sandbox): drop non-null assertion in validatePathResult

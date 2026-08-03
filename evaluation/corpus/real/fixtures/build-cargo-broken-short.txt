@@ -1,0 +1,4 @@
+   Compiling broken-build v0.1.0 (/home/dev/work/rust-broken)
+src/main.rs:7:22: error[E0308]: mismatched types: expected `u32`, found `&str`
+src/main.rs:9:20: error[E0425]: cannot find function `missing_helper` in this scope: not found in this scope
+error: could not compile `broken-build` (bin "broken-build") due to 2 previous errors

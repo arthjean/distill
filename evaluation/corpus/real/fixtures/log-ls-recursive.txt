@@ -1,0 +1,102 @@
+src:
+total 216
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 .
+drwxr-xr-x. 1 dev dev   446 Aug  3 13:00 ..
+drwxr-xr-x. 1 dev dev   242 Aug  2 21:47 artifact
+-rw-r--r--. 1 dev dev 13000 Aug  2 21:52 artifact.rs
+drwxr-xr-x. 1 dev dev    16 Aug  2 19:55 cli
+-rw-r--r--. 1 dev dev 19248 Aug  2 22:00 cli.rs
+-rw-r--r--. 1 dev dev 21212 Aug  2 22:00 codex.rs
+-rw-r--r--. 1 dev dev   585 Aug  2 20:49 contract.rs
+drwxr-xr-x. 1 dev dev    16 Aug  2 20:55 lib
+-rw-r--r--. 1 dev dev 13842 Aug  2 20:55 lib.rs
+-rw-r--r--. 1 dev dev   524 Aug  2 13:46 main.rs
+-rw-r--r--. 1 dev dev 27222 Aug  2 22:00 mcp.rs
+drwxr-xr-x. 1 dev dev    16 Aug  2 19:48 projection
+-rw-r--r--. 1 dev dev 20937 Aug  2 20:49 projection.rs
+-rw-r--r--. 1 dev dev 20792 Aug  2 19:22 request_policy.rs
+drwxr-xr-x. 1 dev dev    36 Aug  2 19:48 runtime
+-rw-r--r--. 1 dev dev 20527 Aug  2 20:56 runtime.rs
+drwxr-xr-x. 1 dev dev   104 Aug  2 21:45 setup
+-rw-r--r--. 1 dev dev  7456 Aug  2 22:00 setup.rs
+drwxr-xr-x. 1 dev dev    38 Aug  2 22:03 surface
+-rw-r--r--. 1 dev dev  4875 Aug  2 22:01 surface.rs
+drwxr-xr-x. 1 dev dev    44 Aug  2 20:55 types
+-rw-r--r--. 1 dev dev 14494 Aug  2 21:42 types.rs
+
+src/artifact:
+total 104
+drwxr-xr-x. 1 dev dev   242 Aug  2 21:47 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev  5853 Aug  2 20:56 connection.rs
+-rw-r--r--. 1 dev dev  1446 Aug  2 21:52 integrity.rs
+-rw-r--r--. 1 dev dev  3194 Aug  2 21:47 lifecycle.rs
+-rw-r--r--. 1 dev dev  9310 Aug  2 21:47 lineage.rs
+-rw-r--r--. 1 dev dev 11247 Aug  2 21:47 migration.rs
+-rw-r--r--. 1 dev dev  6683 Aug  2 20:00 permissions.rs
+-rw-r--r--. 1 dev dev 12602 Aug  2 21:52 receipt.rs
+-rw-r--r--. 1 dev dev  5404 Aug  2 21:47 record.rs
+-rw-r--r--. 1 dev dev  2594 Aug  2 14:02 sqlite_errors.rs
+drwxr-xr-x. 1 dev dev    20 Aug  2 19:48 tests
+-rw-r--r--. 1 dev dev 28653 Aug  2 21:03 tests.rs
+
+src/artifact/tests:
+total 16
+drwxr-xr-x. 1 dev dev    20 Aug  2 19:48 .
+drwxr-xr-x. 1 dev dev   242 Aug  2 21:47 ..
+-rw-r--r--. 1 dev dev 12899 Aug  2 20:00 lineage.rs
+
+src/cli:
+total 16
+drwxr-xr-x. 1 dev dev    16 Aug  2 19:55 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev 13842 Aug  2 21:51 tests.rs
+
+src/lib:
+total 24
+drwxr-xr-x. 1 dev dev    16 Aug  2 20:55 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev 22034 Aug  2 20:55 tests.rs
+
+src/projection:
+total 16
+drwxr-xr-x. 1 dev dev    16 Aug  2 19:48 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev 15061 Aug  2 20:49 tests.rs
+
+src/runtime:
+total 36
+drwxr-xr-x. 1 dev dev    36 Aug  2 19:48 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev 12573 Aug  2 20:53 process.rs
+-rw-r--r--. 1 dev dev 17405 Aug  2 20:56 tests.rs
+
+src/setup:
+total 44
+drwxr-xr-x. 1 dev dev   104 Aug  2 21:45 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev  5633 Aug  2 21:45 backup.rs
+-rw-r--r--. 1 dev dev  1091 Aug  2 21:45 claude.rs
+-rw-r--r--. 1 dev dev  5133 Aug  2 21:52 codex_config.rs
+-rw-r--r--. 1 dev dev   804 Aug  2 21:45 document.rs
+-rw-r--r--. 1 dev dev 19173 Aug  2 21:45 tests.rs
+
+src/surface:
+total 4
+drwxr-xr-x. 1 dev dev   38 Aug  2 22:03 .
+drwxr-xr-x. 1 dev dev  338 Aug  2 22:00 ..
+drwxr-xr-x. 1 dev dev   16 Aug  2 22:03 envelope
+-rw-r--r--. 1 dev dev 3717 Aug  2 22:03 envelope.rs
+
+src/surface/envelope:
+total 8
+drwxr-xr-x. 1 dev dev   16 Aug  2 22:03 .
+drwxr-xr-x. 1 dev dev   38 Aug  2 22:03 ..
+-rw-r--r--. 1 dev dev 5371 Aug  2 22:03 tests.rs
+
+src/types:
+total 44
+drwxr-xr-x. 1 dev dev    44 Aug  2 20:55 .
+drwxr-xr-x. 1 dev dev   338 Aug  2 22:00 ..
+-rw-r--r--. 1 dev dev 17375 Aug  2 21:52 acquisition.rs
+-rw-r--r--. 1 dev dev 21004 Aug  2 21:09 tests.rs

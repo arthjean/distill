@@ -1,0 +1,75 @@
+distill v0.1.0 (/home/dev/distill)
+├── base64 v0.22.1
+├── libc v0.2.189
+├── rusqlite v0.40.1
+│   ├── bitflags v2.13.1
+│   ├── fallible-iterator v0.3.0
+│   ├── fallible-streaming-iterator v0.1.9
+│   ├── hashlink v0.12.1
+│   │   └── hashbrown v0.17.1
+│   │       └── foldhash v0.2.0
+│   ├── libsqlite3-sys v0.38.1
+│   │   [build-dependencies]
+│   │   ├── pkg-config v0.3.33
+│   │   └── vcpkg v0.2.15
+│   └── smallvec v1.15.2
+├── serde v1.0.228
+│   ├── serde_core v1.0.228
+│   └── serde_derive v1.0.228 (proc-macro)
+│       ├── proc-macro2 v1.0.107
+│       │   └── unicode-ident v1.0.24
+│       ├── quote v1.0.47
+│       │   └── proc-macro2 v1.0.107 (*)
+│       └── syn v2.0.119
+│           ├── proc-macro2 v1.0.107 (*)
+│           ├── quote v1.0.47 (*)
+│           └── unicode-ident v1.0.24
+├── serde_json v1.0.149
+│   ├── itoa v1.0.18
+│   ├── memchr v2.8.3
+│   ├── serde_core v1.0.228
+│   └── zmij v1.0.23
+├── sha2 v0.10.9
+│   ├── cfg-if v1.0.4
+│   ├── cpufeatures v0.2.17
+│   └── digest v0.10.7
+│       ├── block-buffer v0.10.4
+│       │   └── generic-array v0.14.7
+│       │       └── typenum v1.20.1
+│       │       [build-dependencies]
+│       │       └── version_check v0.9.5
+│       └── crypto-common v0.1.7
+│           ├── generic-array v0.14.7 (*)
+│           └── typenum v1.20.1
+└── tiktoken-rs v0.12.0
+    ├── anyhow v1.0.104
+    ├── base64 v0.22.1
+    ├── bstr v1.13.0
+    │   ├── memchr v2.8.3
+    │   └── regex-automata v0.4.16
+    │       ├── aho-corasick v1.1.4
+    │       │   └── memchr v2.8.3
+    │       ├── memchr v2.8.3
+    │       └── regex-syntax v0.8.11
+    ├── fancy-regex v0.17.0
+    │   ├── bit-set v0.8.0
+    │   │   └── bit-vec v0.8.0
+    │   ├── regex-automata v0.4.16 (*)
+    │   └── regex-syntax v0.8.11
+    ├── lazy_static v1.5.0
+    ├── regex v1.13.1
+    │   ├── aho-corasick v1.1.4 (*)
+    │   ├── memchr v2.8.3
+    │   ├── regex-automata v0.4.16 (*)
+    │   └── regex-syntax v0.8.11
+    └── rustc-hash v2.1.3
+[dev-dependencies]
+└── tempfile v3.27.0
+    ├── fastrand v2.5.0
+    ├── getrandom v0.4.3
+    │   ├── cfg-if v1.0.4
+    │   └── libc v0.2.189
+    ├── once_cell v1.21.4
+    └── rustix v1.1.4
+        ├── bitflags v2.13.1
+        └── linux-raw-sys v0.12.1

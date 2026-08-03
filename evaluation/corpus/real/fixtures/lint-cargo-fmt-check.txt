@@ -1,0 +1,11 @@
+Diff in /home/dev/work/rust-misformatted/src/main.rs:1:
+-fn main( ) {
+-let budgets = vec![ 2250,1800,450 ];
+-    for budget in budgets { println!("{}",budget); }
++fn main() {
++    let budgets = vec![2250, 1800, 450];
++    for budget in budgets {
++        println!("{}", budget);
++    }
+ }
+ 

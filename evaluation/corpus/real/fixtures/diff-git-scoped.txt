@@ -1,0 +1,2720 @@
+diff --git a/src/artifact.rs b/src/artifact.rs
+index 8e2de4e..0c8dd6b 100644
+--- a/src/artifact.rs
++++ b/src/artifact.rs
+@@ -1,35 +1,35 @@
+-use crate::contract::MAX_RECEIPT_SPANS;
+ #[cfg(test)]
+ use crate::types::MAX_ARTIFACT_LINEAGE_BYTES;
+ use crate::types::{
+     ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode, Receipt,
+     ValidatedAcquisition,
+ };
+-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+-use sha2::{Digest, Sha256};
++#[cfg(test)]
++use rusqlite::Connection;
++use rusqlite::{TransactionBehavior, params};
+ use std::path::PathBuf;
+ 
+ mod connection;
++mod integrity;
+ mod lifecycle;
+ mod lineage;
+ mod migration;
+ mod permissions;
+ mod receipt;
++mod record;
+ mod sqlite_errors;
+ 
+-use lifecycle::*;
+-use lineage::*;
++use integrity::{EMPTY_LINEAGE_SHA256, nonnegative_u64, sha256_hex};
++use lifecycle::{collect_in_transaction, store_usage};
++use lineage::lineage_usage_connection;
+ use permissions::enforce_store_modes;
+ #[cfg(test)]
+ use permissions::sidecar_path;
++use record::{load_verified_artifact, read_artifact};
+ use sqlite_errors::{map_read_error, map_write_error};
+ 
+ const STORE_SCHEMA_VERSION: i64 = 3;
+ const TOMBSTONE_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
+-const EMPTY_LINEAGE_SHA256: &str =
+-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+-const LINEAGE_DIGEST_DOMAIN: &[u8] = b"distill.lineage/v1\0";
+-
+ #[derive(Clone, Debug)]
+ pub(crate) struct ArtifactStore {
+     path: PathBuf,
+@@ -79,23 +79,6 @@ struct StatusRow {
+     expired: i64,
+ }
+ 
+-struct ArtifactRow {
+-    schema: String,
+-    state: String,
+-    bytes: Vec<u8>,
+-    digest: String,
+-    source_bytes: i64,
+-    acquisition_json: Vec<u8>,
+-    acquisition_digest: String,
+-    created_at: i64,
+-    expires_at: i64,
+-}
+-
+-struct VerifiedArtifact {
+-    reference: ArtifactRef,
+-    stored: StoredArtifact,
+-}
+-
+ #[cfg(test)]
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(crate) enum CommitFault {
+@@ -411,164 +394,6 @@ impl ArtifactStore {
+         enforce_store_modes(&self.path)?;
+         Ok(report)
+     }
+-
+-    fn missing_artifact_failure(
+-        connection: &Connection,
+-        id: &str,
+-        now: u64,
+-    ) -> Result<Failure, Failure> {
+-        let tombstone = connection
+-            .query_row(
+-                "SELECT purge_at FROM tombstones WHERE id = ?1",
+-                [id],
+-                |row| row.get::<_, i64>(0),
+-            )
+-            .optional()
+-            .map_err(map_read_error)?;
+-        if tombstone.is_some_and(|purge_at| purge_at >= 0 && now < purge_at as u64) {
+-            return Ok(Failure::new(
+-                FailureCode::ArtifactExpired,
+-                "artifact retention expired",
+-            ));
+-        }
+-        Ok(Failure::new(
+-            FailureCode::ArtifactUnknown,
+-            "artifact does not exist",
+-        ))
+-    }
+-}
+-
+-fn read_artifact(
+-    connection: &Connection,
+-    reference: &ArtifactRef,
+-    now: u64,
+-) -> Result<StoredArtifact, Failure> {
+-    if reference.schema_version != ARTIFACT_SCHEMA_VERSION {
+-        return Err(Failure::new(
+-            FailureCode::ArtifactSchemaUnsupported,
+-            "artifact reference schema is unsupported",
+-        ));
+-    }
+-    let verified = load_verified_artifact(connection, &reference.id, now)?;
+-    if verified.reference != *reference {
+-        return Err(Failure::new(
+-            FailureCode::ArtifactCorrupt,
+-            "artifact integrity verification failed",
+-        )
+-        .with_artifact(verified.reference));
+-    }
+-    Ok(verified.stored)
+-}
+-
+-fn load_verified_artifact(
+-    connection: &Connection,
+-    id: &str,
+-    now: u64,
+-) -> Result<VerifiedArtifact, Failure> {
+-    let record: Option<ArtifactRow> = connection
+-        .query_row(
+-            "SELECT schema_version, state, source, sha256, source_bytes,
+-                    source_metadata, source_metadata_sha256, created_at, expires_at
+-             FROM artifacts WHERE id = ?1",
+-            [id],
+-            |row| {
+-                Ok(ArtifactRow {
+-                    schema: row.get(0)?,
+-                    state: row.get(1)?,
+-                    bytes: row.get(2)?,
+-                    digest: row.get(3)?,
+-                    source_bytes: row.get(4)?,
+-                    acquisition_json: row.get(5)?,
+-                    acquisition_digest: row.get(6)?,
+-                    created_at: row.get(7)?,
+-                    expires_at: row.get(8)?,
+-                })
+-            },
+-        )
+-        .optional()
+-        .map_err(map_read_error)?;
+-    let Some(row) = record else {
+-        return Err(ArtifactStore::missing_artifact_failure(
+-            connection, id, now,
+-        )?);
+-    };
+-    if row.schema != ARTIFACT_SCHEMA_VERSION {
+-        return Err(Failure::new(
+-            FailureCode::ArtifactSchemaUnsupported,
+-            "stored artifact schema is unsupported",
+-        ));
+-    }
+-    if row.state != "committed" {
+-        return Err(Failure::new(
+-            FailureCode::CommitFailed,
+-            "artifact transaction did not reach committed state",
+-        ));
+-    }
+-    let source_bytes = nonnegative_u64(row.source_bytes, "source byte count")?;
+-    let created_at = nonnegative_u64(row.created_at, "creation time")?;
+-    let expires_at = nonnegative_u64(row.expires_at, "expiration time")?;
+-    let stored_reference = ArtifactRef {
+-        schema_version: row.schema,
+-        id: id.to_owned(),
+-        source_sha256: row.digest.clone(),
+-        source_bytes,
+-        created_at,
+-        expires_at,
+-    };
+-    if now >= expires_at {
+-        return Err(
+-            Failure::new(FailureCode::ArtifactExpired, "artifact retention expired")
+-                .with_artifact(stored_reference),
+-        );
+-    }
+-    if row.bytes.len() as u64 != source_bytes || sha256_hex(&row.bytes) != row.digest {
+-        return Err(Failure::new(
+-            FailureCode::ArtifactCorrupt,
+-            "artifact integrity verification failed",
+-        )
+-        .with_artifact(stored_reference));
+-    }
+-    verify_exact_digest(
+-        &row.acquisition_json,
+-        &row.acquisition_digest,
+-        "artifact acquisition metadata integrity verification failed",
+-        &stored_reference,
+-    )?;
+-    let acquisition: AcquisitionReceipt =
+-        serde_json::from_slice(&row.acquisition_json).map_err(|_| {
+-            Failure::new(
+-                FailureCode::ArtifactCorrupt,
+-                "artifact acquisition metadata is corrupt",
+-            )
+-            .with_artifact(stored_reference.clone())
+-        })?;
+-    let acquisition = ValidatedAcquisition::from_wire(acquisition, source_bytes).map_err(|_| {
+-        Failure::new(
+-            FailureCode::ArtifactCorrupt,
+-            "artifact acquisition metadata is semantically corrupt",
+-        )
+-        .with_artifact(stored_reference.clone())
+-    })?;
+-    Ok(VerifiedArtifact {
+-        reference: stored_reference,
+-        stored: StoredArtifact {
+-            bytes: row.bytes,
+-            acquisition,
+-        },
+-    })
+-}
+-
+-fn nonnegative_u64(value: i64, label: &str) -> Result<u64, Failure> {
+-    u64::try_from(value).map_err(|_| {
+-        Failure::new(
+-            FailureCode::ArtifactCorrupt,
+-            format!("artifact {label} is invalid"),
+-        )
+-    })
+-}
+-
+-fn sha256_hex(bytes: &[u8]) -> String {
+-    format!("{:x}", Sha256::digest(bytes))
+ }
+ 
+ #[cfg(test)]
+diff --git a/src/artifact/integrity.rs b/src/artifact/integrity.rs
+new file mode 100644
+index 0000000..1d4c558
+--- /dev/null
++++ b/src/artifact/integrity.rs
+@@ -0,0 +1,46 @@
++use crate::types::{ArtifactRef, Failure, FailureCode};
++use sha2::{Digest, Sha256};
++
++pub(super) const EMPTY_LINEAGE_SHA256: &str =
++    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
++const LINEAGE_DIGEST_DOMAIN: &[u8] = b"distill.lineage/v1\0";
++
++pub(super) fn nonnegative_u64(value: i64, label: &str) -> Result<u64, Failure> {
++    u64::try_from(value).map_err(|_| {
++        Failure::new(
++            FailureCode::ArtifactCorrupt,
++            format!("artifact {label} is invalid"),
++        )
++    })
++}
++
++pub(super) fn sha256_hex(bytes: &[u8]) -> String {
++    format!("{:x}", Sha256::digest(bytes))
++}
++
++pub(super) fn verify_exact_digest(
++    bytes: &[u8],
++    digest: &str,
++    message: &'static str,
++    reference: &ArtifactRef,
++) -> Result<(), Failure> {
++    if !valid_sha256(digest) || sha256_hex(bytes) != digest {
++        return Err(
++            Failure::new(FailureCode::ArtifactCorrupt, message).with_artifact(reference.clone())
++        );
++    }
++    Ok(())
++}
++
++pub(super) fn valid_sha256(digest: &str) -> bool {
++    digest.len() == 64 && digest.bytes().all(crate::contract::is_lower_hex)
++}
++
++pub(super) fn lineage_chain_sha256(previous: &str, sequence: u64, receipt_json: &[u8]) -> String {
++    let mut digest = Sha256::new();
++    digest.update(LINEAGE_DIGEST_DOMAIN);
++    digest.update(previous.as_bytes());
++    digest.update(sequence.to_be_bytes());
++    digest.update(receipt_json);
++    format!("{:x}", digest.finalize())
++}
+diff --git a/src/artifact/lifecycle.rs b/src/artifact/lifecycle.rs
+index e8d0c6d..f1d44bd 100644
+--- a/src/artifact/lifecycle.rs
++++ b/src/artifact/lifecycle.rs
+@@ -1,5 +1,5 @@
+ use super::sqlite_errors::map_write_error;
+-use super::{GcReport, TOMBSTONE_TTL_SECONDS, nonnegative_u64};
++use super::{GcReport, TOMBSTONE_TTL_SECONDS, integrity::nonnegative_u64};
+ use crate::types::{Failure, FailureCode};
+ use rusqlite::{Transaction, params};
+ 
+diff --git a/src/artifact/lineage.rs b/src/artifact/lineage.rs
+index 4b25416..ac3b9b8 100644
+--- a/src/artifact/lineage.rs
++++ b/src/artifact/lineage.rs
+@@ -1,14 +1,14 @@
+ use super::{
+-    LINEAGE_DIGEST_DOMAIN, MAX_RECEIPT_SPANS, map_read_error, map_write_error, nonnegative_u64,
+-    sha256_hex,
++    integrity::{EMPTY_LINEAGE_SHA256, nonnegative_u64, valid_sha256},
++    sqlite_errors::{map_read_error, map_write_error},
+ };
++use crate::contract::MAX_RECEIPT_SPANS;
+ use crate::types::{
+     ArtifactRef, CL100K_PROFILE, CountUnit, Failure, FailureCode, Fidelity,
+     MAX_ARTIFACT_LINEAGE_BYTES, POLICY_VERSION, PROJECTION_VERSION, RECEIPT_SCHEMA_VERSION,
+     Receipt,
+ };
+ use rusqlite::{Connection, OptionalExtension, Transaction};
+-use sha2::{Digest, Sha256};
+ 
+ struct LineageShapeRow {
+     count: i64,
+@@ -46,7 +46,7 @@ pub(super) fn verify_lineage(
+         || shape.bytes != claimed_bytes
+         || shape.bytes > MAX_ARTIFACT_LINEAGE_BYTES
+         || !valid_sha256(&claimed_head)
+-        || (shape.count == 0 && claimed_head != super::EMPTY_LINEAGE_SHA256)
++        || (shape.count == 0 && claimed_head != EMPTY_LINEAGE_SHA256)
+         || (shape.count > 0 && shape.last_chain.as_deref() != Some(claimed_head.as_str()))
+     {
+         return Err(Failure::new(
+@@ -191,33 +191,6 @@ pub(super) fn lineage_usage_connection(connection: &Connection) -> Result<u64, F
+     nonnegative_u64(used, "lineage usage")
+ }
+ 
+-pub(super) fn verify_exact_digest(
+-    bytes: &[u8],
+-    digest: &str,
+-    message: &'static str,
+-    reference: &ArtifactRef,
+-) -> Result<(), Failure> {
+-    if !valid_sha256(digest) || sha256_hex(bytes) != digest {
+-        return Err(
+-            Failure::new(FailureCode::ArtifactCorrupt, message).with_artifact(reference.clone())
+-        );
+-    }
+-    Ok(())
+-}
+-
+-pub(super) fn valid_sha256(digest: &str) -> bool {
+-    digest.len() == 64 && digest.bytes().all(crate::contract::is_lower_hex)
+-}
+-
+-pub(super) fn lineage_chain_sha256(previous: &str, sequence: u64, receipt_json: &[u8]) -> String {
+-    let mut digest = Sha256::new();
+-    digest.update(LINEAGE_DIGEST_DOMAIN);
+-    digest.update(previous.as_bytes());
+-    digest.update(sequence.to_be_bytes());
+-    digest.update(receipt_json);
+-    format!("{:x}", digest.finalize())
+-}
+-
+ pub(super) fn validate_receipt(
+     receipt: &Receipt,
+     reference: &ArtifactRef,
+diff --git a/src/artifact/migration.rs b/src/artifact/migration.rs
+index 9822baa..767c8a2 100644
+--- a/src/artifact/migration.rs
++++ b/src/artifact/migration.rs
+@@ -1,6 +1,7 @@
+ use super::{
+-    EMPTY_LINEAGE_SHA256, lineage_chain_sha256, lineage_usage, map_read_error, map_write_error,
+-    nonnegative_u64, sha256_hex, validate_receipt,
++    integrity::{EMPTY_LINEAGE_SHA256, lineage_chain_sha256, nonnegative_u64, sha256_hex},
++    lineage::{lineage_usage, validate_receipt},
++    sqlite_errors::{map_read_error, map_write_error},
+ };
+ use crate::types::{
+     ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode,
+diff --git a/src/artifact/receipt.rs b/src/artifact/receipt.rs
+index d09f0b6..4ee2b78 100644
+--- a/src/artifact/receipt.rs
++++ b/src/artifact/receipt.rs
+@@ -1,11 +1,12 @@
+ use super::{
+-    ArtifactStore, EMPTY_LINEAGE_SHA256, StoredTrace, nonnegative_u64, read_artifact, sha256_hex,
+-};
+-use super::{
+-    lineage::{
+-        lineage_chain_sha256, lineage_usage, validate_receipt, verify_exact_digest, verify_lineage,
++    ArtifactStore, StoredTrace,
++    integrity::{
++        EMPTY_LINEAGE_SHA256, lineage_chain_sha256, nonnegative_u64, sha256_hex,
++        verify_exact_digest,
+     },
++    lineage::{lineage_usage, validate_receipt, verify_lineage},
+     permissions::enforce_store_modes,
++    record::read_artifact,
+     sqlite_errors::{map_read_error, map_write_error},
+ };
+ use crate::types::{ArtifactRef, Failure, FailureCode, MAX_ARTIFACT_LINEAGE_BYTES, Receipt};
+diff --git a/src/artifact/record.rs b/src/artifact/record.rs
+new file mode 100644
+index 0000000..9784c0f
+--- /dev/null
++++ b/src/artifact/record.rs
+@@ -0,0 +1,170 @@
++use super::{
++    StoredArtifact,
++    integrity::{nonnegative_u64, sha256_hex, verify_exact_digest},
++    sqlite_errors::map_read_error,
++};
++use crate::types::{
++    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, Failure, FailureCode,
++    ValidatedAcquisition,
++};
++use rusqlite::{Connection, OptionalExtension};
++
++struct ArtifactRow {
++    schema: String,
++    state: String,
++    bytes: Vec<u8>,
++    digest: String,
++    source_bytes: i64,
++    acquisition_json: Vec<u8>,
++    acquisition_digest: String,
++    created_at: i64,
++    expires_at: i64,
++}
++
++pub(super) struct VerifiedArtifact {
++    pub reference: ArtifactRef,
++    pub stored: StoredArtifact,
++}
++
++pub(super) fn read_artifact(
++    connection: &Connection,
++    reference: &ArtifactRef,
++    now: u64,
++) -> Result<StoredArtifact, Failure> {
++    if reference.schema_version != ARTIFACT_SCHEMA_VERSION {
++        return Err(Failure::new(
++            FailureCode::ArtifactSchemaUnsupported,
++            "artifact reference schema is unsupported",
++        ));
++    }
++    let verified = load_verified_artifact(connection, &reference.id, now)?;
++    if verified.reference != *reference {
++        return Err(Failure::new(
++            FailureCode::ArtifactCorrupt,
++            "artifact integrity verification failed",
++        )
++        .with_artifact(verified.reference));
++    }
++    Ok(verified.stored)
++}
++
++pub(super) fn load_verified_artifact(
++    connection: &Connection,
++    id: &str,
++    now: u64,
++) -> Result<VerifiedArtifact, Failure> {
++    let record: Option<ArtifactRow> = connection
++        .query_row(
++            "SELECT schema_version, state, source, sha256, source_bytes,
++                    source_metadata, source_metadata_sha256, created_at, expires_at
++             FROM artifacts WHERE id = ?1",
++            [id],
++            |row| {
++                Ok(ArtifactRow {
++                    schema: row.get(0)?,
++                    state: row.get(1)?,
++                    bytes: row.get(2)?,
++                    digest: row.get(3)?,
++                    source_bytes: row.get(4)?,
++                    acquisition_json: row.get(5)?,
++                    acquisition_digest: row.get(6)?,
++                    created_at: row.get(7)?,
++                    expires_at: row.get(8)?,
++                })
++            },
++        )
++        .optional()
++        .map_err(map_read_error)?;
++    let Some(row) = record else {
++        return Err(missing_artifact_failure(connection, id, now)?);
++    };
++    if row.schema != ARTIFACT_SCHEMA_VERSION {
++        return Err(Failure::new(
++            FailureCode::ArtifactSchemaUnsupported,
++            "stored artifact schema is unsupported",
++        ));
++    }
++    if row.state != "committed" {
++        return Err(Failure::new(
++            FailureCode::CommitFailed,
++            "artifact transaction did not reach committed state",
++        ));
++    }
++    let source_bytes = nonnegative_u64(row.source_bytes, "source byte count")?;
++    let created_at = nonnegative_u64(row.created_at, "creation time")?;
++    let expires_at = nonnegative_u64(row.expires_at, "expiration time")?;
++    let stored_reference = ArtifactRef {
++        schema_version: row.schema,
++        id: id.to_owned(),
++        source_sha256: row.digest.clone(),
++        source_bytes,
++        created_at,
++        expires_at,
++    };
++    if now >= expires_at {
++        return Err(
++            Failure::new(FailureCode::ArtifactExpired, "artifact retention expired")
++                .with_artifact(stored_reference),
++        );
++    }
++    if row.bytes.len() as u64 != source_bytes || sha256_hex(&row.bytes) != row.digest {
++        return Err(Failure::new(
++            FailureCode::ArtifactCorrupt,
++            "artifact integrity verification failed",
++        )
++        .with_artifact(stored_reference));
++    }
++    verify_exact_digest(
++        &row.acquisition_json,
++        &row.acquisition_digest,
++        "artifact acquisition metadata integrity verification failed",
++        &stored_reference,
++    )?;
++    let acquisition: AcquisitionReceipt =
++        serde_json::from_slice(&row.acquisition_json).map_err(|_| {
++            Failure::new(
++                FailureCode::ArtifactCorrupt,
++                "artifact acquisition metadata is corrupt",
++            )
++            .with_artifact(stored_reference.clone())
++        })?;
++    let acquisition = ValidatedAcquisition::from_wire(acquisition, source_bytes).map_err(|_| {
++        Failure::new(
++            FailureCode::ArtifactCorrupt,
++            "artifact acquisition metadata is semantically corrupt",
++        )
++        .with_artifact(stored_reference.clone())
++    })?;
++    Ok(VerifiedArtifact {
++        reference: stored_reference,
++        stored: StoredArtifact {
++            bytes: row.bytes,
++            acquisition,
++        },
++    })
++}
++
++fn missing_artifact_failure(
++    connection: &Connection,
++    id: &str,
++    now: u64,
++) -> Result<Failure, Failure> {
++    let tombstone = connection
++        .query_row(
++            "SELECT purge_at FROM tombstones WHERE id = ?1",
++            [id],
++            |row| row.get::<_, i64>(0),
++        )
++        .optional()
++        .map_err(map_read_error)?;
++    if tombstone.is_some_and(|purge_at| purge_at >= 0 && now < purge_at as u64) {
++        return Ok(Failure::new(
++            FailureCode::ArtifactExpired,
++            "artifact retention expired",
++        ));
++    }
++    Ok(Failure::new(
++        FailureCode::ArtifactUnknown,
++        "artifact does not exist",
++    ))
++}
+diff --git a/src/cli.rs b/src/cli.rs
+index ee08a90..9400bd5 100644
+--- a/src/cli.rs
++++ b/src/cli.rs
+@@ -1,11 +1,13 @@
+ use crate::{
+     codex, mcp, setup,
+-    surface::{BROKEN_PIPE_EXIT, SurfaceError, write_json_line},
++    surface::{
++        BROKEN_PIPE_EXIT, DEFAULT_PRESERVATION_PROFILE, SurfaceError, adapter_failure, budget_for,
++        normalize_root_relative, write_json_line,
++    },
+ };
+ use distill::{
+-    ArtifactRef, BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit,
+-    Engine, EngineConfig, Failure, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention,
+-    Source,
++    ArtifactRef, BinaryPolicy, Budget, ByteString, CONTRACT_VERSION, CountUnit, Engine,
++    EngineConfig, FailureCode, MAX_SOURCE_BYTES, Outcome, Request, Retention, Source,
+ };
+ use serde::Serialize;
+ #[cfg(test)]
+@@ -91,7 +93,7 @@ impl ProjectionParser {
+             total: None,
+             reserve: 0,
+             unit: CountUnit::Bytes,
+-            profile: "plain-text/v1".to_owned(),
++            profile: DEFAULT_PRESERVATION_PROFILE.to_owned(),
+             ttl_seconds: None,
+             json: false,
+         }
+@@ -139,12 +141,7 @@ impl ProjectionParser {
+             .total
+             .ok_or_else(|| SurfaceError::invalid("--budget is required"))?;
+         Ok(ProjectionOptions {
+-            budget: Budget {
+-                unit: self.unit,
+-                total_visible_limit,
+-                reserved_envelope: self.reserve,
+-                token_profile: (self.unit == CountUnit::Tokens).then(|| CL100K_PROFILE.to_owned()),
+-            },
++            budget: budget_for(self.unit, total_visible_limit, self.reserve),
+             profile: self.profile,
+             retention: Retention {
+                 expires_at: None,
+@@ -552,14 +549,11 @@ fn read_bounded<R: Read>(input: &mut R, limit: usize) -> Result<Vec<u8>, Surface
+         .read_to_end(&mut bytes)
+         .map_err(|_| SurfaceError::invalid("cannot read stdin"))?;
+     if bytes.len() > limit {
+-        return Err(SurfaceError::from(Failure {
+-            code: FailureCode::InputTooLarge,
+-            safe_message: "stdin exceeds the 10 MiB limit".to_owned(),
+-            request_id: None,
+-            details: BTreeMap::new(),
+-            artifact: None,
+-            acquisition: None,
+-        }));
++        return Err(SurfaceError::from(adapter_failure(
++            FailureCode::InputTooLarge,
++            "stdin exceeds the 10 MiB limit",
++            None,
++        )));
+     }
+     Ok(bytes)
+ }
+@@ -575,10 +569,6 @@ fn parse_u64(value: &str, flag: &str) -> Result<u64, SurfaceError> {
+         .map_err(|_| SurfaceError::invalid(format!("{flag} requires an unsigned integer")))
+ }
+ 
+-fn normalize_root_relative(path: String) -> String {
+-    if path == "." { String::new() } else { path }
+-}
+-
+ fn remove_flag(args: &mut VecDeque<String>, flag: &str) -> bool {
+     if let Some(position) = args.iter().position(|argument| argument == flag) {
+         args.remove(position);
+diff --git a/src/cli/tests.rs b/src/cli/tests.rs
+index 417a17b..7b3cf3c 100644
+--- a/src/cli/tests.rs
++++ b/src/cli/tests.rs
+@@ -1,4 +1,5 @@
+ use super::*;
++use distill::CL100K_PROFILE;
+ use std::fs;
+ use tempfile::TempDir;
+ 
+diff --git a/src/codex.rs b/src/codex.rs
+index 526e943..f017df9 100644
+--- a/src/codex.rs
++++ b/src/codex.rs
+@@ -1,16 +1,17 @@
+-use crate::surface::{SurfaceError, bounded_correlation_id, write_json_line};
++use crate::surface::{
++    SurfaceError, adapter_failure, bounded_correlation_id, budget_for, codex_error_envelope,
++    count_visible, default_request, projection_envelope, write_json_line,
++};
+ use distill::{
+-    Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Failure,
+-    FailureCode, Fidelity, Outcome, Request, Retention, Source,
++    ByteString, CountUnit, Engine, EngineConfig, Failure, FailureCode, Fidelity, Outcome, Source,
+ };
+ use serde::Deserialize;
+ use serde_json::{Value, json};
+ use std::{
+-    collections::{BTreeMap, VecDeque},
++    collections::VecDeque,
+     io::{Read, Write},
+     panic::{AssertUnwindSafe, catch_unwind},
+ };
+-use tiktoken_rs::cl100k_base_singleton;
+ 
+ pub(crate) const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v2";
+ const PROJECTION_SCHEMA_VERSION: &str = "distill.codex-projection/v1";
+@@ -149,22 +150,14 @@ pub(crate) fn run<R: Read, W: Write>(
+         Ok(engine) => engine,
+         Err(failure) => return write_mode_failure(output, mode, &failure),
+     };
+-    let request = Request {
+-        contract_version: CONTRACT_VERSION.to_owned(),
+-        request_id: bounded_request_id(&event),
+-        source: Source::Inline {
++    let request = default_request(
++        bounded_request_id(&event),
++        Source::Inline {
+             bytes: ByteString::from(source),
+             media_type: Some("application/json".to_owned()),
+         },
+-        budget: Budget {
+-            unit: CountUnit::Tokens,
+-            total_visible_limit: total_tokens,
+-            reserved_envelope: reserved_tokens,
+-            token_profile: Some(CL100K_PROFILE.to_owned()),
+-        },
+-        preservation_profile: "plain-text/v1".to_owned(),
+-        retention: Retention::default(),
+-    };
++        budget_for(CountUnit::Tokens, total_tokens, reserved_tokens),
++    );
+     let handled = catch_unwind(AssertUnwindSafe(|| engine.handle(request)));
+     let outcome = match handled {
+         Ok(Ok(outcome)) => outcome,
+@@ -267,13 +260,12 @@ fn response_bytes(response: &Value) -> Result<Vec<u8>, Failure> {
+     if let Some(text) = response.as_str() {
+         return Ok(text.as_bytes().to_vec());
+     }
+-    serde_json::to_vec(response).map_err(|_| Failure {
+-        code: FailureCode::InvariantBreach,
+-        safe_message: "Codex tool response cannot be serialized".to_owned(),
+-        request_id: None,
+-        details: BTreeMap::new(),
+-        artifact: None,
+-        acquisition: None,
++    serde_json::to_vec(response).map_err(|_| {
++        adapter_failure(
++            FailureCode::InvariantBreach,
++            "Codex tool response cannot be serialized",
++            None,
++        )
+     })
+ }
+ 
+@@ -289,26 +281,11 @@ fn bounded_request_id(event: &PostToolUseEvent) -> String {
+ }
+ 
+ fn render_projection(outcome: &Outcome) -> String {
+-    serde_json::to_string(&json!({
+-        "schema_version": PROJECTION_SCHEMA_VERSION,
+-        "source_is_untrusted": true,
+-        "projection": outcome.visible.bytes,
+-        "artifact": outcome.artifact,
+-        "fidelity": outcome.receipt.fidelity,
+-        "accounting": {
+-            "original": outcome.receipt.original_count,
+-            "visible": outcome.receipt.visible_count,
+-            "unit": outcome.receipt.count_unit,
+-            "token_profile": outcome.receipt.token_profile,
+-        },
+-        "receipt": {
+-            "schema_version": outcome.receipt.schema_version,
+-            "source_sha256": outcome.receipt.source_sha256,
+-            "projection_version": outcome.receipt.projection_version,
+-            "policy_version": outcome.receipt.policy_version,
+-        },
+-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
+-    }))
++    serde_json::to_string(&projection_envelope(
++        PROJECTION_SCHEMA_VERSION,
++        outcome,
++        None,
++    ))
+     .unwrap_or_else(|_| {
+         compact_feedback(
+             FailureCode::InvariantBreach,
+@@ -343,17 +320,7 @@ fn compact_feedback(
+     message: &str,
+     artifact: Option<&distill::ArtifactRef>,
+ ) -> String {
+-    serde_json::to_string(&json!({
+-        "schema_version": PROJECTION_SCHEMA_VERSION,
+-        "error": {
+-            "code": code.as_str(),
+-            "message": message.chars().take(512).collect::<String>(),
+-            "artifact": artifact,
+-        },
+-        "raw_output_forwarded_as_projected": false,
+-        "recovery": artifact.map(|value| format!("distill artifact get {}", value.id)),
+-    }))
+-    .unwrap_or_else(|_| "{\"error\":{\"code\":\"invariant_breach\"}}".to_owned())
++    codex_error_envelope(PROJECTION_SCHEMA_VERSION, code.as_str(), message, artifact)
+ }
+ 
+ fn write_feedback<W: Write>(output: &mut W, feedback: &str) -> Result<(), SurfaceError> {
+@@ -383,7 +350,7 @@ fn write_observe_diagnostic<W: Write>(
+ }
+ 
+ fn token_count(text: &str) -> u64 {
+-    cl100k_base_singleton().encode_ordinary(text).len() as u64
++    count_visible(text, CountUnit::Tokens)
+ }
+ 
+ fn parse_u64(value: Option<String>, flag: &str) -> Result<u64, SurfaceError> {
+diff --git a/src/mcp.rs b/src/mcp.rs
+index d37524c..c522f90 100644
+--- a/src/mcp.rs
++++ b/src/mcp.rs
+@@ -1,17 +1,15 @@
+-use crate::surface::{SurfaceError, bounded_correlation_id};
++use crate::surface::{
++    SurfaceError, adapter_failure, bounded_correlation_id, budget_for, count_visible,
++    default_request, mcp_error_envelope, normalize_root_relative, projection_envelope,
++};
+ use distill::{
+-    BinaryPolicy, Budget, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, Engine,
+-    EngineConfig, Failure, FailureCode, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
+-    MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES,
+-    MAX_PROCESS_TIMEOUT_MS, MIN_PROCESS_TIMEOUT_MS, Outcome, Request, Retention, Source,
++    BinaryPolicy, Budget, ByteString, CountUnit, Engine, EngineConfig, Failure, FailureCode,
++    MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES, MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS,
++    MAX_PROCESS_EXECUTABLE_BYTES, MAX_PROCESS_TIMEOUT_MS, MIN_PROCESS_TIMEOUT_MS, Outcome, Source,
+ };
+ use serde::Deserialize;
+ use serde_json::{Value, json};
+-use std::{
+-    collections::BTreeMap,
+-    io::{BufRead, BufReader, Read, Write},
+-};
+-use tiktoken_rs::cl100k_base_singleton;
++use std::io::{BufRead, BufReader, Read, Write};
+ 
+ const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+ const MCP_ADAPTER_VERSION: &str = "distill.mcp/v1";
+@@ -27,6 +25,25 @@ struct JsonRpcRequest {
+     params: Value,
+ }
+ 
++#[derive(Debug, Deserialize)]
++struct ToolCallParams {
++    name: String,
++    #[serde(default = "empty_arguments")]
++    arguments: Value,
++}
++
++#[derive(Clone, Copy, Debug)]
++struct ProtocolError {
++    code: i64,
++    message: &'static str,
++}
++
++impl ProtocolError {
++    const fn new(code: i64, message: &'static str) -> Self {
++        Self { code, message }
++    }
++}
++
+ #[derive(Clone, Debug, Deserialize)]
+ #[serde(deny_unknown_fields)]
+ struct McpBudget {
+@@ -42,12 +59,11 @@ impl McpBudget {
+             CountUnit::Bytes => 1_024,
+             CountUnit::Tokens => 400,
+         };
+-        Budget {
+-            unit: self.unit,
+-            total_visible_limit: self.total_visible_limit,
+-            reserved_envelope: self.reserved_envelope.unwrap_or(default_reserve),
+-            token_profile: (self.unit == CountUnit::Tokens).then(|| CL100K_PROFILE.to_owned()),
+-        }
++        budget_for(
++            self.unit,
++            self.total_visible_limit,
++            self.reserved_envelope.unwrap_or(default_reserve),
++        )
+     }
+ }
+ 
+@@ -100,7 +116,7 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
+             }
+             continue;
+         }
+-        let request: JsonRpcRequest = match serde_json::from_slice(&line) {
++        let mut request: JsonRpcRequest = match serde_json::from_slice(&line) {
+             Ok(request) => request,
+             Err(_) => {
+                 write_protocol_error(output, Value::Null, -32700, "invalid JSON")?;
+@@ -129,15 +145,19 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
+             )?;
+             continue;
+         }
+-        let id = request.id.clone();
+-        if id.is_none() {
++        if matches!(
++            request.method.as_str(),
++            "notifications/initialized" | "notifications/cancelled"
++        ) {
+             continue;
+         }
+-        if let Some(response) = dispatch(&engine, request) {
+-            let id = id.unwrap_or(Value::Null);
+-            match response {
+-                Ok(result) => write_result(output, id, result)?,
+-                Err((code, message)) => write_protocol_error(output, id, code, message)?,
++        let Some(id) = request.id.take() else {
++            continue;
++        };
++        match dispatch(&engine, &id, &request.method, request.params) {
++            Ok(result) => write_result(output, id, result)?,
++            Err(error) => {
++                write_protocol_error(output, id, error.code, error.message)?;
+             }
+         }
+     }
+@@ -145,66 +165,55 @@ pub(crate) fn run<R: Read, W: Write, E: Write>(
+ 
+ fn dispatch(
+     engine: &Engine,
+-    request: JsonRpcRequest,
+-) -> Option<Result<Value, (i64, &'static str)>> {
+-    match request.method.as_str() {
+-        "notifications/initialized" | "notifications/cancelled" => None,
+-        "initialize" => Some(Ok(json!({
++    id: &Value,
++    method: &str,
++    params: Value,
++) -> Result<Value, ProtocolError> {
++    match method {
++        "initialize" => Ok(json!({
+             "protocolVersion": MCP_PROTOCOL_VERSION,
+             "capabilities": {"tools": {"listChanged": false}},
+             "serverInfo": {"name": "distill", "version": env!("CARGO_PKG_VERSION")},
+             "instructions": "Use distill_read and distill_run for explicit projected acquisition. This server does not intercept Claude native Read or Bash.",
+-        }))),
+-        "ping" => Some(Ok(json!({}))),
+-        "tools/list" => Some(Ok(json!({"tools": tool_definitions()}))),
+-        "tools/call" => Some(call_tool(engine, request.id.as_ref(), request.params)),
+-        _ => Some(Err((-32601, "method not found"))),
++        })),
++        "ping" => Ok(json!({})),
++        "tools/list" => Ok(json!({"tools": tool_definitions()})),
++        "tools/call" => call_tool(engine, id, params),
++        _ => Err(ProtocolError::new(-32601, "method not found")),
+     }
+ }
+ 
+-fn call_tool(
+-    engine: &Engine,
+-    id: Option<&Value>,
+-    params: Value,
+-) -> Result<Value, (i64, &'static str)> {
+-    let name = params
+-        .get("name")
+-        .and_then(Value::as_str)
+-        .ok_or((-32602, "tools/call requires a tool name"))?;
+-    let arguments = params
+-        .get("arguments")
+-        .cloned()
+-        .unwrap_or_else(|| json!({}));
++fn call_tool(engine: &Engine, id: &Value, params: Value) -> Result<Value, ProtocolError> {
++    let params: ToolCallParams = serde_json::from_value(params)
++        .map_err(|_| ProtocolError::new(-32602, "tools/call requires a tool name"))?;
++    let name = params.name;
++    let arguments = params.arguments;
+     let request_id = format_request_id(id);
+-    let handled = match name {
++    let handled = match name.as_str() {
+         "distill_read" => {
+             let arguments: ReadArguments = serde_json::from_value(arguments)
+-                .map_err(|_| (-32602, "invalid distill_read arguments"))?;
++                .map_err(|_| ProtocolError::new(-32602, "invalid distill_read arguments"))?;
+             let budget = arguments.budget.clone();
+-            let request = Request {
+-                contract_version: CONTRACT_VERSION.to_owned(),
++            let request = default_request(
+                 request_id,
+-                source: Source::File {
++                Source::File {
+                     root_id: arguments.root_id,
+                     relative_path: ByteString::from_utf8(arguments.path),
+                     binary_policy: arguments.binary_policy.unwrap_or(BinaryPolicy::Accept),
+                 },
+-                budget: budget.engine_budget(),
+-                preservation_profile: "plain-text/v1".to_owned(),
+-                retention: Retention::default(),
+-            };
++                budget.engine_budget(),
++            );
+             engine
+                 .handle(request)
+                 .and_then(|outcome| render_outcome(outcome, &budget))
+         }
+         "distill_run" => {
+             let arguments: RunArguments = serde_json::from_value(arguments)
+-                .map_err(|_| (-32602, "invalid distill_run arguments"))?;
++                .map_err(|_| ProtocolError::new(-32602, "invalid distill_run arguments"))?;
+             let budget = arguments.budget.clone();
+-            let request = Request {
+-                contract_version: CONTRACT_VERSION.to_owned(),
++            let request = default_request(
+                 request_id,
+-                source: Source::Process {
++                Source::Process {
+                     executable: ByteString::from_utf8(arguments.executable),
+                     argv: arguments
+                         .argv
+@@ -218,10 +227,8 @@ fn call_tool(
+                     timeout_ms: arguments.timeout_ms,
+                     environment_profile: arguments.environment_profile,
+                 },
+-                budget: budget.engine_budget(),
+-                preservation_profile: "plain-text/v1".to_owned(),
+-                retention: Retention::default(),
+-            };
++                budget.engine_budget(),
++            );
+             engine
+                 .handle(request)
+                 .and_then(|outcome| render_outcome(outcome, &budget))
+@@ -245,43 +252,11 @@ fn call_tool(
+ }
+ 
+ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failure> {
+-    let process = outcome.receipt.acquisition.process.as_ref().map(|process| {
+-        json!({
+-            "exit_code": process.exit_code,
+-            "signal": process.signal,
+-            "timed_out": process.timed_out,
+-            "working_directory": process.working_directory,
+-        })
+-    });
+-    let envelope = serde_json::to_string(&json!({
+-        "schema_version": MCP_ADAPTER_VERSION,
+-        "source_is_untrusted": true,
+-        "projection": outcome.visible.bytes,
+-        "artifact": outcome.artifact,
+-        "fidelity": outcome.receipt.fidelity,
+-        "accounting": {
+-            "original": outcome.receipt.original_count,
+-            "visible": outcome.receipt.visible_count,
+-            "unit": outcome.receipt.count_unit,
+-            "token_profile": outcome.receipt.token_profile,
+-        },
+-        "receipt": {
+-            "schema_version": outcome.receipt.schema_version,
+-            "source_sha256": outcome.receipt.source_sha256,
+-            "projection_version": outcome.receipt.projection_version,
+-            "policy_version": outcome.receipt.policy_version,
+-        },
+-        "source": {
+-            "variant": outcome.receipt.acquisition.variant,
+-            "complete": outcome.receipt.acquisition.complete,
+-            "partial": outcome.receipt.acquisition.partial,
+-            "truncated": outcome.receipt.acquisition.truncated,
+-            "root_id": outcome.receipt.acquisition.root_id,
+-            "relative_path": outcome.receipt.acquisition.relative_path,
+-            "process": process,
+-        },
+-        "recovery": format!("distill artifact get {}", outcome.artifact.id),
+-    }))
++    let envelope = serde_json::to_string(&projection_envelope(
++        MCP_ADAPTER_VERSION,
++        &outcome,
++        Some(&outcome.receipt.acquisition),
++    ))
+     .map_err(|_| {
+         adapter_failure(
+             FailureCode::InvariantBreach,
+@@ -289,7 +264,7 @@ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failur
+             None,
+         )
+     })?;
+-    if count(&envelope, budget) > budget.total_visible_limit {
++    if count_visible(&envelope, budget.unit) > budget.total_visible_limit {
+         return Err(adapter_failure(
+             FailureCode::BudgetUnsatisfiable,
+             "MCP adapter envelope exceeds the declared total visible budget",
+@@ -299,40 +274,8 @@ fn render_outcome(outcome: Outcome, budget: &McpBudget) -> Result<String, Failur
+     Ok(envelope)
+ }
+ 
+-fn adapter_failure(
+-    code: FailureCode,
+-    message: &str,
+-    artifact: Option<distill::ArtifactRef>,
+-) -> Failure {
+-    Failure {
+-        code,
+-        safe_message: message.to_owned(),
+-        request_id: None,
+-        details: BTreeMap::new(),
+-        artifact,
+-        acquisition: None,
+-    }
+-}
+-
+-fn count(text: &str, budget: &McpBudget) -> u64 {
+-    match budget.unit {
+-        CountUnit::Bytes => text.len() as u64,
+-        CountUnit::Tokens => cl100k_base_singleton().encode_ordinary(text).len() as u64,
+-    }
+-}
+-
+ fn tool_error(code: &str, message: &str, artifact: Option<&distill::ArtifactRef>) -> Value {
+-    let text = serde_json::to_string(&json!({
+-        "schema_version": MCP_ADAPTER_VERSION,
+-        "error": {
+-            "code": code,
+-            "message": message.chars().take(512).collect::<String>(),
+-            "artifact": artifact,
+-        },
+-        "raw_content_included": false,
+-        "recovery": artifact.map(|value| format!("distill artifact get {}", value.id)),
+-    }))
+-    .unwrap_or_else(|_| "{\"error\":{\"code\":\"invariant_breach\"}}".to_owned());
++    let text = mcp_error_envelope(MCP_ADAPTER_VERSION, code, message, artifact);
+     json!({
+         "content": [{"type": "text", "text": text}],
+         "isError": true,
+@@ -402,15 +345,12 @@ fn budget_schema() -> Value {
+     })
+ }
+ 
+-fn normalize_root_relative(path: String) -> String {
+-    if path == "." { String::new() } else { path }
++fn format_request_id(id: &Value) -> String {
++    bounded_correlation_id(format!("mcp:{id}"))
+ }
+ 
+-fn format_request_id(id: Option<&Value>) -> String {
+-    let suffix = id
+-        .map(Value::to_string)
+-        .unwrap_or_else(|| "notification".to_owned());
+-    bounded_correlation_id(format!("mcp:{suffix}"))
++fn empty_arguments() -> Value {
++    json!({})
+ }
+ 
+ fn write_result<W: Write>(output: &mut W, id: Value, result: Value) -> Result<(), SurfaceError> {
+diff --git a/src/setup.rs b/src/setup.rs
+index 2055c32..b4974eb 100644
+--- a/src/setup.rs
++++ b/src/setup.rs
+@@ -2,16 +2,22 @@ use crate::{
+     codex,
+     surface::{SurfaceError, write_json_line},
+ };
+-use serde_json::{Map, Value, json};
++use serde_json::{Value, json};
+ use std::{
+     collections::{BTreeSet, VecDeque},
+-    fs::{self, OpenOptions},
+     io::Write,
+     path::{Component, Path, PathBuf},
+ };
+ 
++mod backup;
++mod claude;
++mod codex_config;
++mod document;
++
++#[cfg(test)]
++use backup::{ABSENT_MARKER, absent_path, backup_path};
++
+ const SETUP_SCHEMA_VERSION: &str = "distill.setup/v1";
+-const ABSENT_MARKER: &[u8] = b"configuration did not exist before Distill setup\n";
+ 
+ #[derive(Debug)]
+ enum TargetOptions {
+@@ -20,18 +26,24 @@ enum TargetOptions {
+ }
+ 
+ impl TargetOptions {
+-    fn kind(&self) -> Target {
++    fn name(&self) -> &'static str {
+         match self {
+-            Self::Codex { .. } => Target::Codex,
+-            Self::Claude { .. } => Target::Claude,
++            Self::Codex { .. } => "codex",
++            Self::Claude { .. } => "claude",
+         }
+     }
+-}
+ 
+-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+-enum Target {
+-    Codex,
+-    Claude,
++    fn install(
++        &self,
++        document: &mut Value,
++        store_path: Option<&Path>,
++        command: &str,
++    ) -> Result<ManagedEdit, SurfaceError> {
++        match self {
++            Self::Codex { mode } => codex_config::install(document, store_path, command, *mode),
++            Self::Claude { roots } => claude::install(document, store_path, command, roots),
++        }
++    }
+ }
+ 
+ #[derive(Debug)]
+@@ -48,15 +60,19 @@ struct Options {
+     action: SetupAction,
+ }
+ 
++pub(super) struct ManagedEdit {
++    pub changed: bool,
++    pub entry: Value,
++}
++
+ pub(crate) fn run<W: Write>(
+     mut args: VecDeque<String>,
+     output: &mut W,
+ ) -> Result<(), SurfaceError> {
+-    let target = match args.pop_front().as_deref() {
+-        Some("codex") => Target::Codex,
+-        Some("claude") => Target::Claude,
+-        _ => return Err(SurfaceError::invalid("setup requires codex or claude")),
+-    };
++    let target_name = args
++        .pop_front()
++        .ok_or_else(|| SurfaceError::invalid("setup requires codex or claude"))?;
++
+     let mut config_path = None;
+     let mut command = None;
+     let mut store_path = None;
+@@ -85,9 +101,10 @@ pub(crate) fn run<W: Write>(
+             "--dry-run and --restore are mutually exclusive",
+         ));
+     }
++
+     let config_path = config_path.ok_or_else(|| SurfaceError::invalid("--config is required"))?;
+-    let target = match target {
+-        Target::Codex => {
++    let target = match target_name.as_str() {
++        "codex" => {
+             if !roots.is_empty() {
+                 return Err(SurfaceError::invalid(
+                     "--root does not apply to Codex setup",
+@@ -101,7 +118,7 @@ pub(crate) fn run<W: Write>(
+             };
+             TargetOptions::Codex { mode }
+         }
+-        Target::Claude => {
++        "claude" => {
+             if mode.is_some() {
+                 return Err(SurfaceError::invalid(
+                     "--mode does not apply to Claude setup",
+@@ -118,6 +135,7 @@ pub(crate) fn run<W: Write>(
+             }
+             TargetOptions::Claude { roots }
+         }
++        _ => return Err(SurfaceError::invalid("setup requires codex or claude")),
+     };
+     validate_path(&config_path)?;
+     let action = if restore {
+@@ -143,7 +161,7 @@ pub(crate) fn run<W: Write>(
+ }
+ 
+ fn install(options: &Options, command: &str, dry_run: bool) -> Result<Value, SurfaceError> {
+-    let original = read_existing(&options.config_path)?;
++    let original = backup::read_existing(&options.config_path)?;
+     let mut document = match original.as_deref() {
+         Some(bytes) => serde_json::from_slice::<Value>(bytes)
+             .map_err(|_| SurfaceError::invalid("configuration JSON is malformed"))?,
+@@ -154,364 +172,41 @@ fn install(options: &Options, command: &str, dry_run: bool) -> Result<Value, Sur
+             "configuration root must be a JSON object",
+         ));
+     }
+-    let changed = match &options.target {
+-        TargetOptions::Codex { mode } => {
+-            install_codex(&mut document, &options.store_path, command, *mode)?
+-        }
+-        TargetOptions::Claude { roots } => {
+-            install_claude(&mut document, &options.store_path, command, roots)?
+-        }
+-    };
+-    let action = if !changed {
++    let edit = options
++        .target
++        .install(&mut document, options.store_path.as_deref(), command)?;
++    let action = if !edit.changed {
+         "unchanged"
+     } else if dry_run {
+         "dry_run"
+     } else {
+-        create_backup(&options.config_path, original.as_deref())?;
++        backup::create(&options.config_path, original.as_deref())?;
+         let bytes = serde_json::to_vec_pretty(&document)
+             .map_err(|_| SurfaceError::invalid("cannot serialize configuration"))?;
+-        atomic_write(&options.config_path, &bytes)?;
++        backup::write(&options.config_path, &bytes)?;
+         "installed"
+     };
+-    let managed_entry = match options.target.kind() {
+-        Target::Codex => document
+-            .pointer("/hooks/PostToolUse")
+-            .and_then(Value::as_array)
+-            .and_then(|groups| groups.iter().find(|group| is_managed_codex_group(group)))
+-            .cloned()
+-            .unwrap_or(Value::Null),
+-        Target::Claude => document
+-            .pointer("/mcpServers/distill")
+-            .cloned()
+-            .unwrap_or(Value::Null),
+-    };
+     Ok(json!({
+         "schema_version": SETUP_SCHEMA_VERSION,
+-        "target": target_name(options.target.kind()),
++        "target": options.target.name(),
+         "action": action,
+         "config_path": options.config_path,
+-        "backup_path": backup_path(&options.config_path),
+-        "managed_entry": managed_entry,
++        "backup_path": backup::backup_path(&options.config_path),
++        "managed_entry": edit.entry,
+     }))
+ }
+ 
+-fn install_codex(
+-    document: &mut Value,
+-    store_path: &Option<PathBuf>,
+-    binary: &str,
+-    mode: codex::Mode,
+-) -> Result<bool, SurfaceError> {
+-    let root = document
+-        .as_object_mut()
+-        .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
+-    let hooks = object_entry(root, "hooks")?;
+-    let groups = array_entry(hooks, "PostToolUse")?;
+-    let command = hook_command(binary, store_path.as_deref(), mode);
+-    if groups
+-        .iter()
+-        .any(|group| has_codex_status(group) && !is_managed_codex_group(group))
+-    {
+-        return Err(SurfaceError::invalid(
+-            "Codex configuration contains an ambiguous Distill status message",
+-        ));
+-    }
+-    let managed_count = groups
+-        .iter()
+-        .filter(|group| is_managed_codex_group(group))
+-        .count();
+-    if managed_count > 1 {
+-        return Err(SurfaceError::invalid(
+-            "Codex configuration contains duplicate Distill hook entries",
+-        ));
+-    }
+-    let desired = json!({
+-        "matcher": codex::SETUP_MATCHER,
+-        "hooks": [{
+-            "type": "command",
+-            "command": command,
+-            "timeout": codex::SETUP_TIMEOUT_SECONDS,
+-            "statusMessage": codex::SETUP_STATUS_MESSAGE,
+-        }]
+-    });
+-    if let Some(existing) = groups
+-        .iter_mut()
+-        .find(|group| is_managed_codex_group(group))
+-    {
+-        if *existing == desired {
+-            return Ok(false);
+-        }
+-        *existing = desired;
+-        return Ok(true);
+-    }
+-    groups.push(desired);
+-    Ok(true)
+-}
+-
+-fn has_codex_status(group: &Value) -> bool {
+-    group
+-        .pointer("/hooks/0/statusMessage")
+-        .and_then(Value::as_str)
+-        == Some(codex::SETUP_STATUS_MESSAGE)
+-}
+-
+-fn is_managed_codex_group(group: &Value) -> bool {
+-    let Some(group) = group.as_object() else {
+-        return false;
+-    };
+-    if group.len() != 2 {
+-        return false;
+-    }
+-    let Some(hooks) = group.get("hooks").and_then(Value::as_array) else {
+-        return false;
+-    };
+-    let [hook] = hooks.as_slice() else {
+-        return false;
+-    };
+-    let Some(hook) = hook.as_object() else {
+-        return false;
+-    };
+-    if hook.len() != 4 {
+-        return false;
+-    }
+-    group.get("matcher").and_then(Value::as_str) == Some(codex::SETUP_MATCHER)
+-        && hook.get("type").and_then(Value::as_str) == Some("command")
+-        && hook.get("timeout").and_then(Value::as_u64) == Some(codex::SETUP_TIMEOUT_SECONDS)
+-        && hook.get("statusMessage").and_then(Value::as_str) == Some(codex::SETUP_STATUS_MESSAGE)
+-        && hook
+-            .get("command")
+-            .and_then(Value::as_str)
+-            .and_then(parse_shell_command)
+-            .is_some_and(|arguments| match arguments.as_slice() {
+-                [_, hook, mode_flag, mode] => {
+-                    hook == "codex-hook"
+-                        && mode_flag == "--mode"
+-                        && codex::Mode::parse(mode).is_some()
+-                }
+-                [_, store_flag, _, hook, mode_flag, mode] => {
+-                    store_flag == "--store"
+-                        && hook == "codex-hook"
+-                        && mode_flag == "--mode"
+-                        && codex::Mode::parse(mode).is_some()
+-                }
+-                _ => false,
+-            })
+-}
+-
+-fn parse_shell_command(command: &str) -> Option<Vec<String>> {
+-    let mut remaining = command;
+-    let mut arguments = Vec::new();
+-    while !remaining.is_empty() {
+-        remaining = remaining.strip_prefix('\'')?;
+-        let mut argument = String::new();
+-        loop {
+-            let quote = remaining.find('\'')?;
+-            argument.push_str(&remaining[..quote]);
+-            remaining = &remaining[quote..];
+-            if let Some(rest) = remaining.strip_prefix("'\"'\"'") {
+-                argument.push('\'');
+-                remaining = rest;
+-                continue;
+-            }
+-            remaining = remaining.strip_prefix('\'')?;
+-            break;
+-        }
+-        arguments.push(argument);
+-        if remaining.is_empty() {
+-            break;
+-        }
+-        remaining = remaining.strip_prefix(' ')?;
+-        if remaining.is_empty() {
+-            return None;
+-        }
+-    }
+-    (arguments
+-        .iter()
+-        .map(|argument| shell_quote(argument))
+-        .collect::<Vec<_>>()
+-        .join(" ")
+-        == command)
+-        .then_some(arguments)
+-}
+-
+-fn install_claude(
+-    document: &mut Value,
+-    store_path: &Option<PathBuf>,
+-    binary: &str,
+-    roots: &[String],
+-) -> Result<bool, SurfaceError> {
+-    let root = document
+-        .as_object_mut()
+-        .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
+-    let servers = object_entry(root, "mcpServers")?;
+-    let mut args = Vec::new();
+-    if let Some(path) = store_path {
+-        args.push("--store".to_owned());
+-        args.push(path.to_string_lossy().into_owned());
+-    }
+-    for root in roots {
+-        args.push("--root".to_owned());
+-        args.push(root.clone());
+-    }
+-    args.push("mcp".to_owned());
+-    let desired = json!({
+-        "command": binary,
+-        "args": args,
+-    });
+-    if servers.get("distill") == Some(&desired) {
+-        return Ok(false);
+-    }
+-    servers.insert("distill".to_owned(), desired);
+-    Ok(true)
+-}
+-
+-fn hook_command(binary: &str, store_path: Option<&Path>, mode: codex::Mode) -> String {
+-    let mut parts = vec![binary.to_owned()];
+-    if let Some(path) = store_path {
+-        parts.push("--store".to_owned());
+-        parts.push(path.to_string_lossy().into_owned());
+-    }
+-    parts.extend(codex::setup_hook_arguments(mode));
+-    parts
+-        .iter()
+-        .map(|part| shell_quote(part))
+-        .collect::<Vec<_>>()
+-        .join(" ")
+-}
+-
+ fn restore_backup(options: &Options) -> Result<Value, SurfaceError> {
+-    let current = read_existing(&options.config_path)?;
+-    let backup = backup_path(&options.config_path);
+-    let absent = absent_path(&options.config_path);
+-    let backup_bytes = read_existing(&backup)?;
+-    let absent_bytes = read_existing(&absent)?;
+-    let action = match (backup_bytes, absent_bytes) {
+-        (Some(bytes), None) => {
+-            atomic_write(&options.config_path, &bytes)?;
+-            "restored"
+-        }
+-        (None, Some(marker)) if marker == ABSENT_MARKER => {
+-            if current.is_some() {
+-                fs::remove_file(&options.config_path)
+-                    .map_err(|_| SurfaceError::invalid("cannot restore absent configuration"))?;
+-            }
+-            "restored_absent"
+-        }
+-        (None, None) => {
+-            return Err(SurfaceError::invalid(
+-                "no Distill configuration backup exists",
+-            ));
+-        }
+-        _ => {
+-            return Err(SurfaceError::invalid(
+-                "Distill configuration backup state is ambiguous",
+-            ));
+-        }
+-    };
++    let restored = backup::restore(&options.config_path)?;
+     Ok(json!({
+         "schema_version": SETUP_SCHEMA_VERSION,
+-        "target": target_name(options.target.kind()),
+-        "action": action,
++        "target": options.target.name(),
++        "action": restored.action,
+         "config_path": options.config_path,
+-        "backup_path": backup,
++        "backup_path": restored.backup_path,
+     }))
+ }
+ 
+-fn create_backup(path: &Path, original: Option<&[u8]>) -> Result<(), SurfaceError> {
+-    let backup = backup_path(path);
+-    let absent = absent_path(path);
+-    let backup_bytes = read_existing(&backup)?;
+-    let absent_bytes = read_existing(&absent)?;
+-    match (original, backup_bytes, absent_bytes) {
+-        (Some(_), Some(_), None) => Ok(()),
+-        (Some(_), None, Some(marker)) if marker == ABSENT_MARKER => Ok(()),
+-        (None, None, Some(marker)) if marker == ABSENT_MARKER => Ok(()),
+-        (Some(bytes), None, None) => atomic_write(&backup, bytes),
+-        (None, None, None) => atomic_write(&absent, ABSENT_MARKER),
+-        _ => Err(SurfaceError::invalid(
+-            "Distill configuration backup state is ambiguous",
+-        )),
+-    }
+-}
+-
+-fn read_existing(path: &Path) -> Result<Option<Vec<u8>>, SurfaceError> {
+-    match fs::symlink_metadata(path) {
+-        Ok(metadata) if metadata.file_type().is_symlink() => Err(SurfaceError::invalid(
+-            "refusing to edit a symlinked configuration",
+-        )),
+-        Ok(metadata) if !metadata.is_file() => Err(SurfaceError::invalid(
+-            "configuration path is not a regular file",
+-        )),
+-        Ok(_) => fs::read(path)
+-            .map(Some)
+-            .map_err(|_| SurfaceError::invalid("cannot read configuration")),
+-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+-        Err(_) => Err(SurfaceError::invalid("cannot inspect configuration")),
+-    }
+-}
+-
+-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), SurfaceError> {
+-    let parent = path
+-        .parent()
+-        .ok_or_else(|| SurfaceError::invalid("configuration path has no parent"))?;
+-    fs::create_dir_all(parent)
+-        .map_err(|_| SurfaceError::invalid("cannot create configuration directory"))?;
+-    let name = path
+-        .file_name()
+-        .and_then(|name| name.to_str())
+-        .ok_or_else(|| SurfaceError::invalid("configuration filename is invalid"))?;
+-    let temporary = parent.join(format!(".{name}.distill-tmp-{}", std::process::id()));
+-    let mut file = open_private_temporary(&temporary)?;
+-    let write_result = file
+-        .write_all(bytes)
+-        .and_then(|()| file.sync_all())
+-        .map_err(|_| SurfaceError::invalid("cannot write configuration atomically"));
+-    if let Err(error) = write_result {
+-        let _cleanup = fs::remove_file(&temporary);
+-        return Err(error);
+-    }
+-    if let Err(error) = set_private_mode(&temporary) {
+-        let _cleanup = fs::remove_file(&temporary);
+-        return Err(error);
+-    }
+-    fs::rename(&temporary, path).map_err(|_| {
+-        let _cleanup = fs::remove_file(&temporary);
+-        SurfaceError::invalid("cannot replace configuration atomically")
+-    })?;
+-    Ok(())
+-}
+-
+-#[cfg(unix)]
+-fn open_private_temporary(path: &Path) -> Result<fs::File, SurfaceError> {
+-    use std::os::unix::fs::OpenOptionsExt;
+-    OpenOptions::new()
+-        .create_new(true)
+-        .write(true)
+-        .mode(0o600)
+-        .open(path)
+-        .map_err(|_| SurfaceError::invalid("cannot create atomic configuration file"))
+-}
+-
+-#[cfg(not(unix))]
+-fn open_private_temporary(_path: &Path) -> Result<fs::File, SurfaceError> {
+-    Err(SurfaceError::invalid(
+-        "configuration permission enforcement is unsupported on this platform",
+-    ))
+-}
+-
+-#[cfg(unix)]
+-fn set_private_mode(path: &Path) -> Result<(), SurfaceError> {
+-    use std::os::unix::fs::PermissionsExt;
+-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+-        .map_err(|_| SurfaceError::invalid("cannot enforce configuration permissions"))
+-}
+-
+-#[cfg(not(unix))]
+-fn set_private_mode(_path: &Path) -> Result<(), SurfaceError> {
+-    Err(SurfaceError::invalid(
+-        "configuration permission enforcement is unsupported on this platform",
+-    ))
+-}
+-
+ fn validate_path(path: &Path) -> Result<(), SurfaceError> {
+     if !path.is_absolute()
+         || !path
+@@ -537,59 +232,6 @@ fn validate_root_spec(root: &str) -> Result<&str, SurfaceError> {
+     Ok(id)
+ }
+ 
+-fn object_entry<'a>(
+-    object: &'a mut Map<String, Value>,
+-    key: &str,
+-) -> Result<&'a mut Map<String, Value>, SurfaceError> {
+-    let value = object
+-        .entry(key.to_owned())
+-        .or_insert_with(|| Value::Object(Map::new()));
+-    value
+-        .as_object_mut()
+-        .ok_or_else(|| SurfaceError::invalid(format!("{key} must be a JSON object")))
+-}
+-
+-fn array_entry<'a>(
+-    object: &'a mut Map<String, Value>,
+-    key: &str,
+-) -> Result<&'a mut Vec<Value>, SurfaceError> {
+-    let value = object
+-        .entry(key.to_owned())
+-        .or_insert_with(|| Value::Array(Vec::new()));
+-    value
+-        .as_array_mut()
+-        .ok_or_else(|| SurfaceError::invalid(format!("{key} must be a JSON array")))
+-}
+-
+-fn shell_quote(value: &str) -> String {
+-    format!("'{}'", value.replace('\'', "'\"'\"'"))
+-}
+-
+-fn backup_path(path: &Path) -> PathBuf {
+-    path.with_file_name(format!(
+-        "{}.distill-backup",
+-        path.file_name()
+-            .and_then(|name| name.to_str())
+-            .unwrap_or("config")
+-    ))
+-}
+-
+-fn absent_path(path: &Path) -> PathBuf {
+-    path.with_file_name(format!(
+-        "{}.distill-backup-absent",
+-        path.file_name()
+-            .and_then(|name| name.to_str())
+-            .unwrap_or("config")
+-    ))
+-}
+-
+-fn target_name(target: Target) -> &'static str {
+-    match target {
+-        Target::Codex => "codex",
+-        Target::Claude => "claude",
+-    }
+-}
+-
+ fn take(args: &mut VecDeque<String>, flag: &str) -> Result<String, SurfaceError> {
+     args.pop_front()
+         .ok_or_else(|| SurfaceError::invalid(format!("{flag} requires a value")))
+diff --git a/src/setup/backup.rs b/src/setup/backup.rs
+new file mode 100644
+index 0000000..56c88fb
+--- /dev/null
++++ b/src/setup/backup.rs
+@@ -0,0 +1,162 @@
++use crate::surface::SurfaceError;
++use std::{
++    fs::{self, OpenOptions},
++    io::Write,
++    path::{Path, PathBuf},
++};
++
++pub(super) const ABSENT_MARKER: &[u8] = b"configuration did not exist before Distill setup\n";
++
++pub(super) struct Restore {
++    pub action: &'static str,
++    pub backup_path: PathBuf,
++}
++
++pub(super) fn restore(path: &Path) -> Result<Restore, SurfaceError> {
++    let current = read_existing(path)?;
++    let backup = backup_path(path);
++    let absent = absent_path(path);
++    let backup_bytes = read_existing(&backup)?;
++    let absent_bytes = read_existing(&absent)?;
++    let action = match (backup_bytes, absent_bytes) {
++        (Some(bytes), None) => {
++            write(path, &bytes)?;
++            "restored"
++        }
++        (None, Some(marker)) if marker == ABSENT_MARKER => {
++            if current.is_some() {
++                fs::remove_file(path)
++                    .map_err(|_| SurfaceError::invalid("cannot restore absent configuration"))?;
++            }
++            "restored_absent"
++        }
++        (None, None) => {
++            return Err(SurfaceError::invalid(
++                "no Distill configuration backup exists",
++            ));
++        }
++        _ => {
++            return Err(SurfaceError::invalid(
++                "Distill configuration backup state is ambiguous",
++            ));
++        }
++    };
++    Ok(Restore {
++        action,
++        backup_path: backup,
++    })
++}
++
++pub(super) fn create(path: &Path, original: Option<&[u8]>) -> Result<(), SurfaceError> {
++    let backup = backup_path(path);
++    let absent = absent_path(path);
++    let backup_bytes = read_existing(&backup)?;
++    let absent_bytes = read_existing(&absent)?;
++    match (original, backup_bytes, absent_bytes) {
++        (Some(_), Some(_), None) => Ok(()),
++        (Some(_), None, Some(marker)) if marker == ABSENT_MARKER => Ok(()),
++        (None, None, Some(marker)) if marker == ABSENT_MARKER => Ok(()),
++        (Some(bytes), None, None) => write(&backup, bytes),
++        (None, None, None) => write(&absent, ABSENT_MARKER),
++        _ => Err(SurfaceError::invalid(
++            "Distill configuration backup state is ambiguous",
++        )),
++    }
++}
++
++pub(super) fn read_existing(path: &Path) -> Result<Option<Vec<u8>>, SurfaceError> {
++    match fs::symlink_metadata(path) {
++        Ok(metadata) if metadata.file_type().is_symlink() => Err(SurfaceError::invalid(
++            "refusing to edit a symlinked configuration",
++        )),
++        Ok(metadata) if !metadata.is_file() => Err(SurfaceError::invalid(
++            "configuration path is not a regular file",
++        )),
++        Ok(_) => fs::read(path)
++            .map(Some)
++            .map_err(|_| SurfaceError::invalid("cannot read configuration")),
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
++        Err(_) => Err(SurfaceError::invalid("cannot inspect configuration")),
++    }
++}
++
++pub(super) fn write(path: &Path, bytes: &[u8]) -> Result<(), SurfaceError> {
++    let parent = path
++        .parent()
++        .ok_or_else(|| SurfaceError::invalid("configuration path has no parent"))?;
++    fs::create_dir_all(parent)
++        .map_err(|_| SurfaceError::invalid("cannot create configuration directory"))?;
++    let name = path
++        .file_name()
++        .and_then(|name| name.to_str())
++        .ok_or_else(|| SurfaceError::invalid("configuration filename is invalid"))?;
++    let temporary = parent.join(format!(".{name}.distill-tmp-{}", std::process::id()));
++    let mut file = open_private_temporary(&temporary)?;
++    let write_result = file
++        .write_all(bytes)
++        .and_then(|()| file.sync_all())
++        .map_err(|_| SurfaceError::invalid("cannot write configuration atomically"));
++    if let Err(error) = write_result {
++        let _cleanup = fs::remove_file(&temporary);
++        return Err(error);
++    }
++    if let Err(error) = set_private_mode(&temporary) {
++        let _cleanup = fs::remove_file(&temporary);
++        return Err(error);
++    }
++    fs::rename(&temporary, path).map_err(|_| {
++        let _cleanup = fs::remove_file(&temporary);
++        SurfaceError::invalid("cannot replace configuration atomically")
++    })?;
++    Ok(())
++}
++
++#[cfg(unix)]
++fn open_private_temporary(path: &Path) -> Result<fs::File, SurfaceError> {
++    use std::os::unix::fs::OpenOptionsExt;
++    OpenOptions::new()
++        .create_new(true)
++        .write(true)
++        .mode(0o600)
++        .open(path)
++        .map_err(|_| SurfaceError::invalid("cannot create atomic configuration file"))
++}
++
++#[cfg(not(unix))]
++fn open_private_temporary(_path: &Path) -> Result<fs::File, SurfaceError> {
++    Err(SurfaceError::invalid(
++        "configuration permission enforcement is unsupported on this platform",
++    ))
++}
++
++#[cfg(unix)]
++fn set_private_mode(path: &Path) -> Result<(), SurfaceError> {
++    use std::os::unix::fs::PermissionsExt;
++    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
++        .map_err(|_| SurfaceError::invalid("cannot enforce configuration permissions"))
++}
++
++#[cfg(not(unix))]
++fn set_private_mode(_path: &Path) -> Result<(), SurfaceError> {
++    Err(SurfaceError::invalid(
++        "configuration permission enforcement is unsupported on this platform",
++    ))
++}
++
++pub(super) fn backup_path(path: &Path) -> PathBuf {
++    path.with_file_name(format!(
++        "{}.distill-backup",
++        path.file_name()
++            .and_then(|name| name.to_str())
++            .unwrap_or("config")
++    ))
++}
++
++pub(super) fn absent_path(path: &Path) -> PathBuf {
++    path.with_file_name(format!(
++        "{}.distill-backup-absent",
++        path.file_name()
++            .and_then(|name| name.to_str())
++            .unwrap_or("config")
++    ))
++}
+diff --git a/src/setup/claude.rs b/src/setup/claude.rs
+new file mode 100644
+index 0000000..e0c714c
+--- /dev/null
++++ b/src/setup/claude.rs
+@@ -0,0 +1,38 @@
++use super::{ManagedEdit, document};
++use crate::surface::SurfaceError;
++use serde_json::{Value, json};
++use std::path::Path;
++
++pub(super) fn install(
++    document: &mut Value,
++    store_path: Option<&Path>,
++    binary: &str,
++    roots: &[String],
++) -> Result<ManagedEdit, SurfaceError> {
++    let root = document
++        .as_object_mut()
++        .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
++    let servers = document::object_entry(root, "mcpServers")?;
++    let mut args = Vec::new();
++    if let Some(path) = store_path {
++        args.push("--store".to_owned());
++        args.push(path.to_string_lossy().into_owned());
++    }
++    for root in roots {
++        args.push("--root".to_owned());
++        args.push(root.clone());
++    }
++    args.push("mcp".to_owned());
++    let desired = json!({
++        "command": binary,
++        "args": args,
++    });
++    let changed = servers.get("distill") != Some(&desired);
++    if changed {
++        servers.insert("distill".to_owned(), desired.clone());
++    }
++    Ok(ManagedEdit {
++        changed,
++        entry: desired,
++    })
++}
+diff --git a/src/setup/codex_config.rs b/src/setup/codex_config.rs
+new file mode 100644
+index 0000000..352eb7e
+--- /dev/null
++++ b/src/setup/codex_config.rs
+@@ -0,0 +1,164 @@
++use super::{ManagedEdit, document};
++use crate::{codex, surface::SurfaceError};
++use serde::{Deserialize, Serialize};
++use serde_json::Value;
++use std::path::Path;
++
++#[derive(Debug, Deserialize, Serialize)]
++#[serde(deny_unknown_fields)]
++struct HookGroup {
++    matcher: String,
++    hooks: Vec<CommandHook>,
++}
++
++#[derive(Debug, Deserialize, Serialize)]
++#[serde(deny_unknown_fields)]
++struct CommandHook {
++    #[serde(rename = "type")]
++    kind: String,
++    command: String,
++    timeout: u64,
++    #[serde(rename = "statusMessage")]
++    status_message: String,
++}
++
++pub(super) fn install(
++    document: &mut Value,
++    store_path: Option<&Path>,
++    binary: &str,
++    mode: codex::Mode,
++) -> Result<ManagedEdit, SurfaceError> {
++    let root = document
++        .as_object_mut()
++        .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
++    let hooks = document::object_entry(root, "hooks")?;
++    let groups = document::array_entry(hooks, "PostToolUse")?;
++    if groups
++        .iter()
++        .any(|group| has_status(group) && !is_managed(group))
++    {
++        return Err(SurfaceError::invalid(
++            "Codex configuration contains an ambiguous Distill status message",
++        ));
++    }
++    if groups.iter().filter(|group| is_managed(group)).count() > 1 {
++        return Err(SurfaceError::invalid(
++            "Codex configuration contains duplicate Distill hook entries",
++        ));
++    }
++
++    let desired = serde_json::to_value(HookGroup {
++        matcher: codex::SETUP_MATCHER.to_owned(),
++        hooks: vec![CommandHook {
++            kind: "command".to_owned(),
++            command: hook_command(binary, store_path, mode),
++            timeout: codex::SETUP_TIMEOUT_SECONDS,
++            status_message: codex::SETUP_STATUS_MESSAGE.to_owned(),
++        }],
++    })
++    .map_err(|_| SurfaceError::invalid("cannot serialize Codex hook configuration"))?;
++    if let Some(existing) = groups.iter_mut().find(|group| is_managed(group)) {
++        if *existing == desired {
++            return Ok(ManagedEdit {
++                changed: false,
++                entry: desired,
++            });
++        }
++        *existing = desired.clone();
++        return Ok(ManagedEdit {
++            changed: true,
++            entry: desired,
++        });
++    }
++    groups.push(desired.clone());
++    Ok(ManagedEdit {
++        changed: true,
++        entry: desired,
++    })
++}
++
++fn has_status(group: &Value) -> bool {
++    group
++        .pointer("/hooks/0/statusMessage")
++        .and_then(Value::as_str)
++        == Some(codex::SETUP_STATUS_MESSAGE)
++}
++
++fn is_managed(group: &Value) -> bool {
++    let Ok(group) = serde_json::from_value::<HookGroup>(group.clone()) else {
++        return false;
++    };
++    let [hook] = group.hooks.as_slice() else {
++        return false;
++    };
++    group.matcher == codex::SETUP_MATCHER
++        && hook.kind == "command"
++        && hook.timeout == codex::SETUP_TIMEOUT_SECONDS
++        && hook.status_message == codex::SETUP_STATUS_MESSAGE
++        && parse_shell_command(&hook.command).is_some_and(|arguments| match arguments.as_slice() {
++            [_, hook, mode_flag, mode] => {
++                hook == "codex-hook" && mode_flag == "--mode" && codex::Mode::parse(mode).is_some()
++            }
++            [_, store_flag, _, hook, mode_flag, mode] => {
++                store_flag == "--store"
++                    && hook == "codex-hook"
++                    && mode_flag == "--mode"
++                    && codex::Mode::parse(mode).is_some()
++            }
++            _ => false,
++        })
++}
++
++fn hook_command(binary: &str, store_path: Option<&Path>, mode: codex::Mode) -> String {
++    let mut parts = vec![binary.to_owned()];
++    if let Some(path) = store_path {
++        parts.push("--store".to_owned());
++        parts.push(path.to_string_lossy().into_owned());
++    }
++    parts.extend(codex::setup_hook_arguments(mode));
++    parts
++        .iter()
++        .map(|part| shell_quote(part))
++        .collect::<Vec<_>>()
++        .join(" ")
++}
++
++fn parse_shell_command(command: &str) -> Option<Vec<String>> {
++    let mut remaining = command;
++    let mut arguments = Vec::new();
++    while !remaining.is_empty() {
++        remaining = remaining.strip_prefix('\'')?;
++        let mut argument = String::new();
++        loop {
++            let quote = remaining.find('\'')?;
++            argument.push_str(&remaining[..quote]);
++            remaining = &remaining[quote..];
++            if let Some(rest) = remaining.strip_prefix("'\"'\"'") {
++                argument.push('\'');
++                remaining = rest;
++                continue;
++            }
++            remaining = remaining.strip_prefix('\'')?;
++            break;
++        }
++        arguments.push(argument);
++        if remaining.is_empty() {
++            break;
++        }
++        remaining = remaining.strip_prefix(' ')?;
++        if remaining.is_empty() {
++            return None;
++        }
++    }
++    (arguments
++        .iter()
++        .map(|argument| shell_quote(argument))
++        .collect::<Vec<_>>()
++        .join(" ")
++        == command)
++        .then_some(arguments)
++}
++
++fn shell_quote(value: &str) -> String {
++    format!("'{}'", value.replace('\'', "'\"'\"'"))
++}
+diff --git a/src/setup/document.rs b/src/setup/document.rs
+new file mode 100644
+index 0000000..7e4edfb
+--- /dev/null
++++ b/src/setup/document.rs
+@@ -0,0 +1,26 @@
++use crate::surface::SurfaceError;
++use serde_json::{Map, Value};
++
++pub(super) fn object_entry<'a>(
++    object: &'a mut Map<String, Value>,
++    key: &str,
++) -> Result<&'a mut Map<String, Value>, SurfaceError> {
++    let value = object
++        .entry(key.to_owned())
++        .or_insert_with(|| Value::Object(Map::new()));
++    value
++        .as_object_mut()
++        .ok_or_else(|| SurfaceError::invalid(format!("{key} must be a JSON object")))
++}
++
++pub(super) fn array_entry<'a>(
++    object: &'a mut Map<String, Value>,
++    key: &str,
++) -> Result<&'a mut Vec<Value>, SurfaceError> {
++    let value = object
++        .entry(key.to_owned())
++        .or_insert_with(|| Value::Array(Vec::new()));
++    value
++        .as_array_mut()
++        .ok_or_else(|| SurfaceError::invalid(format!("{key} must be a JSON array")))
++}
+diff --git a/src/setup/tests.rs b/src/setup/tests.rs
+index 6e44602..fda0a1f 100644
+--- a/src/setup/tests.rs
++++ b/src/setup/tests.rs
+@@ -1,5 +1,6 @@
+ use super::*;
+ use std::collections::BTreeSet;
++use std::fs;
+ use std::os::unix::fs::{PermissionsExt, symlink};
+ use tempfile::TempDir;
+ 
+diff --git a/src/surface.rs b/src/surface.rs
+index f772e59..2e7155b 100644
+--- a/src/surface.rs
++++ b/src/surface.rs
+@@ -1,8 +1,63 @@
+-use distill::{ArtifactRef, Failure, FailureCode};
++use distill::{ArtifactRef, Budget, CountUnit, Failure, FailureCode, Request, Retention, Source};
+ use serde_json::Value;
+-use std::io::{self, Write};
++use std::{
++    collections::BTreeMap,
++    io::{self, Write},
++};
++use tiktoken_rs::cl100k_base_singleton;
++
++mod envelope;
++
++pub(crate) use envelope::{codex_error_envelope, mcp_error_envelope, projection_envelope};
+ 
+ pub(crate) const BROKEN_PIPE_EXIT: i32 = 74;
++pub(crate) const DEFAULT_PRESERVATION_PROFILE: &str = "plain-text/v1";
++
++pub(crate) fn budget_for(unit: CountUnit, total: u64, reserved: u64) -> Budget {
++    Budget {
++        unit,
++        total_visible_limit: total,
++        reserved_envelope: reserved,
++        token_profile: (unit == CountUnit::Tokens).then(|| distill::CL100K_PROFILE.to_owned()),
++    }
++}
++
++pub(crate) fn default_request(request_id: String, source: Source, budget: Budget) -> Request {
++    Request {
++        contract_version: distill::CONTRACT_VERSION.to_owned(),
++        request_id,
++        source,
++        budget,
++        preservation_profile: DEFAULT_PRESERVATION_PROFILE.to_owned(),
++        retention: Retention::default(),
++    }
++}
++
++pub(crate) fn count_visible(text: &str, unit: CountUnit) -> u64 {
++    match unit {
++        CountUnit::Bytes => text.len() as u64,
++        CountUnit::Tokens => cl100k_base_singleton().encode_ordinary(text).len() as u64,
++    }
++}
++
++pub(crate) fn normalize_root_relative(path: String) -> String {
++    if path == "." { String::new() } else { path }
++}
++
++pub(crate) fn adapter_failure(
++    code: FailureCode,
++    message: &str,
++    artifact: Option<ArtifactRef>,
++) -> Failure {
++    Failure {
++        code,
++        safe_message: message.to_owned(),
++        request_id: None,
++        details: BTreeMap::new(),
++        artifact,
++        acquisition: None,
++    }
++}
+ 
+ pub(crate) fn bounded_correlation_id(mut value: String) -> String {
+     let limit = distill::MAX_IDENTIFIER_BYTES;
+diff --git a/src/surface/envelope.rs b/src/surface/envelope.rs
+new file mode 100644
+index 0000000..beeb6c1
+--- /dev/null
++++ b/src/surface/envelope.rs
+@@ -0,0 +1,119 @@
++use distill::{AcquisitionReceipt, ArtifactRef, Outcome};
++use serde_json::{Map, Value, json};
++
++pub(crate) fn projection_envelope(
++    schema_version: &'static str,
++    outcome: &Outcome,
++    acquisition: Option<&AcquisitionReceipt>,
++) -> Value {
++    let mut envelope = Map::new();
++    envelope.insert("schema_version".to_owned(), json!(schema_version));
++    envelope.insert("source_is_untrusted".to_owned(), json!(true));
++    envelope.insert("projection".to_owned(), json!(outcome.visible.bytes));
++    envelope.insert("artifact".to_owned(), json!(outcome.artifact));
++    envelope.insert("fidelity".to_owned(), json!(outcome.receipt.fidelity));
++    envelope.insert(
++        "accounting".to_owned(),
++        json!({
++            "original": outcome.receipt.original_count,
++            "visible": outcome.receipt.visible_count,
++            "unit": outcome.receipt.count_unit,
++            "token_profile": outcome.receipt.token_profile,
++        }),
++    );
++    envelope.insert(
++        "receipt".to_owned(),
++        json!({
++            "schema_version": outcome.receipt.schema_version,
++            "source_sha256": outcome.receipt.source_sha256,
++            "projection_version": outcome.receipt.projection_version,
++            "policy_version": outcome.receipt.policy_version,
++        }),
++    );
++    if let Some(acquisition) = acquisition {
++        let process = acquisition.process.as_ref().map(|process| {
++            json!({
++                "exit_code": process.exit_code,
++                "signal": process.signal,
++                "timed_out": process.timed_out,
++                "working_directory": process.working_directory,
++            })
++        });
++        envelope.insert(
++            "source".to_owned(),
++            json!({
++                "variant": acquisition.variant,
++                "complete": acquisition.complete,
++                "partial": acquisition.partial,
++                "truncated": acquisition.truncated,
++                "root_id": acquisition.root_id,
++                "relative_path": acquisition.relative_path,
++                "process": process,
++            }),
++        );
++    }
++    envelope.insert(
++        "recovery".to_owned(),
++        json!(format!("distill artifact get {}", outcome.artifact.id)),
++    );
++    Value::Object(envelope)
++}
++
++pub(crate) fn mcp_error_envelope(
++    schema_version: &'static str,
++    code: &str,
++    message: &str,
++    artifact: Option<&ArtifactRef>,
++) -> String {
++    serialize_error(
++        schema_version,
++        code,
++        message,
++        artifact,
++        "raw_content_included",
++    )
++}
++
++pub(crate) fn codex_error_envelope(
++    schema_version: &'static str,
++    code: &str,
++    message: &str,
++    artifact: Option<&ArtifactRef>,
++) -> String {
++    serialize_error(
++        schema_version,
++        code,
++        message,
++        artifact,
++        "raw_output_forwarded_as_projected",
++    )
++}
++
++fn serialize_error(
++    schema_version: &'static str,
++    code: &str,
++    message: &str,
++    artifact: Option<&ArtifactRef>,
++    safety_field: &'static str,
++) -> String {
++    let mut envelope = Map::new();
++    envelope.insert("schema_version".to_owned(), json!(schema_version));
++    envelope.insert(
++        "error".to_owned(),
++        json!({
++            "code": code,
++            "message": message.chars().take(512).collect::<String>(),
++            "artifact": artifact,
++        }),
++    );
++    envelope.insert(safety_field.to_owned(), json!(false));
++    envelope.insert(
++        "recovery".to_owned(),
++        json!(artifact.map(|value| format!("distill artifact get {}", value.id))),
++    );
++    serde_json::to_string(&Value::Object(envelope))
++        .unwrap_or_else(|_| "{\"error\":{\"code\":\"invariant_breach\"}}".to_owned())
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/src/surface/envelope/tests.rs b/src/surface/envelope/tests.rs
+new file mode 100644
+index 0000000..22ad2ae
+--- /dev/null
++++ b/src/surface/envelope/tests.rs
+@@ -0,0 +1,149 @@
++use super::*;
++use distill::{
++    AcquisitionReceipt, ArtifactRef, CountUnit, Fidelity, Outcome, PreservationResult, Receipt,
++    SourceVariant, VisiblePayload,
++};
++
++fn outcome() -> Outcome {
++    let artifact = ArtifactRef {
++        schema_version: "distill.artifact/v1".to_owned(),
++        id: "0123456789abcdef0123456789abcdef".to_owned(),
++        source_sha256: "a".repeat(64),
++        source_bytes: 7,
++        created_at: 10,
++        expires_at: 20,
++    };
++    Outcome {
++        visible: VisiblePayload {
++            bytes: "visible".to_owned(),
++            media_type: "text/plain".to_owned(),
++        },
++        artifact: artifact.clone(),
++        receipt: Receipt {
++            schema_version: "distill.receipt/v1".to_owned(),
++            request_id: "request".to_owned(),
++            source_sha256: artifact.source_sha256.clone(),
++            artifact,
++            projection_version: "projection/v1".to_owned(),
++            policy_version: "policy/v1".to_owned(),
++            token_profile: None,
++            original_count: 7,
++            visible_count: 7,
++            count_unit: CountUnit::Bytes,
++            fidelity: Fidelity::Exact,
++            retained_spans: Vec::new(),
++            omitted_spans: Vec::new(),
++            preservation: PreservationResult {
++                profile: "plain-text/v1".to_owned(),
++                mandatory_fact_ids: Vec::new(),
++            },
++            acquisition: AcquisitionReceipt {
++                variant: SourceVariant::File,
++                complete: true,
++                partial: false,
++                truncated: false,
++                root_id: Some("workspace".to_owned()),
++                relative_path: Some("<8 path bytes>".to_owned()),
++                process: None,
++            },
++        },
++    }
++}
++
++#[test]
++fn shared_projection_envelopes_preserve_existing_wire_encoding() {
++    let outcome = outcome();
++    let expected_codex = json!({
++        "schema_version": "distill.codex-projection/v1",
++        "source_is_untrusted": true,
++        "projection": outcome.visible.bytes,
++        "artifact": outcome.artifact,
++        "fidelity": outcome.receipt.fidelity,
++        "accounting": {
++            "original": outcome.receipt.original_count,
++            "visible": outcome.receipt.visible_count,
++            "unit": outcome.receipt.count_unit,
++            "token_profile": outcome.receipt.token_profile,
++        },
++        "receipt": {
++            "schema_version": outcome.receipt.schema_version,
++            "source_sha256": outcome.receipt.source_sha256,
++            "projection_version": outcome.receipt.projection_version,
++            "policy_version": outcome.receipt.policy_version,
++        },
++        "recovery": format!("distill artifact get {}", outcome.artifact.id),
++    });
++    assert_eq!(
++        serde_json::to_string(&projection_envelope(
++            "distill.codex-projection/v1",
++            &outcome,
++            None,
++        ))
++        .expect("shared Codex envelope"),
++        serde_json::to_string(&expected_codex).expect("expected Codex envelope"),
++    );
++
++    let process = Value::Null;
++    let expected_mcp = json!({
++        "schema_version": "distill.mcp/v1",
++        "source_is_untrusted": true,
++        "projection": outcome.visible.bytes,
++        "artifact": outcome.artifact,
++        "fidelity": outcome.receipt.fidelity,
++        "accounting": {
++            "original": outcome.receipt.original_count,
++            "visible": outcome.receipt.visible_count,
++            "unit": outcome.receipt.count_unit,
++            "token_profile": outcome.receipt.token_profile,
++        },
++        "receipt": {
++            "schema_version": outcome.receipt.schema_version,
++            "source_sha256": outcome.receipt.source_sha256,
++            "projection_version": outcome.receipt.projection_version,
++            "policy_version": outcome.receipt.policy_version,
++        },
++        "source": {
++            "variant": outcome.receipt.acquisition.variant,
++            "complete": outcome.receipt.acquisition.complete,
++            "partial": outcome.receipt.acquisition.partial,
++            "truncated": outcome.receipt.acquisition.truncated,
++            "root_id": outcome.receipt.acquisition.root_id,
++            "relative_path": outcome.receipt.acquisition.relative_path,
++            "process": process,
++        },
++        "recovery": format!("distill artifact get {}", outcome.artifact.id),
++    });
++    assert_eq!(
++        serde_json::to_string(&projection_envelope(
++            "distill.mcp/v1",
++            &outcome,
++            Some(&outcome.receipt.acquisition),
++        ))
++        .expect("shared MCP envelope"),
++        serde_json::to_string(&expected_mcp).expect("expected MCP envelope"),
++    );
++}
++
++#[test]
++fn shared_error_envelopes_preserve_existing_wire_encoding() {
++    let outcome = outcome();
++    let expected = json!({
++        "schema_version": "distill.mcp/v1",
++        "error": {
++            "code": "store_full",
++            "message": "bounded",
++            "artifact": outcome.artifact,
++        },
++        "raw_content_included": false,
++        "recovery": format!("distill artifact get {}", outcome.artifact.id),
++    });
++    assert_eq!(
++        mcp_error_envelope(
++            "distill.mcp/v1",
++            "store_full",
++            "bounded",
++            Some(&outcome.artifact),
++        ),
++        serde_json::to_string(&expected).expect("expected envelope"),
++    );
++}
+diff --git a/src/types.rs b/src/types.rs
+index 6596266..df81945 100644
+--- a/src/types.rs
++++ b/src/types.rs
+@@ -329,98 +329,11 @@ pub struct AcquisitionReceipt {
+ 
+ impl AcquisitionReceipt {
+     pub(crate) fn validate(&self, source_bytes: u64) -> Result<(), &'static str> {
+-        if (self.complete && self.partial)
+-            || (self.truncated && !self.partial)
+-            || (self.partial && self.variant != SourceVariant::Process)
+-            || (!self.complete && !self.partial && source_bytes != 0)
+-        {
+-            return Err("acquisition completion state is contradictory");
+-        }
+-
+-        match self.variant {
+-            SourceVariant::Inline | SourceVariant::Artifact => {
+-                if self.root_id.is_some()
+-                    || self.relative_path.is_some()
+-                    || self.process.is_some()
+-                    || self.truncated
+-                {
+-                    return Err("acquisition fields contradict the source variant");
+-                }
+-            }
+-            SourceVariant::File => {
+-                if self
+-                    .root_id
+-                    .as_deref()
+-                    .is_none_or(|root| !crate::contract::valid_identifier(root))
+-                    || self
+-                        .relative_path
+-                        .as_deref()
+-                        .is_none_or(|path| !valid_path_summary(path))
+-                    || self.process.is_some()
+-                    || self.truncated
+-                {
+-                    return Err("file acquisition metadata is incomplete or contradictory");
+-                }
+-            }
+-            SourceVariant::Process => {
+-                let Some(root_id) = self.root_id.as_deref() else {
+-                    return Err("process acquisition metadata is incomplete or contradictory");
+-                };
+-                if !crate::contract::valid_identifier(root_id) || self.relative_path.is_some() {
+-                    return Err("process acquisition metadata is incomplete or contradictory");
+-                }
+-                let process = self
+-                    .process
+-                    .as_ref()
+-                    .ok_or("process acquisition data is missing")?;
+-                let working_path = process
+-                    .working_directory
+-                    .strip_prefix(root_id)
+-                    .and_then(|value| value.strip_prefix(':'));
+-                if working_path.is_none_or(|path| !valid_path_summary(path)) {
+-                    return Err("process working-directory identity is missing");
+-                }
+-
+-                let mut expected_start = 0_u64;
+-                for (index, event) in process.events.iter().enumerate() {
+-                    if event.order != index as u64
+-                        || event.span.start != expected_start
+-                        || event.span.end <= event.span.start
+-                        || event.span.end > source_bytes
+-                    {
+-                        return Err("process stream events are invalid");
+-                    }
+-                    expected_start = event.span.end;
+-                }
+-                if expected_start != source_bytes {
+-                    return Err("process stream events do not cover the captured source");
+-                }
+-
+-                if !self.complete && !self.partial {
+-                    if !process.events.is_empty()
+-                        || process.exit_code.is_some()
+-                        || process.signal.is_some()
+-                        || process.timed_out
+-                    {
+-                        return Err("clean process failure contains terminal capture data");
+-                    }
+-                } else if process.exit_code.is_some() == process.signal.is_some() {
+-                    return Err("process terminal state must contain one exit code or signal");
+-                }
+-                if self.complete && (process.timed_out || process.signal.is_some()) {
+-                    return Err("complete process acquisition has a failure terminal state");
+-                }
+-                if (process.timed_out || process.signal.is_some()) && !self.partial {
+-                    return Err("failed process terminal state is not partial");
+-                }
+-            }
+-        }
+-        Ok(())
++        ValidatedAcquisition::from_wire(self.clone(), source_bytes).map(|_| ())
+     }
+ }
+ 
+ mod acquisition;
+-use acquisition::valid_path_summary;
+ pub(crate) use acquisition::{ProcessPartialReason, ProcessTermination, ValidatedAcquisition};
+ 
+ #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+diff --git a/src/types/acquisition.rs b/src/types/acquisition.rs
+index 7cefe6b..732560b 100644
+--- a/src/types/acquisition.rs
++++ b/src/types/acquisition.rs
+@@ -101,7 +101,6 @@ impl ValidatedAcquisition {
+         receipt: AcquisitionReceipt,
+         source_bytes: u64,
+     ) -> Result<Self, &'static str> {
+-        receipt.validate(source_bytes)?;
+         let AcquisitionReceipt {
+             variant,
+             complete,
+@@ -111,23 +110,46 @@ impl ValidatedAcquisition {
+             relative_path,
+             process,
+         } = receipt;
++        if (complete && partial)
++            || (truncated && !partial)
++            || (partial && variant != SourceVariant::Process)
++            || (!complete && !partial && source_bytes != 0)
++        {
++            return Err("acquisition completion state is contradictory");
++        }
+         let state = match variant {
+-            SourceVariant::Inline => AcquisitionState::Inline(Completion::from_complete(complete)),
++            SourceVariant::Inline => {
++                validate_simple_variant(&root_id, &relative_path, &process, truncated)?;
++                AcquisitionState::Inline(Completion::from_complete(complete))
++            }
+             SourceVariant::Artifact => {
++                validate_simple_variant(&root_id, &relative_path, &process, truncated)?;
+                 AcquisitionState::Artifact(Completion::from_complete(complete))
+             }
+-            SourceVariant::File => AcquisitionState::File {
+-                root_id: root_id.ok_or("file acquisition root is missing")?,
+-                relative_path: PathSummary::parse(
+-                    relative_path
+-                        .as_deref()
+-                        .ok_or("file acquisition path is missing")?,
+-                )
+-                .ok_or("file acquisition path is invalid")?,
+-                completion: Completion::from_complete(complete),
+-            },
++            SourceVariant::File => {
++                let root_id = root_id
++                    .filter(|root| crate::contract::valid_identifier(root))
++                    .ok_or("file acquisition metadata is incomplete or contradictory")?;
++                let relative_path = relative_path
++                    .as_deref()
++                    .and_then(PathSummary::parse)
++                    .ok_or("file acquisition metadata is incomplete or contradictory")?;
++                if process.is_some() || truncated {
++                    return Err("file acquisition metadata is incomplete or contradictory");
++                }
++                AcquisitionState::File {
++                    root_id,
++                    relative_path,
++                    completion: Completion::from_complete(complete),
++                }
++            }
+             SourceVariant::Process => {
+-                let root_id = root_id.ok_or("process acquisition root is missing")?;
++                let root_id = root_id
++                    .filter(|root| crate::contract::valid_identifier(root))
++                    .ok_or("process acquisition metadata is incomplete or contradictory")?;
++                if relative_path.is_some() {
++                    return Err("process acquisition metadata is incomplete or contradictory");
++                }
+                 let process = process.ok_or("process acquisition data is missing")?;
+                 let working_path = process
+                     .working_directory
+@@ -136,6 +158,8 @@ impl ValidatedAcquisition {
+                     .ok_or("process working-directory identity is missing")?;
+                 let working_directory = PathSummary::parse(working_path)
+                     .ok_or("process working-directory identity is invalid")?;
++                validate_process_events(&process.events, source_bytes)?;
++                validate_process_terminal_state(&process, complete, partial)?;
+                 let state = if complete {
+                     ProcessState::Complete {
+                         events: process.events,
+@@ -437,6 +461,59 @@ impl AcquisitionState {
+     }
+ }
+ 
+-pub(super) fn valid_path_summary(value: &str) -> bool {
+-    PathSummary::parse(value).is_some()
++fn validate_simple_variant(
++    root_id: &Option<String>,
++    relative_path: &Option<String>,
++    process: &Option<ProcessReceipt>,
++    truncated: bool,
++) -> Result<(), &'static str> {
++    if root_id.is_some() || relative_path.is_some() || process.is_some() || truncated {
++        return Err("acquisition fields contradict the source variant");
++    }
++    Ok(())
++}
++
++fn validate_process_events(events: &[StreamEvent], source_bytes: u64) -> Result<(), &'static str> {
++    let mut expected_start = 0_u64;
++    for (index, event) in events.iter().enumerate() {
++        if event.order != index as u64
++            || event.span.start != expected_start
++            || event.span.end <= event.span.start
++            || event.span.end > source_bytes
++        {
++            return Err("process stream events are invalid");
++        }
++        expected_start = event.span.end;
++    }
++    if expected_start != source_bytes {
++        return Err("process stream events do not cover the captured source");
++    }
++    Ok(())
++}
++
++fn validate_process_terminal_state(
++    process: &ProcessReceipt,
++    complete: bool,
++    partial: bool,
++) -> Result<(), &'static str> {
++    if !complete && !partial {
++        if !process.events.is_empty()
++            || process.exit_code.is_some()
++            || process.signal.is_some()
++            || process.timed_out
++        {
++            return Err("clean process failure contains terminal capture data");
++        }
++        return Ok(());
++    }
++    if process.exit_code.is_some() == process.signal.is_some() {
++        return Err("process terminal state must contain one exit code or signal");
++    }
++    if complete && (process.timed_out || process.signal.is_some()) {
++        return Err("complete process acquisition has a failure terminal state");
++    }
++    if (process.timed_out || process.signal.is_some()) && !partial {
++        return Err("failed process terminal state is not partial");
++    }
++    Ok(())
+ }

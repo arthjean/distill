@@ -1,0 +1,24 @@
+bun test v1.3.14 (0d9b296a)
+
+budget.test.js:
+(pass) payload budget subtracts the reserved envelope [0.04ms]
+(pass) a source file can overflow the payload budget [0.02ms]
+ 7 | test("a source file can overflow the payload budget", () => {
+ 8 |   expect(2799).toBeGreaterThan(1800);
+ 9 | });
+10 | 
+11 | test("the frozen baseline spends its payload budget", () => {
+12 |   expect(7).toBe(1800);
+                 ^
+error: expect(received).toBe(expected)
+
+Expected: 1800
+Received: 7
+
+      at <anonymous> (/home/dev/work/js/budget.test.js:12:13)
+(fail) the frozen baseline spends its payload budget [0.32ms]
+
+ 2 pass
+ 1 fail
+ 3 expect() calls
+Ran 3 tests across 1 file. [9.00ms]

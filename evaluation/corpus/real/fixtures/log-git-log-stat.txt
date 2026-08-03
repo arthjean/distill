@@ -1,0 +1,514 @@
+commit 5f228cda3c0215c8ce61907350e6c7da37896584
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Aug 3 00:12:27 2026 +0200
+
+    refactor(adapters): centralize surface contracts
+
+ src/cli.rs                    |  36 +++----
+ src/cli/tests.rs              |   1 +
+ src/codex.rs                  |  81 +++++----------
+ src/mcp.rs                    | 224 ++++++++++++++++--------------------------
+ src/surface.rs                |  59 ++++++++++-
+ src/surface/envelope.rs       | 119 ++++++++++++++++++++++
+ src/surface/envelope/tests.rs | 149 ++++++++++++++++++++++++++++
+ 7 files changed, 445 insertions(+), 224 deletions(-)
+
+commit 8e6626d86908505b6eda04a225fde8142a329ba9
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Aug 3 00:12:14 2026 +0200
+
+    refactor(setup): split configuration responsibilities
+
+ src/setup.rs              | 460 +++++-----------------------------------------
+ src/setup/backup.rs       | 162 ++++++++++++++++
+ src/setup/claude.rs       |  38 ++++
+ src/setup/codex_config.rs | 164 +++++++++++++++++
+ src/setup/document.rs     |  26 +++
+ src/setup/tests.rs        |   1 +
+ 6 files changed, 442 insertions(+), 409 deletions(-)
+
+commit e06dbf94ae3515f074f87b0ed22bbb9b1255d54d
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Aug 3 00:12:07 2026 +0200
+
+    refactor(store): isolate artifact verification
+
+ src/artifact.rs           | 193 +++-------------------------------------------
+ src/artifact/integrity.rs |  46 +++++++++++
+ src/artifact/lifecycle.rs |   2 +-
+ src/artifact/lineage.rs   |  35 +--------
+ src/artifact/migration.rs |   5 +-
+ src/artifact/receipt.rs   |  11 +--
+ src/artifact/record.rs    | 170 ++++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 239 insertions(+), 223 deletions(-)
+
+commit 9ef670d85d2db1372b92474e74befe262e8e47b2
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Aug 3 00:11:55 2026 +0200
+
+    refactor(types): centralize acquisition decoding
+
+ src/types.rs             |  89 +--------------------------------------
+ src/types/acquisition.rs | 107 ++++++++++++++++++++++++++++++++++++++++-------
+ 2 files changed, 93 insertions(+), 103 deletions(-)
+
+commit 2272231fbd5665550c3f39285d35a557f1c0d37c
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:25:49 2026 +0200
+
+    docs: document hardened engine and surface contracts
+
+ .../native-context-projection-engine.md             | 21 +++++++++++++++------
+ docs/integrations/native-surfaces.md                | 19 +++++++++++++++----
+ docs/migration/mcp-first-to-native.md               |  2 +-
+ evaluation/release/README.md                        | 12 ++++++++++++
+ 4 files changed, 43 insertions(+), 11 deletions(-)
+
+commit 7d92b4712b4f47d669dcaab10ce6df3a3237d2a6
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:25:37 2026 +0200
+
+    fix(setup): verify managed Codex hook ownership
+
+ src/setup.rs       | 120 ++++++++++++++++++++++++++++++++++++++++++++---------
+ src/setup/tests.rs |  94 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 194 insertions(+), 20 deletions(-)
+
+commit b127b7cdbe2288dc43cd5898e854b74e17b0ede9
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:25:25 2026 +0200
+
+    fix(codex): fail closed on unknown tool surfaces
+
+ docs/integrations/codex-hook-conformance-v2.json | 80 ++++++++++++++++++++++++
+ examples/release_gate.rs                         |  2 +-
+ src/codex.rs                                     | 26 +++++---
+ src/setup/tests.rs                               |  2 +-
+ 4 files changed, 99 insertions(+), 11 deletions(-)
+
+commit 3369be014ec32e9c17d0a414799ec93d6cc597e4
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:25:00 2026 +0200
+
+    fix(cli): use engine root failure contract
+
+ docs/integrations/cli-conformance-v2.json | 18 +++++++++
+ src/cli.rs                                | 12 +-----
+ src/cli/tests.rs                          | 62 +++++++++++++++++++++++++++++++
+ 3 files changed, 81 insertions(+), 11 deletions(-)
+
+commit 461eeadb2cca83a9ef96ffa17846a720187cfcc9
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:24:51 2026 +0200
+
+    refactor(tests): split library test module
+
+ src/lib.rs       | 625 +------------------------------------------------------
+ src/lib/tests.rs | 621 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 623 insertions(+), 623 deletions(-)
+
+commit 1b506484e27316d4888a8b257777bd568205386a
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:24:45 2026 +0200
+
+    refactor(runtime): model acquisition states exhaustively
+
+ src/artifact.rs          |   2 +-
+ src/artifact/tests.rs    |   2 +-
+ src/runtime.rs           |  70 ++++----
+ src/runtime/process.rs   |  62 ++-----
+ src/runtime/tests.rs     |  40 ++---
+ src/types.rs             | 242 +-------------------------
+ src/types/acquisition.rs | 442 +++++++++++++++++++++++++++++++++++++++++++++++
+ src/types/tests.rs       |  45 +++++
+ 8 files changed, 564 insertions(+), 341 deletions(-)
+
+commit ae196301306792e45d38cfdaa7f83d87c58eafcf
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:24:36 2026 +0200
+
+    fix(store): migrate legacy schemas atomically
+
+ src/artifact/connection.rs | 27 +------------
+ src/artifact/migration.rs  | 18 ++++++++-
+ src/artifact/tests.rs      | 99 ++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 118 insertions(+), 26 deletions(-)
+
+commit 1ba674358d77cbc1073edaa2344c9442c580ae18
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 23:23:55 2026 +0200
+
+    fix(projection): enforce receipt span limits
+
+ src/artifact.rs         |  2 +-
+ src/contract.rs         |  1 +
+ src/projection.rs       | 14 ++++++++++++--
+ src/projection/tests.rs | 24 ++++++++++++++++++++++++
+ 4 files changed, 38 insertions(+), 3 deletions(-)
+
+commit 3fc15dd39dba8d385507d1d91d6056ba3ae60dd4
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 22:36:59 2026 +0200
+
+    fix(codex): fail closed on response serialization
+
+ src/codex.rs | 52 +++++++++++++++++++++++++++++++---------------------
+ 1 file changed, 31 insertions(+), 21 deletions(-)
+
+commit 7ce28fd3f166eee734761a962fd136243dc1b0e4
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 22:36:51 2026 +0200
+
+    fix(cli): accept projection options in any order
+
+ src/cli.rs       | 492 +++++++++++--------------------------------------------
+ src/cli/tests.rs | 398 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 490 insertions(+), 400 deletions(-)
+
+commit 98b873fdd7fe1c486304a9c255a682ab7bd1e4f5
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 22:36:40 2026 +0200
+
+    refactor(runtime): model typed process terminal states
+
+ src/runtime.rs         | 570 +------------------------------------------------
+ src/runtime/process.rs | 146 ++++++++++---
+ src/runtime/tests.rs   | 525 +++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 648 insertions(+), 593 deletions(-)
+
+commit 6570e051026c0a0338dd8363793a50d101f2573e
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 22:36:33 2026 +0200
+
+    refactor(store): enforce verified steady-state access
+
+ .../native-context-projection-engine.md            |    3 +
+ src/artifact.rs                                    | 1183 +-------------------
+ src/artifact/connection.rs                         |  118 +-
+ src/artifact/permissions.rs                        |   40 +-
+ src/artifact/receipt.rs                            |    4 +-
+ src/artifact/tests.rs                              |  740 ++++++++++++
+ src/artifact/tests/lineage.rs                      |  364 ++++++
+ 7 files changed, 1256 insertions(+), 1196 deletions(-)
+
+commit 4ae6a0cbe32a5ff8a122790adabbbe4678a0e797
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 22:36:25 2026 +0200
+
+    refactor(tests): split oversized module suites
+
+ src/projection.rs       | 431 +-------------------------------
+ src/projection/tests.rs | 423 +++++++++++++++++++++++++++++++
+ src/setup.rs            | 496 +------------------------------------
+ src/setup/tests.rs      | 491 ++++++++++++++++++++++++++++++++++++
+ src/types.rs            | 643 +-----------------------------------------------
+ src/types/tests.rs      | 637 +++++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 1557 insertions(+), 1564 deletions(-)
+
+commit e5ea046e6c157960b6c0fea08472c9c622d1e90c
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 21:30:10 2026 +0200
+
+    refactor(store): separate persistence responsibilities
+
+ .../native-context-projection-engine.md            |   5 +-
+ src/artifact.rs                                    | 512 +++------------------
+ src/artifact/connection.rs                         | 140 ++++++
+ src/artifact/lifecycle.rs                          |  91 ++++
+ src/artifact/lineage.rs                            | 134 ++----
+ src/artifact/migration.rs                          |   8 +-
+ src/artifact/receipt.rs                            | 317 +++++++++++++
+ src/artifact/row.rs                                |  78 ----
+ 8 files changed, 664 insertions(+), 621 deletions(-)
+
+commit bbdc5731f1b82c7390be35dc8435cf22e3851555
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 21:29:51 2026 +0200
+
+    refactor(core): model validated acquisition states
+
+ .../native-context-projection-engine.md            |   3 +-
+ src/artifact.rs                                    |   6 +-
+ src/lib.rs                                         |  17 +-
+ src/request_policy.rs                              |  23 +-
+ src/runtime.rs                                     | 689 ++++++---------------
+ src/runtime/process.rs                             | 314 ++++++++++
+ src/types.rs                                       | 218 ++++++-
+ 7 files changed, 714 insertions(+), 556 deletions(-)
+
+commit d966d081cbb257921ebe76f2ad9a3676ef9a9685
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 21:28:29 2026 +0200
+
+    fix(contract): define inline media type semantics
+
+ .../ADR-001-context-projection-contract.md         |  3 +++
+ src/request_policy.rs                              | 26 +++++++++++++++++++++-
+ src/types.rs                                       |  1 +
+ 3 files changed, 29 insertions(+), 1 deletion(-)
+
+commit 40a02de412be35a2f5e4dcedb6d09201944383e6
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 21:27:30 2026 +0200
+
+    fix(store): preserve sqlite sidecar path bytes
+
+ src/artifact.rs             | 11 +++++------
+ src/artifact/permissions.rs | 27 ++++++++++++++++++++++++++-
+ 2 files changed, 31 insertions(+), 7 deletions(-)
+
+commit e1472e5102db95846998628864e8a3bba6ffce33
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 21:27:06 2026 +0200
+
+    fix(surface): truncate correlation ids safely
+
+ src/codex.rs   |  8 ++------
+ src/mcp.rs     |  8 ++------
+ src/surface.rs | 26 ++++++++++++++++++++++++++
+ 3 files changed, 30 insertions(+), 12 deletions(-)
+
+commit 16ceebb0d8faab5210e55d5b5509643cf515f1f4
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 17:10:19 2026 +0200
+
+    refactor(core): enforce validated engine boundaries
+
+ src/artifact.rs               | 1214 ++++++++---------------------------------
+ src/artifact/lineage.rs       |  343 ++++++++++++
+ src/artifact/migration.rs     |  286 ++++++++++
+ src/artifact/permissions.rs   |  186 +++++++
+ src/artifact/row.rs           |   78 +++
+ src/artifact/sqlite_errors.rs |   79 +++
+ src/contract.rs               |   17 +
+ src/lib.rs                    |  114 ++--
+ src/projection.rs             |  295 +++++-----
+ src/request_policy.rs         |  209 ++++---
+ src/runtime.rs                |  151 +++--
+ src/types.rs                  |   55 +-
+ 12 files changed, 1710 insertions(+), 1317 deletions(-)
+
+commit e3c0b2499a60b3023fc1dfed915e0ee41c996b01
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 17:09:09 2026 +0200
+
+    refactor(setup): model valid target states
+
+ src/codex.rs |  21 ++++---
+ src/setup.rs | 190 ++++++++++++++++++++++++++++++++++-------------------------
+ 2 files changed, 123 insertions(+), 88 deletions(-)
+
+commit c00cfd211bc6acbc1f54572fe2e1334b0be49b4d
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 17:08:55 2026 +0200
+
+    refactor(surface): decouple shared host errors
+
+ src/cli.rs     | 88 +++++++---------------------------------------------------
+ src/codex.rs   |  2 +-
+ src/main.rs    |  1 +
+ src/mcp.rs     |  2 +-
+ src/setup.rs   |  2 +-
+ src/surface.rs | 79 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 93 insertions(+), 81 deletions(-)
+
+commit 037d7bd7d1ca060da86c3d979e4bd2f3bae92b58
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 14:24:20 2026 +0200
+
+    ci(release): add npm trusted publishing
+
+ .github/workflows/publish-npm.yml                  | 287 +++++++++++++++++++++
+ evaluation/release/README.md                       |  17 ++
+ .../release/create-architecture-authorization.mjs  |  81 ++++++
+ 3 files changed, 385 insertions(+)
+
+commit 96dde1d9e798b668135f9c98657ea1fc2359fbf4
+Author: Example Developer <dev@example.invalid>
+Date:   Sun Aug 2 14:16:28 2026 +0200
+
+    docs(release): record npm publication
+
+ .github/SECURITY.md                          |  9 ++++++---
+ README.md                                    | 17 ++++++++---------
+ docs/distribution/native-assets.json         | 10 ++++++++--
+ docs/releases/RELEASE_NOTES_v0.1.0-native.md |  9 +++++++++
+ 4 files changed, 31 insertions(+), 14 deletions(-)
+
+commit 8a4008fdf165e355213062e1045733f5d78c6875
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 11:43:42 2026 +0200
+
+    docs(release): record npm package qualification
+
+ README.md                                          | 18 ++++-----
+ .../native-context-projection-engine.md            |  6 +--
+ docs/distribution/native-assets.json               | 44 ++++++++++++----------
+ docs/distribution/native-install.md                |  6 +--
+ evaluation/release/README.md                       |  4 ++
+ 5 files changed, 43 insertions(+), 35 deletions(-)
+
+commit 8084c132fd252bb2be429067a181e8e525fea7ee
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 11:36:35 2026 +0200
+
+    test(release): preregister npm package qualification
+
+ .github/workflows/native-macos-qualification.yml   |  18 +-
+ AGENTS.md                                          |   4 +-
+ README.md                                          |  20 +-
+ .../native-context-projection-engine.md            |  45 +-
+ docs/distribution/native-assets.json               |  16 +-
+ docs/distribution/native-install.md                |  15 +-
+ docs/integrations/native-surfaces.md               |   2 +-
+ docs/migration/mcp-first-to-native.md              |  11 +-
+ docs/releases/RELEASE_NOTES_v0.1.0-native.md       |   9 +-
+ evaluation/release/README.md                       |  17 +-
+ .../release/architecture-hardening-v6-ledger.json  | 159 +++++
+ .../architecture-hardening-v6-protocol.json        | 354 ++++++++++++
+ evaluation/release/check-native-npm.mjs            | 148 +++++
+ .../release/run-architecture-hardening-v6.mjs      | 638 +++++++++++++++++++++
+ npm/distill/README.md                              |   2 +-
+ npm/distill/bin/distill                            |   6 +
+ npm/distill/package.json                           |   4 -
+ scripts/package-npm.sh                             | 130 ++++-
+ scripts/source-tree.sh                             |   3 +-
+ 19 files changed, 1513 insertions(+), 88 deletions(-)
+
+commit 49c4f8ae904b29e373fce7514d3d6b40b3410e9d
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 11:12:35 2026 +0200
+
+    docs(release): record native npm qualification
+
+ README.md                            | 11 ++++----
+ docs/distribution/native-assets.json | 51 ++++++++++++++++++++++++------------
+ 2 files changed, 39 insertions(+), 23 deletions(-)
+
+commit eb28149c5e4a4b72dfa73343c6d9baaaf0b4699a
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 11:12:35 2026 +0200
+
+    fix(packaging): support Bun tarball output
+
+ scripts/package-npm.sh | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+commit 0f6e86f1365ee67da31ad259efe725841908795a
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 11:06:35 2026 +0200
+
+    fix(release): bind receipts to release executables
+
+ .github/workflows/native-macos-qualification.yml   |  18 +-
+ evaluation/release/README.md                       |  18 +-
+ .../release/architecture-hardening-v5-ledger.json  | 147 +++++
+ .../architecture-hardening-v5-protocol.json        | 324 +++++++++++
+ .../release/run-architecture-hardening-v5.mjs      | 638 +++++++++++++++++++++
+ scripts/package-npm.sh                             |   2 +-
+ 6 files changed, 1131 insertions(+), 16 deletions(-)
+
+commit a0604c4d437eff147a8b5ca9fc7f7eb7143d7cad
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 10:59:57 2026 +0200
+
+    test(release): preregister corrected npm qualification
+
+ .github/workflows/native-macos-qualification.yml   |  18 +-
+ evaluation/release/README.md                       |  17 +-
+ .../release/architecture-hardening-v4-ledger.json  | 135 +++++
+ .../architecture-hardening-v4-protocol.json        | 296 ++++++++++
+ .../release/run-architecture-hardening-v4.mjs      | 638 +++++++++++++++++++++
+ 5 files changed, 1089 insertions(+), 15 deletions(-)
+
+commit 00e31e59ca278901d5ce2da737dd03fca6638b5b
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 10:58:12 2026 +0200
+
+    fix(release): align fuzz lockfile version
+
+ docs/distribution/native-assets.json | 2 +-
+ fuzz/Cargo.lock                      | 2 +-
+ scripts/package-npm.sh               | 4 ++--
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+commit 36f98131490bcf73e7c6f2184658be8e8387f694
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 10:54:32 2026 +0200
+
+    fix(release): route macos npm qualification
+
+ .github/workflows/native-macos-qualification.yml   | 29 +++++---
+ .github/workflows/native-npm-qualification.yml     | 77 ----------------------
+ evaluation/release/README.md                       |  2 +-
+ .../release/architecture-hardening-v3-ledger.json  |  2 +-
+ .../architecture-hardening-v3-protocol.json        |  2 +-
+ 5 files changed, 23 insertions(+), 89 deletions(-)
+
+commit 040c8b2250d28f31eebfe620e903e4e57ba93093
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 10:52:15 2026 +0200
+
+    test(release): preregister native npm qualification
+
+ .github/workflows/native-npm-qualification.yml     |  77 +++
+ evaluation/release/README.md                       |  28 +
+ .../release/architecture-hardening-v3-ledger.json  | 123 ++++
+ .../architecture-hardening-v3-protocol.json        | 296 ++++++++++
+ .../release/run-architecture-hardening-v3.mjs      | 638 +++++++++++++++++++++
+ 5 files changed, 1162 insertions(+)
+
+commit cba0928e852fe99e165d77242aaf38ed900b210d
+Author: Example Developer <dev@example.invalid>
+Date:   Fri Jul 31 10:47:19 2026 +0200
+
+    feat(distribution): add native npm package
+
+ Cargo.lock                                   |   2 +-
+ Cargo.toml                                   |   2 +-
+ README.md                                    |  23 +++-
+ docs/distribution/native-assets.json         |  16 ++-
+ docs/distribution/native-install.md          |  14 ++
+ docs/migration/mcp-first-to-native.md        |  20 +--
+ docs/releases/RELEASE_NOTES_v0.1.0-native.md |  34 +++++
+ npm/distill/README.md                        |  21 +++
+ npm/distill/bin/distill                      |  35 +++++
+ npm/distill/package.json                     |  36 +++++
+ scripts/package-npm.sh                       | 189 +++++++++++++++++++++++++++
+ 11 files changed, 371 insertions(+), 21 deletions(-)
+
+commit 6b413430c6cc2a739b27bc90748edf4029b43cb1
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Jul 27 15:14:01 2026 +0200
+
+    docs(readme): restore public logo
+
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+commit 1b8ba6043d11edca51086e1fd76741aae69a16e8
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Jul 27 15:10:04 2026 +0200
+
+    chore(repo): ignore local architecture reports
+
+ .gitignore | 3 +++
+ 1 file changed, 3 insertions(+)
+
+commit dd78257655d9b2fecc84a48b2b648d80b5f5ac38
+Author: Example Developer <dev@example.invalid>
+Date:   Mon Jul 27 14:57:04 2026 +0200
+
+    test(core): restore architecture qualification coverage
+
+ .github/workflows/native-macos-qualification.yml   |  16 +-
+ evaluation/release/README.md                       |  37 +-
+ .../release/architecture-hardening-v2-ledger.json  | 111 ++++
+ .../architecture-hardening-v2-protocol.json        | 297 ++++++++++
+ .../release/run-architecture-hardening-v2.mjs      | 638 +++++++++++++++++++++
+ src/artifact.rs                                    |  58 ++
+ src/cli.rs                                         |  26 +
+ src/request_policy.rs                              | 302 ++++++++++
+ src/runtime.rs                                     | 140 +++++
+ src/types.rs                                       | 296 ++++++++++
+ 10 files changed, 1898 insertions(+), 23 deletions(-)

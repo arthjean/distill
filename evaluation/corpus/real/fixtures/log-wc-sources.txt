@@ -1,0 +1,6 @@
+   401 src/artifact.rs
+   688 src/projection.rs
+   593 src/cli.rs
+   734 src/mcp.rs
+   653 src/codex.rs
+  3069 total

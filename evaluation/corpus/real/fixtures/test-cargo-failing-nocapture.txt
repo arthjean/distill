@@ -1,0 +1,24 @@
+
+running 4 tests
+checking high byte saturation
+test tests::checksum_of_empty_input_is_zero ... ok
+test tests::checksum_sums_every_byte ... ok
+test tests::label_names_its_checksum ... ok
+test tests::checksum_saturates_high_bytes ... FAILED
+
+failures:
+
+failures:
+    tests::checksum_saturates_high_bytes
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/checksum_crate-e035c33c7329c90f)
+
+thread 'tests::checksum_saturates_high_bytes' (3180119) panicked at src/lib.rs:31:9:
+assertion `left == right` failed
+  left: 256
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--lib`

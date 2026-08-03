@@ -1,0 +1,18 @@
+{
+  "schema_version": "distill.cli-conformance/v2",
+  "supersedes": "distill.cli/v1",
+  "surface_schema_version": "distill.cli/v2",
+  "configured_root_policy": {
+    "owner": "Engine::handle",
+    "cases": [
+      {
+        "operation": "read",
+        "unknown_root_failure": "unsafe_root"
+      },
+      {
+        "operation": "run",
+        "unknown_root_failure": "unsafe_root"
+      }
+    ]
+  }
+}

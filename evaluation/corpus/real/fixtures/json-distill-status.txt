@@ -1,0 +1,1 @@
+{"ok":true,"result":{"default_ttl_seconds":604800,"expired_records":0,"lineage_bytes":0,"max_concurrent_writers":8,"max_lineage_bytes":67108864,"max_source_bytes":10485760,"max_store_bytes":536870912,"root_ids":[],"schema_version":"distill.status/v2","store_bytes":0,"store_records":0},"schema_version":"distill.cli/v2"}
