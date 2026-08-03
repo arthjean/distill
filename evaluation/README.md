@@ -8,6 +8,10 @@ replacement:
 - `corpus/budget-profiles.json`: named byte and token budgets;
 - `corpus/check.mjs`: deterministic generation, semantic validation, oracle
   self-tests, and secret scanning;
+- `corpus/real/`: 48 captured real tool-output fixtures with their manifest and
+  capture runner;
+- `baseline/projection-baseline-v1.json`: frozen executed-path projection
+  behavior over the real corpus;
 - `legacy/evidence.json`: raw measurements against the retired TypeScript
   implementation;
 - `legacy/baseline.md`: human-readable baseline and salvage matrix; and
@@ -89,6 +93,86 @@ From the repository root:
 bun evaluation/corpus/check.mjs --write
 bun evaluation/corpus/check.mjs --verify
 ```
+
+## Real tool-output corpus
+
+`corpus/real/` holds output captured from real developer tools, not generated
+text. It exists alongside the generated corpus, which stays unchanged as a
+regression fixture. 48 fixtures cover eight shapes, six each: `build-output`,
+`test-output`, `typecheck-lint`, `stack-trace`, `unified-diff`, `api-json`,
+`source-file`, and `terminal-log`.
+
+Every fixture is the exact output of one executable invoked with literal argv,
+with stdout followed by stderr. `manifest.jsonl` records, per fixture, the
+`distill.real-corpus/v1` schema version, its identifier, shape label,
+description, originating command, working-directory class, capture host class,
+exit code, per-stream byte counts, stored byte length, line count, UTF-8
+validity, truncation state and pre-truncation length, SHA-256, and stored path.
+Fixtures are capped at 256 KiB and truncated on a line boundary.
+
+Capture normalizes host identity before digesting: the work directory,
+repository root, and home directory become `/home/dev/work`, `/home/dev/distill`,
+and `/home/dev`; every address becomes `dev@example.invalid`; the commit author
+name becomes `Example Developer`; and the account name becomes `dev`. A scrub
+scan then rejects private keys, cloud credentials, access tokens, secret
+assignments, any other home path, and any other address. `capture_host_class` is
+a platform and architecture class such as `linux-x86_64`, never a host name.
+
+Capture is not deterministic and is not re-run by the gate. The manifest is the
+frozen record, and `--verify` proves every stored fixture still matches its
+declared length, digest, encoding, and scrub state.
+
+```bash
+bun evaluation/corpus/real/capture.mjs          # first capture
+bun evaluation/corpus/real/capture.mjs --force  # replace a committed capture
+```
+
+Capture resolves every executable first and fails closed with the missing
+command named, before any staging directory, fixture, or manifest byte is
+written and before the overwrite guard. `check.mjs` proves that end to end by
+running the capture runner with an empty `PATH` and asserting the manifest stays
+byte-identical with no staging directory left behind. Repository-scoped git
+fixtures name explicit revisions so their commands stay reproducible from any
+clone. The `json-distill-status` fixture requires `target/release/distill`.
+
+## Frozen executed-path baseline
+
+`baseline/projection-baseline-v1.json` records what the shipped projection
+actually does, measured through `distill project --json` with
+`plain-text/v1`, the profile both product surfaces pin. It covers every real
+corpus fixture at four budgets: the executed Codex hook default (2250 total,
+450 reserved), the corpus token profile (512/64), a large host budget
+(8192/1024), and the zero-payload boundary (450/450). Each result records
+original count, visible count, budget utilization, retained byte ratio, retained
+bytes, retained and omitted span counts, and fidelity. A typed failure is
+recorded with its code instead of aborting the run: the zero-payload budget
+yields 48 `budget_unsatisfiable` results.
+
+The evidence binds the source revision, release binary digest, and real corpus
+manifest digest. Writing over it requires `--force`; it is frozen comparison
+evidence, not a receipt to refresh.
+
+```bash
+cargo build --locked --release
+bun evaluation/baseline/run-projection-baseline.mjs
+```
+
+The run fails closed unless it reproduces the two measurements recorded in the
+projection-intelligence PRD within one percentage point: 0.39% payload
+utilization on `src/artifact.rs` at 2799 tokens, and 2.4% on `git log --stat
+-40`. The command log counts 5821 tokens rather than 6341 because the stored
+fixture is scrubbed; the utilization it reproduces is 2.44%. At the executed
+default, median utilization across the 14 over-budget fixtures is 0.78%, while
+the maximum is 100% on single-line input, where the prefix fallback is the only
+path that spends the budget.
+
+`tests/contract_foundation.rs` asserts the same accounting through the public
+seam: `projection_matrix_reports_budget_utilization_and_retention` freezes
+visible count, utilization, retained ratio, and span counts for an over-budget
+line-structured source, and applies exact fidelity instead of the floor when a
+source already fits. `over_budget_projection_must_spend_its_payload_budget`
+asserts the 80% payload-budget floor and is marked as the expected failure this
+baseline records.
 
 ### Rust corpus consolidation decision
 

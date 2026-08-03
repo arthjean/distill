@@ -1,5 +1,16 @@
 # Release qualification
 
+## Executed-path projection baseline
+
+`evaluation/baseline/projection-baseline-v1.json` freezes what the shipped
+`plain-text/v1` path does on the real tool-output corpus, at four budgets
+including the executed Codex hook default. It is the comparison reference for
+the projection-intelligence release and is created outside
+`evaluation/release/evidence/`, which stays closed. It is not a qualification
+verdict: it establishes ground truth before any policy changes, and it
+overwrites and relabels no receipt. `evaluation/README.md` documents the corpus,
+the capture rules, and the reproduction commands.
+
 ## Native surface contract v2
 
 `docs/integrations/cli-conformance-v2.json` and
