@@ -39,6 +39,7 @@ struct RealFixture {
     schema_version: String,
     id: String,
     shape: String,
+    command: Vec<String>,
     byte_length: usize,
     sha256: String,
     path: String,
@@ -299,4 +300,200 @@ fn assert_partition(source_bytes: u64, retained: &[ByteSpan], omitted: &[ByteSpa
         cursor = span.end;
     }
     assert_eq!(cursor, source_bytes, "{id} partition does not cover source");
+}
+
+const FOCUS_QUESTION_SCHEMA_VERSION: &str = "distill.real-corpus-focus/v1";
+
+/// One question a caller could ask of a real fixture: what it is looking for,
+/// and the literal line that answers it. The set is versioned data, so the gain
+/// scored selection produces is measured rather than asserted.
+#[derive(Debug, Deserialize)]
+struct FocusQuestion {
+    schema_version: String,
+    id: String,
+    fixture: String,
+    focus: String,
+    answer: String,
+}
+
+fn focus_questions() -> Vec<FocusQuestion> {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("evaluation/corpus/real/focus-questions.jsonl");
+    let questions = fs::read_to_string(path)
+        .expect("focus questions")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let question: FocusQuestion = serde_json::from_str(line).expect("focus question");
+            assert_eq!(question.schema_version, FOCUS_QUESTION_SCHEMA_VERSION);
+            assert!(
+                question.focus.len() <= distill::MAX_FOCUS_BYTES,
+                "{} exceeds the contract focus bound",
+                question.id
+            );
+            question
+        })
+        .collect::<Vec<_>>();
+    assert!(questions.len() >= 12, "{} focus questions", questions.len());
+    questions
+}
+
+/// US-016: on the questions the corpus carries, scored selection retains the
+/// answer-bearing line in more cases than unscored selection does, at the same
+/// budget, and it never loses an answer the unscored projection already held.
+#[test]
+fn scored_selection_answers_more_corpus_questions_than_unscored() {
+    let (_directory, engine) = engine();
+    let corpus = real_corpus();
+    let mut unscored_hits = 0_usize;
+    let mut scored_hits = 0_usize;
+    let mut outcomes = Vec::new();
+
+    for question in focus_questions() {
+        let (_, bytes) = corpus
+            .iter()
+            .find(|(fixture, _)| fixture.id == question.fixture)
+            .unwrap_or_else(|| panic!("{} names an unknown fixture", question.id));
+        let body = std::str::from_utf8(bytes).expect("UTF-8 fixture");
+        assert!(
+            body.contains(&question.answer),
+            "{} names a line the fixture does not carry",
+            question.id
+        );
+
+        let unscored = engine
+            .handle(request(&question.id, bytes.clone()))
+            .unwrap_or_else(|failure| panic!("{} unscored: {failure}", question.id));
+        let mut focused = request(&question.id, bytes.clone());
+        focused.focus = Some(question.focus.clone());
+        let scored = engine
+            .handle(focused)
+            .unwrap_or_else(|failure| panic!("{} scored: {failure}", question.id));
+
+        assert!(scored.receipt.preservation.focus_applied, "{}", question.id);
+        assert!(
+            scored
+                .receipt
+                .visible_count
+                .saturating_add(HOOK_RESERVED_ENVELOPE)
+                <= HOOK_TOTAL_VISIBLE_LIMIT,
+            "{} scored beyond the budget",
+            question.id
+        );
+
+        let held = unscored.visible.bytes.contains(&question.answer);
+        let found = scored.visible.bytes.contains(&question.answer);
+        unscored_hits += usize::from(held);
+        scored_hits += usize::from(found);
+        outcomes.push(format!(
+            "{}{} {}",
+            if held { 'u' } else { '-' },
+            if found { 'f' } else { '-' },
+            question.id
+        ));
+        // A focus orders what the budget buys; it must not cost an answer the
+        // same budget already delivered without one.
+        assert!(
+            found || !held,
+            "{} lost an answer the unscored projection retained",
+            question.id
+        );
+    }
+
+    eprintln!("focus questions: unscored={unscored_hits} scored={scored_hits} {outcomes:?}");
+    assert!(
+        scored_hits > unscored_hits,
+        "scored selection answered {scored_hits} questions against {unscored_hits} unscored"
+    );
+}
+
+/// US-016 and US-017: the command that produced a fixture is exactly what the
+/// Codex hook derives a focus from, so every over-budget fixture is projected
+/// under one. The EP-002 budget guarantee, the receipt partition, and the span
+/// ceiling must all survive intent-conditioned selection.
+#[test]
+fn a_derived_focus_keeps_the_executed_path_spending_its_budget() {
+    let (_directory, engine) = engine();
+    let mut utilization = Vec::new();
+
+    for (fixture, bytes) in real_corpus() {
+        let unfocused = engine
+            .handle(request(&fixture.id, bytes.clone()))
+            .unwrap_or_else(|failure| panic!("{} unfocused: {failure}", fixture.id));
+        let mut focused = request(&fixture.id, bytes.clone());
+        focused.focus = Some(distill_focus(&fixture.command));
+        let outcome = engine
+            .handle(focused)
+            .unwrap_or_else(|failure| panic!("{} focused: {failure}", fixture.id));
+        let receipt = &outcome.receipt;
+
+        assert!(receipt.preservation.focus_applied, "{}", fixture.id);
+        assert!(
+            receipt.visible_count.saturating_add(HOOK_RESERVED_ENVELOPE)
+                <= HOOK_TOTAL_VISIBLE_LIMIT,
+            "{} exceeded the total visible limit",
+            fixture.id
+        );
+        assert!(receipt.retained_spans.len() <= 257, "{}", fixture.id);
+        assert!(receipt.omitted_spans.len() <= 257, "{}", fixture.id);
+        assert_partition(
+            bytes.len() as u64,
+            &receipt.retained_spans,
+            &receipt.omitted_spans,
+            &fixture.id,
+        );
+        // A focus never changes which policy ran, nor what the observation is
+        // accounted as: only the order the budget buys in.
+        assert_eq!(
+            receipt.preservation.applied_profile, unfocused.receipt.preservation.applied_profile,
+            "{}",
+            fixture.id
+        );
+        assert_eq!(
+            receipt.original_count, unfocused.receipt.original_count,
+            "{}",
+            fixture.id
+        );
+        assert_eq!(
+            receipt.fidelity, unfocused.receipt.fidelity,
+            "{}",
+            fixture.id
+        );
+
+        if receipt.original_count > HOOK_PAYLOAD_LIMIT {
+            utilization.push((
+                basis_points(receipt.visible_count, HOOK_PAYLOAD_LIMIT),
+                fixture.id,
+            ));
+        }
+    }
+
+    utilization.sort_unstable();
+    let median = utilization[(utilization.len() - 1) / 2].0;
+    eprintln!(
+        "focused executed path: min={} median={median}",
+        utilization[0].0
+    );
+    assert!(
+        median >= UTILIZATION_FLOOR_BASIS_POINTS,
+        "focused median budget utilization was {}.{:02}%, below the {}% floor; lowest fixture {}",
+        median / 100,
+        median % 100,
+        UTILIZATION_FLOOR_BASIS_POINTS / 100,
+        utilization[0].1
+    );
+}
+
+/// The focus the Codex hook would derive from the command that produced a
+/// fixture, bounded exactly as the adapter bounds it.
+fn distill_focus(command: &[String]) -> String {
+    let mut focus = command.join(" ");
+    if focus.len() > distill::MAX_FOCUS_BYTES {
+        let mut boundary = distill::MAX_FOCUS_BYTES;
+        while !focus.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        focus.truncate(boundary);
+    }
+    focus
 }

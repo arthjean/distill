@@ -1,0 +1,12 @@
+{"schema_version": "distill.real-corpus-focus/v1", "id": "artifact-expiration-order", "fixture": "source-artifact-rs", "focus": "where is expires_at compared with created_at", "answer": "if expires_at <= created_at {"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "cli-broken-pipe-exit", "fixture": "source-cli-rs", "focus": "which exit code does a broken output pipe produce", "answer": "return BROKEN_PIPE_EXIT;"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "log-commit-subject", "fixture": "log-git-log-stat", "focus": "which commit split the oversized module suites", "answer": "refactor(tests): split oversized module suites"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "mcp-frame-drain", "fixture": "source-mcp-rs", "focus": "how does drain_line resynchronize an oversized frame", "answer": "fn drain_line<R: BufRead>(reader: &mut R)"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "projection-prefix-fallback", "fixture": "source-projection-rs", "focus": "where is fitting_prefix_validated computed", "answer": "fn fitting_prefix_validated(text: &str"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "diff-integrity-move", "fixture": "diff-git-scoped", "focus": "where did artifact integrity verification move", "answer": "artifact integrity verification failed"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "corpus-fixture-digest", "fixture": "source-corpus-lib-mjs", "focus": "how is the sha256 digest of a fixture computed", "answer": "sha256"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "protocol-invocation-ceiling", "fixture": "json-release-protocol", "focus": "what is the invocation ceiling of the protocol", "answer": "invocation"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "cli-duplicate-root-id", "fixture": "source-cli-rs", "focus": "what does the parser say when two roots share an ID", "answer": "root IDs must be nonempty and unique"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "projection-plan-fits", "fixture": "source-projection-rs", "focus": "where is plan_fits defined", "answer": "fn plan_fits("}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "mcp-run-annotations", "fixture": "source-mcp-rs", "focus": "which published tool declares destructiveHint", "answer": "\"destructiveHint\": true"}
+{"schema_version": "distill.real-corpus-focus/v1", "id": "patch-default-request", "fixture": "diff-git-format-patch", "focus": "which hunk introduces default_request in mcp.rs", "answer": "let request = default_request("}
