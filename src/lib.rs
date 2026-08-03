@@ -10,19 +10,23 @@ mod request_policy;
 mod runtime;
 mod types;
 
-pub use contract::{MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES};
+pub use contract::{
+    DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_IDENTIFIER_BYTES, MAX_PATH_BYTES,
+    MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES,
+};
 pub use request_policy::{
     MAX_PROCESS_ARGUMENT_BYTES, MAX_PROCESS_ARGUMENTS, MAX_PROCESS_EXECUTABLE_BYTES,
-    MAX_PROCESS_TIMEOUT_MS, MAX_SOURCE_BYTES, MIN_PROCESS_TIMEOUT_MS,
+    MAX_PROCESS_TIMEOUT_MS, MAX_SOURCE_BYTES, MIN_PROCESS_TIMEOUT_MS, validate_artifact_selector,
 };
 pub use types::{
-    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ArtifactTrace, BinaryPolicy, Budget,
-    ByteSpan, ByteString, CL100K_PROFILE, CONTRACT_VERSION, CountUnit, EngineConfig, EngineStatus,
-    Failure, FailureCode, Fidelity, GC_SCHEMA_VERSION, GarbageCollection,
-    MAX_ARTIFACT_LINEAGE_BYTES, MAX_LINEAGE_BYTES, Outcome, POLICY_VERSION, PROJECTION_VERSION,
-    PreservationResult, ProcessReceipt, ProcessStream, RECEIPT_SCHEMA_VERSION,
-    RESTORE_SCHEMA_VERSION, Receipt, Request, RestoredArtifact, Retention, STATUS_SCHEMA_VERSION,
-    ScalarValue, Source, SourceVariant, StreamEvent, TRACE_SCHEMA_VERSION, VisiblePayload,
+    ARTIFACT_SCHEMA_VERSION, AcquisitionReceipt, ArtifactRef, ArtifactSelector, ArtifactTrace,
+    BinaryPolicy, Budget, ByteSpan, ByteString, CL100K_PROFILE, CONTRACT_VERSION,
+    CONTRACT_VERSION_V2, CountUnit, EngineConfig, EngineStatus, Failure, FailureCode, Fidelity,
+    GC_SCHEMA_VERSION, GarbageCollection, MAX_ARTIFACT_LINEAGE_BYTES, MAX_LINEAGE_BYTES, Outcome,
+    POLICY_VERSION, PROJECTION_VERSION, PreservationResult, ProcessReceipt, ProcessStream,
+    RECEIPT_SCHEMA_VERSION, RESTORE_SCHEMA_VERSION, Receipt, Request, RestoredArtifact, Retention,
+    STATUS_SCHEMA_VERSION, ScalarValue, Source, SourceVariant, StreamEvent, TRACE_SCHEMA_VERSION,
+    VisiblePayload, supported_contract_version,
 };
 
 use artifact::ArtifactStore;
@@ -139,7 +143,7 @@ impl Engine {
             .map_err(|failure| failure.for_request(&request.request_id))?;
 
         let (acquired, artifact) = match &request.source {
-            request_policy::ValidatedSource::Artifact(artifact) => {
+            request_policy::ValidatedSource::Artifact(artifact, _) => {
                 let stored = self
                     .store
                     .retrieve(artifact, now)
@@ -193,15 +197,20 @@ impl Engine {
             }
         };
 
-        let projection =
-            projection::project_validated(&acquired.bytes, projection_spec).map_err(|failure| {
-                let failure = failure.for_request(&request.request_id);
-                if failure.code == FailureCode::BudgetUnsatisfiable {
-                    failure.with_artifact(artifact.clone())
-                } else {
-                    failure
-                }
-            })?;
+        let projected = match &request.source {
+            request_policy::ValidatedSource::Artifact(_, Some(selection)) => {
+                projection::project_selection(&acquired.bytes, selection, projection_spec)
+            }
+            _ => projection::project_validated(&acquired.bytes, projection_spec),
+        };
+        let projection = projected.map_err(|failure| {
+            let failure = failure.for_request(&request.request_id);
+            if failure.code == FailureCode::BudgetUnsatisfiable {
+                failure.with_artifact(artifact.clone())
+            } else {
+                failure
+            }
+        })?;
         build_outcome(request, acquired, artifact, projection, projection_spec)
     }
 

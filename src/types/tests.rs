@@ -648,6 +648,7 @@ fn every_source_variant_and_failure_round_trips() {
         },
         Source::Artifact {
             artifact: artifact(),
+            selector: None,
         },
     ];
     for source in variants {

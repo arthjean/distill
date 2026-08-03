@@ -1,9 +1,13 @@
 use crate::{
-    contract::{MAX_PATH_BYTES, is_lower_hex, valid_correlation_id, valid_identifier},
-    projection::ProjectionSpec,
+    contract::{
+        DEFAULT_SELECTOR_CONTEXT_LINES, DEFAULT_SELECTOR_MATCHES, MAX_PATH_BYTES,
+        MAX_SELECTOR_CONTEXT_LINES, MAX_SELECTOR_MATCHES, MAX_SELECTOR_PATTERN_BYTES, is_lower_hex,
+        valid_correlation_id, valid_identifier,
+    },
+    projection::{ProjectionSpec, Selection},
     types::{
-        ArtifactRef, ByteString, CONTRACT_VERSION, EngineConfig, Failure, FailureCode, Request,
-        Retention, Source,
+        ArtifactRef, ArtifactSelector, ByteString, CONTRACT_VERSION, EngineConfig, Failure,
+        FailureCode, Request, Retention, Source, supported_contract_version,
     },
 };
 
@@ -26,7 +30,7 @@ pub(crate) struct ValidatedRequest {
 #[derive(Clone, Debug)]
 pub(crate) enum ValidatedSource {
     Local(LocalSource),
-    Artifact(ArtifactRef),
+    Artifact(ArtifactRef, Option<Selection>),
 }
 
 #[derive(Clone, Debug)]
@@ -87,7 +91,7 @@ pub(crate) fn prepare(
     request: Request,
     config: &EngineConfig,
 ) -> Result<ValidatedRequest, Failure> {
-    if request.contract_version != CONTRACT_VERSION {
+    if !supported_contract_version(&request.contract_version) {
         return Err(correlate(
             &request,
             Failure::new(
@@ -96,6 +100,7 @@ pub(crate) fn prepare(
             ),
         ));
     }
+    let selector_supported = request.contract_version == CONTRACT_VERSION;
     if !valid_correlation_id(&request.request_id) {
         return Err(Failure::new(
             FailureCode::InvalidRequest,
@@ -190,7 +195,7 @@ pub(crate) fn prepare(
                 environment_profile,
             }))
         }
-        Source::Artifact { artifact } => {
+        Source::Artifact { artifact, selector } => {
             if artifact.id.len() != 32
                 || !artifact.id.bytes().all(is_lower_hex)
                 || artifact.source_sha256.len() != 64
@@ -198,7 +203,19 @@ pub(crate) fn prepare(
             {
                 return Err(invalid("artifact reference metadata is invalid"));
             }
-            ValidatedSource::Artifact(artifact)
+            if selector.is_some() && !selector_supported {
+                return Err(Failure::new(
+                    FailureCode::SchemaUnsupported,
+                    "artifact selector requires the current request contract version",
+                )
+                .for_request(&request.request_id));
+            }
+            let selection = selector
+                .as_ref()
+                .map(validate_selector)
+                .transpose()
+                .map_err(|failure| failure.for_request(&request.request_id))?;
+            ValidatedSource::Artifact(artifact, selection)
         }
     };
     let retention = validate_retention_shape(&request.retention)
@@ -216,6 +233,69 @@ pub(crate) fn prepare(
 #[cfg(test)]
 pub(crate) fn validate(request: &Request, config: &EngineConfig) -> Result<(), Failure> {
     prepare(request.clone(), config).map(|_| ())
+}
+
+/// Checks an artifact selector against its documented bounds without preparing
+/// a request. Adapters call it before resolving an artifact reference, so an
+/// out-of-bounds selector costs no store read on any surface.
+pub fn validate_artifact_selector(selector: &ArtifactSelector) -> Result<(), Failure> {
+    validate_selector(selector).map(|_| ())
+}
+
+/// Resolves an artifact selector against its documented bounds. Every check
+/// happens here, before any store read, and a pattern stays inert literal text.
+pub(crate) fn validate_selector(selector: &ArtifactSelector) -> Result<Selection, Failure> {
+    let invalid = |message: &str| Failure::new(FailureCode::InvalidRequest, message);
+    match selector {
+        ArtifactSelector::Lines {
+            start_line,
+            line_count,
+        } => {
+            if *start_line == 0 || *line_count == 0 {
+                return Err(invalid(
+                    "line selector requires a 1-based start line and a positive line count",
+                ));
+            }
+            Ok(Selection::Lines {
+                start_line: *start_line,
+                line_count: *line_count,
+            })
+        }
+        ArtifactSelector::Pattern {
+            pattern,
+            before_lines,
+            after_lines,
+            max_matches,
+        } => {
+            if pattern.0.is_empty() || pattern.0.len() > MAX_SELECTOR_PATTERN_BYTES {
+                return Err(invalid(
+                    "pattern is empty or exceeds the documented maximum length",
+                ));
+            }
+            let pattern = std::str::from_utf8(&pattern.0)
+                .map_err(|_| invalid("pattern must be valid UTF-8 literal text"))?;
+            let before_lines = before_lines.unwrap_or(DEFAULT_SELECTOR_CONTEXT_LINES);
+            let after_lines = after_lines.unwrap_or(DEFAULT_SELECTOR_CONTEXT_LINES);
+            if before_lines > MAX_SELECTOR_CONTEXT_LINES || after_lines > MAX_SELECTOR_CONTEXT_LINES
+            {
+                return Err(invalid(
+                    "pattern context exceeds the documented maximum line count",
+                ));
+            }
+            let max_matches = max_matches.unwrap_or(DEFAULT_SELECTOR_MATCHES);
+            if max_matches == 0 || max_matches > MAX_SELECTOR_MATCHES {
+                return Err(invalid(
+                    "match count must be positive and within the documented maximum",
+                ));
+            }
+            Ok(Selection::Pattern {
+                pattern: pattern.to_owned(),
+                before_lines,
+                after_lines,
+                max_matches,
+            })
+        }
+    }
 }
 
 pub(crate) fn validate_process(
@@ -540,7 +620,8 @@ mod tests {
         assert_eq!(
             validate(
                 &request(Source::Artifact {
-                    artifact: invalid_artifact
+                    artifact: invalid_artifact,
+                    selector: None,
                 }),
                 &config,
             )
@@ -553,7 +634,8 @@ mod tests {
         assert_eq!(
             validate(
                 &request(Source::Artifact {
-                    artifact: invalid_artifact
+                    artifact: invalid_artifact,
+                    selector: None,
                 }),
                 &config,
             )
@@ -566,7 +648,8 @@ mod tests {
         assert_eq!(
             validate(
                 &request(Source::Artifact {
-                    artifact: invalid_artifact
+                    artifact: invalid_artifact,
+                    selector: None,
                 }),
                 &config,
             )
@@ -579,7 +662,8 @@ mod tests {
         assert_eq!(
             validate(
                 &request(Source::Artifact {
-                    artifact: invalid_artifact
+                    artifact: invalid_artifact,
+                    selector: None,
                 }),
                 &config,
             )

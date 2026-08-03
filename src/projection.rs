@@ -4,6 +4,10 @@ use crate::{
 };
 use tiktoken_rs::cl100k_base_singleton;
 
+mod retrieval;
+
+pub(crate) use retrieval::Selection;
+
 const MAX_REDUCER_SPANS: usize = 256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -252,6 +256,10 @@ pub(crate) struct ProjectionSpec {
     counter: Counter,
     total_visible_limit: u64,
     reserved_envelope: u64,
+    /// The largest retained or omitted partition the plan may return. Selected
+    /// projection lowers it, because translating spans back into source offsets
+    /// can split one planned span at every region boundary.
+    span_ceiling: usize,
 }
 
 impl ProjectionSpec {
@@ -294,7 +302,17 @@ impl ProjectionSpec {
             counter,
             total_visible_limit: budget.total_visible_limit,
             reserved_envelope: budget.reserved_envelope,
+            span_ceiling: MAX_RECEIPT_SPANS,
         })
+    }
+
+    /// Reserves room for the spans that translation back into source offsets
+    /// can add, so a selected projection cannot return an unpersistable receipt.
+    fn with_region_headroom(self, regions: usize) -> Self {
+        Self {
+            span_ceiling: MAX_RECEIPT_SPANS.saturating_sub(regions).max(1),
+            ..self
+        }
     }
 
     pub(crate) fn unit(self) -> CountUnit {
@@ -399,6 +417,75 @@ pub(crate) fn project_validated(
         return project_text(source, text, spec, payload_limit, original_count);
     }
     project_binary(source, spec, payload_limit)
+}
+
+/// Projects a bounded selection of a committed artifact through the same
+/// planner, then translates the retained spans back into offsets in the
+/// original source, so the receipt still partitions the artifact exactly and
+/// still accounts for everything the caller cannot see.
+pub(crate) fn project_selection(
+    source: &[u8],
+    selection: &Selection,
+    spec: ProjectionSpec,
+) -> Result<Projection, Failure> {
+    let text = std::str::from_utf8(source).map_err(|_| {
+        Failure::new(
+            FailureCode::InvalidRequest,
+            "artifact selector requires a UTF-8 source",
+        )
+    })?;
+    let original_count = spec.count(text);
+    let regions = retrieval::select_regions(text, selection);
+    if regions.is_empty() {
+        return Ok(Projection {
+            visible: String::new(),
+            original_count,
+            visible_count: 0,
+            fidelity: Fidelity::Extractive,
+            retained_spans: Vec::new(),
+            omitted_spans: complement(source.len(), &[]),
+            mandatory_fact_ids: Vec::new(),
+        });
+    }
+
+    let selected = retrieval::render_regions(source, &regions);
+    let inner = project_validated(&selected, spec.with_region_headroom(regions.len()))?;
+    let fidelity = match inner.fidelity {
+        Fidelity::Exact if covers_source(&regions, source.len()) => Fidelity::Exact,
+        Fidelity::Exact | Fidelity::Extractive => Fidelity::Extractive,
+        Fidelity::Encoded | Fidelity::MetadataOnly => {
+            return Err(Failure::new(
+                FailureCode::InvariantBreach,
+                "line-aligned selection produced non-UTF-8 content",
+            ));
+        }
+    };
+
+    let retained_spans = retrieval::translate_spans(&regions, &inner.retained_spans);
+    let omitted_spans = complement(source.len(), &retained_spans);
+    if retained_spans.len() > MAX_RECEIPT_SPANS || omitted_spans.len() > MAX_RECEIPT_SPANS {
+        return Err(Failure::new(
+            FailureCode::InvariantBreach,
+            "selected receipt exceeds the persisted span limit",
+        ));
+    }
+    Ok(Projection {
+        visible: inner.visible,
+        original_count,
+        visible_count: inner.visible_count,
+        fidelity,
+        retained_spans,
+        omitted_spans,
+        mandatory_fact_ids: mandatory_spans(&selected, spec.policy)?
+            .into_iter()
+            .flat_map(|span| retrieval::translate_spans(&regions, &[span]))
+            .map(|span| fact_id(spec.policy.id, span))
+            .collect(),
+    })
+}
+
+fn covers_source(regions: &[ByteSpan], source_len: usize) -> bool {
+    matches!(regions, [only] if only.start == 0 && only.end == source_len as u64)
 }
 
 fn project_text(
@@ -597,7 +684,7 @@ fn accept_candidate(
     payload_limit: u64,
 ) -> SpanPlan {
     let proposed = plan.with_candidate(spec, text, candidate);
-    if receipt_shape_fits(source_len, &proposed.spans) {
+    if receipt_shape_fits(spec, source_len, &proposed.spans) {
         return if proposed.visible_count <= payload_limit {
             proposed
         } else {
@@ -611,7 +698,9 @@ fn accept_candidate(
         return plan;
     };
     let proposed = plan.with_candidate(spec, text, bridged);
-    if receipt_shape_fits(source_len, &proposed.spans) && proposed.visible_count <= payload_limit {
+    if receipt_shape_fits(spec, source_len, &proposed.spans)
+        && proposed.visible_count <= payload_limit
+    {
         proposed
     } else {
         plan
@@ -692,7 +781,7 @@ fn fill_payload_budget(
             };
             let proposed = plan.with_candidate(spec, text, target);
             if proposed.visible_count > payload_limit
-                || !receipt_shape_fits(source_len, &proposed.spans)
+                || !receipt_shape_fits(spec, source_len, &proposed.spans)
             {
                 frontier.active = false;
                 continue;
@@ -871,8 +960,8 @@ fn complement_len(source_len: usize, retained: &[PlanSpan]) -> usize {
     omitted
 }
 
-fn receipt_shape_fits(source_len: usize, retained: &[PlanSpan]) -> bool {
-    retained.len() <= MAX_RECEIPT_SPANS && complement_len(source_len, retained) <= MAX_RECEIPT_SPANS
+fn receipt_shape_fits(spec: ProjectionSpec, source_len: usize, retained: &[PlanSpan]) -> bool {
+    retained.len() <= spec.span_ceiling && complement_len(source_len, retained) <= spec.span_ceiling
 }
 
 /// The longest prefix that fits, with its exact count, so the fallback plan
@@ -951,6 +1040,34 @@ pub(crate) fn fuzz_projection(data: &[u8]) {
             ..
         })
     ) {
+        std::process::abort();
+    }
+
+    // The same untrusted bytes, read through a bounded selector whose literal
+    // pattern is itself drawn from them.
+    let pattern = String::from_utf8_lossy(
+        &data[..data.len().min(crate::contract::MAX_SELECTOR_PATTERN_BYTES)],
+    )
+    .into_owned();
+    if !pattern.is_empty()
+        && let Ok(spec) = ProjectionSpec::new("plain-text/v1", &budget)
+        && matches!(
+            project_selection(
+                data,
+                &Selection::Pattern {
+                    pattern,
+                    before_lines: 2,
+                    after_lines: 2,
+                    max_matches: 8,
+                },
+                spec,
+            ),
+            Err(Failure {
+                code: FailureCode::InvariantBreach,
+                ..
+            })
+        )
+    {
         std::process::abort();
     }
 

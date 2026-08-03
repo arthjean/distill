@@ -201,6 +201,7 @@ fn file_capture_rejects_unknown_non_regular_oversized_and_invalid_utf8_sources()
     assert_eq!(
         runtime
             .acquire_source(&Source::Artifact {
+                selector: None,
                 artifact: crate::types::ArtifactRef {
                     schema_version: crate::types::ARTIFACT_SCHEMA_VERSION.to_owned(),
                     id: "a".repeat(32),

@@ -2,8 +2,8 @@
 #![allow(clippy::expect_used)]
 
 use distill::{
-    Budget, ByteString, CONTRACT_VERSION, CountUnit, Engine, EngineConfig, Request, Retention,
-    Source,
+    ArtifactSelector, Budget, ByteString, CONTRACT_VERSION, CountUnit, Engine, EngineConfig,
+    Request, Retention, Source,
 };
 use std::{
     io,
@@ -35,11 +35,28 @@ fn capture_projection_restore_and_gc_run_under_a_network_deny_filter() {
         .handle(request(
             "network-restore",
             Source::Artifact {
-                artifact: projected.artifact,
+                artifact: projected.artifact.clone(),
+                selector: None,
             },
         ))
         .expect("restore");
     assert_eq!(restored.visible.bytes, "raw source");
+
+    let retrieved = engine
+        .handle(request(
+            "network-retrieval",
+            Source::Artifact {
+                artifact: projected.artifact,
+                selector: Some(ArtifactSelector::Pattern {
+                    pattern: ByteString::from_utf8("source"),
+                    before_lines: None,
+                    after_lines: None,
+                    max_matches: None,
+                }),
+            },
+        ))
+        .expect("bounded retrieval");
+    assert_eq!(retrieved.visible.bytes, "raw source");
 }
 
 fn request(request_id: &str, source: Source) -> Request {

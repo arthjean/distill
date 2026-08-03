@@ -40,6 +40,7 @@ fn exact_content_round_trips_through_artifact_source() {
     second_request.request_id = "request-2".to_owned();
     second_request.source = Source::Artifact {
         artifact: first.artifact.clone(),
+        selector: None,
     };
     let second = engine.handle(second_request).expect("artifact outcome");
     assert_eq!(second.visible.bytes, "exact content");
@@ -229,7 +230,10 @@ fn request_validation_exercises_every_bounded_source_field() {
         },
     ] {
         candidate = request(b"x", 1);
-        candidate.source = Source::Artifact { artifact };
+        candidate.source = Source::Artifact {
+            artifact,
+            selector: None,
+        };
         rejected(&candidate, FailureCode::InvalidRequest);
     }
 }
@@ -551,13 +555,28 @@ fn partial_process_capture_is_committed_but_never_projected_as_complete() {
     recovery.request_id = "recovery".to_owned();
     recovery.source = Source::Artifact {
         artifact: artifact.clone(),
+        selector: None,
     };
     let rejected = engine
         .handle(recovery)
         .expect_err("partial artifacts are diagnosis-only");
     assert_eq!(rejected.code, FailureCode::AcquisitionFailed);
-    assert_eq!(rejected.artifact, Some(artifact));
+    assert_eq!(rejected.artifact, Some(artifact.clone()));
     assert!(rejected.acquisition.expect("partial metadata").partial);
+
+    // US-007: a selector cannot present a partial artifact as a complete region.
+    let selected = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Lines {
+            start_line: 1,
+            line_count: 1,
+        },
+        64,
+    )
+    .expect_err("partial artifacts stay diagnosis-only under a selector");
+    assert_eq!(selected.code, FailureCode::AcquisitionFailed);
+    assert!(selected.acquisition.expect("partial metadata").partial);
 }
 
 #[test]
@@ -605,6 +624,414 @@ fn clean_acquisition_failures_include_safe_deterministic_metadata() {
     assert_eq!(
         spawn_receipt.process.expect("process").working_directory,
         "workspace:<0 path bytes>"
+    );
+}
+
+fn committed(engine: &Engine, source: &str) -> ArtifactRef {
+    let mut capture = request(source.as_bytes(), source.len() as u64 + 1);
+    capture.request_id = "capture".to_owned();
+    engine.handle(capture).expect("committed source").artifact
+}
+
+fn selected(
+    engine: &Engine,
+    artifact: &ArtifactRef,
+    selector: ArtifactSelector,
+    limit: u64,
+) -> Result<Outcome, Failure> {
+    let mut retrieval = request(b"unused", limit);
+    retrieval.request_id = "retrieval".to_owned();
+    retrieval.source = Source::Artifact {
+        artifact: artifact.clone(),
+        selector: Some(selector),
+    };
+    engine.handle(retrieval)
+}
+
+fn covers_exactly(receipt: &Receipt, source_len: usize) {
+    let mut coverage = vec![0_u8; source_len];
+    for span in receipt
+        .retained_spans
+        .iter()
+        .chain(receipt.omitted_spans.iter())
+    {
+        for byte in &mut coverage[span.start as usize..span.end as usize] {
+            *byte += 1;
+        }
+    }
+    assert!(coverage.iter().all(|count| *count == 1));
+}
+
+/// US-007: a line selector returns only its region, projected under the request
+/// budget, with a receipt that still partitions the whole committed source.
+#[test]
+fn a_line_selector_returns_its_region_in_original_source_offsets() {
+    let (_directory, engine) = fixture();
+    let source = "alpha\nbravo\ncharlie\ndelta\necho\n";
+    let artifact = committed(&engine, source);
+
+    let outcome = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Lines {
+            start_line: 2,
+            line_count: 2,
+        },
+        64,
+    )
+    .expect("line selection");
+
+    assert_eq!(outcome.visible.bytes, "bravo\ncharlie\n");
+    assert_eq!(outcome.receipt.fidelity, Fidelity::Extractive);
+    assert_eq!(
+        outcome.receipt.retained_spans,
+        vec![ByteSpan { start: 6, end: 20 }]
+    );
+    assert_eq!(
+        outcome.receipt.omitted_spans,
+        vec![
+            ByteSpan { start: 0, end: 6 },
+            ByteSpan {
+                start: 20,
+                end: source.len() as u64
+            }
+        ]
+    );
+    // Accounting stays anchored on the complete artifact, so the caller sees
+    // everything outside the selection as omitted.
+    assert_eq!(outcome.receipt.original_count, source.len() as u64);
+    assert_eq!(outcome.receipt.visible_count, 14);
+    covers_exactly(&outcome.receipt, source.len());
+
+    // A range past the end of the source is an empty success, not a failure.
+    let empty = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Lines {
+            start_line: 99,
+            line_count: 1,
+        },
+        64,
+    )
+    .expect("empty selection");
+    assert_eq!(empty.visible.bytes, "");
+    assert_eq!(empty.receipt.visible_count, 0);
+    assert_eq!(empty.receipt.original_count, source.len() as u64);
+    covers_exactly(&empty.receipt, source.len());
+}
+
+/// US-007: a literal pattern selector returns the matching regions with their
+/// configured context, capped at the documented maximum match count.
+#[test]
+fn a_pattern_selector_returns_matching_regions_with_bounded_context() {
+    let (_directory, engine) = fixture();
+    let source = "alpha\nbravo\nNEEDLE one\ncharlie\ndelta\nNEEDLE two\necho\n";
+    let artifact = committed(&engine, source);
+
+    let contextual = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("NEEDLE"),
+            before_lines: Some(1),
+            after_lines: Some(0),
+            max_matches: None,
+        },
+        256,
+    )
+    .expect("pattern selection");
+    assert_eq!(
+        contextual.visible.bytes,
+        "bravo\nNEEDLE one\ndelta\nNEEDLE two\n"
+    );
+    assert_eq!(contextual.receipt.retained_spans.len(), 2);
+    assert_eq!(contextual.receipt.original_count, source.len() as u64);
+    covers_exactly(&contextual.receipt, source.len());
+
+    let capped = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("NEEDLE"),
+            before_lines: Some(0),
+            after_lines: Some(0),
+            max_matches: Some(1),
+        },
+        256,
+    )
+    .expect("capped pattern selection");
+    assert_eq!(capped.visible.bytes, "NEEDLE one\n");
+
+    // An absent literal selects nothing and stays a typed success.
+    let absent = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("ABSENT"),
+            before_lines: None,
+            after_lines: None,
+            max_matches: None,
+        },
+        256,
+    )
+    .expect("absent literal");
+    assert_eq!(absent.visible.bytes, "");
+    assert!(absent.receipt.retained_spans.is_empty());
+}
+
+/// US-007: an over-budget selection is projected under the request budget, not
+/// returned whole, and the receipt still partitions the source exactly.
+#[test]
+fn an_over_budget_selection_is_projected_under_the_request_budget() {
+    let (_directory, engine) = fixture();
+    let source = (0..400)
+        .map(|index| format!("line {index:03} of the committed observation\n"))
+        .collect::<String>();
+    let artifact = committed(&engine, &source);
+
+    let outcome = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Lines {
+            start_line: 100,
+            line_count: 200,
+        },
+        256,
+    )
+    .expect("over-budget selection");
+
+    assert_eq!(outcome.receipt.fidelity, Fidelity::Extractive);
+    assert!(outcome.receipt.visible_count <= 256);
+    assert_eq!(outcome.receipt.original_count, source.len() as u64);
+    covers_exactly(&outcome.receipt, source.len());
+    // Every retained byte comes from inside the selected region.
+    let region_start = source.find("line 099 ").expect("selection start") as u64;
+    let region_end = source.find("line 299 ").expect("selection end") as u64;
+    for span in &outcome.receipt.retained_spans {
+        assert!(span.start >= region_start && span.end <= region_end);
+    }
+}
+
+/// US-007: selector bounds are enforced before any store read, and an artifact
+/// whose bytes cannot be selected fails with the documented typed failure.
+#[test]
+fn selector_bounds_are_rejected_before_any_store_read() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let config = EngineConfig::local(directory.path().join("store/store.sqlite"));
+    let store_path = config.store_path.clone();
+    let engine = Engine::fixture(config, 1_000).expect("fixture engine");
+    let artifact = committed(&engine, "alpha\nbravo\n");
+    let records_before = engine.status().expect("status").store_records;
+
+    for selector in [
+        ArtifactSelector::Lines {
+            start_line: 0,
+            line_count: 1,
+        },
+        ArtifactSelector::Lines {
+            start_line: 1,
+            line_count: 0,
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString::default(),
+            before_lines: None,
+            after_lines: None,
+            max_matches: None,
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString(vec![b'x'; MAX_SELECTOR_PATTERN_BYTES + 1]),
+            before_lines: None,
+            after_lines: None,
+            max_matches: None,
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString(vec![0xff, 0xfe]),
+            before_lines: None,
+            after_lines: None,
+            max_matches: None,
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("alpha"),
+            before_lines: Some(MAX_SELECTOR_CONTEXT_LINES + 1),
+            after_lines: None,
+            max_matches: None,
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("alpha"),
+            before_lines: None,
+            after_lines: Some(MAX_SELECTOR_CONTEXT_LINES + 1),
+            max_matches: None,
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("alpha"),
+            before_lines: None,
+            after_lines: None,
+            max_matches: Some(0),
+        },
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("alpha"),
+            before_lines: None,
+            after_lines: None,
+            max_matches: Some(MAX_SELECTOR_MATCHES + 1),
+        },
+    ] {
+        let failure =
+            selected(&engine, &artifact, selector, 64).expect_err("out-of-bounds selector");
+        assert_eq!(failure.code, FailureCode::InvalidRequest);
+        assert_eq!(failure.request_id.as_deref(), Some("retrieval"));
+        assert!(failure.artifact.is_none());
+    }
+    assert_eq!(
+        engine.status().expect("status").store_records,
+        records_before
+    );
+    assert!(store_path.exists());
+
+    // Line ranges and literal text have no meaning over arbitrary bytes.
+    let mut binary = request(&[0xff, b'\n', 0xfe], 64);
+    binary.request_id = "binary".to_owned();
+    let binary = engine.handle(binary).expect("binary capture").artifact;
+    assert_eq!(
+        selected(
+            &engine,
+            &binary,
+            ArtifactSelector::Lines {
+                start_line: 1,
+                line_count: 1
+            },
+            64,
+        )
+        .expect_err("non-UTF-8 selection")
+        .code,
+        FailureCode::InvalidRequest
+    );
+}
+
+/// US-007: retrieval reuses the artifact source path, so its expired, unknown,
+/// corrupt, and partial failures stay exactly what they already were.
+#[test]
+fn selection_preserves_the_existing_artifact_failure_contract() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let config = EngineConfig::local(directory.path().join("store/store.sqlite"));
+    let engine = Engine::fixture(config.clone(), 1_000).expect("fixture engine");
+    let slice = || ArtifactSelector::Lines {
+        start_line: 1,
+        line_count: 1,
+    };
+    let mut capture = request(b"alpha\nbravo\n", 64);
+    capture.request_id = "capture".to_owned();
+    capture.retention = Retention {
+        expires_at: None,
+        ttl_seconds: Some(10),
+    };
+    let artifact = engine.handle(capture).expect("committed source").artifact;
+
+    let unknown = ArtifactRef {
+        id: "0".repeat(32),
+        ..artifact.clone()
+    };
+    assert_eq!(
+        selected(&engine, &unknown, slice(), 64)
+            .expect_err("unknown artifact")
+            .code,
+        FailureCode::ArtifactUnknown
+    );
+
+    let mismatched = ArtifactRef {
+        source_sha256: "b".repeat(64),
+        ..artifact.clone()
+    };
+    assert_eq!(
+        selected(&engine, &mismatched, slice(), 64)
+            .expect_err("mismatched digest")
+            .code,
+        FailureCode::ArtifactCorrupt
+    );
+
+    let later = Engine::fixture(config, 2_000).expect("engine past expiration");
+    assert_eq!(
+        selected(&later, &artifact, slice(), 64)
+            .expect_err("expired artifact")
+            .code,
+        FailureCode::ArtifactExpired
+    );
+}
+
+/// US-007: v3 adds only the optional selector, so a v2 request without one is
+/// unchanged and a v2 request with one is refused rather than silently honored.
+#[test]
+fn the_previous_contract_version_stays_accepted_without_a_selector() {
+    let (_directory, engine) = fixture();
+    let artifact = committed(&engine, "alpha\nbravo\n");
+
+    let mut legacy = request(b"unused", 64);
+    legacy.contract_version = CONTRACT_VERSION_V2.to_owned();
+    legacy.request_id = "legacy".to_owned();
+    legacy.source = Source::Artifact {
+        artifact: artifact.clone(),
+        selector: None,
+    };
+    let outcome = engine.handle(legacy.clone()).expect("v2 artifact request");
+    assert_eq!(outcome.visible.bytes, "alpha\nbravo\n");
+    assert_eq!(outcome.receipt.fidelity, Fidelity::Exact);
+
+    legacy.source = Source::Artifact {
+        artifact,
+        selector: Some(ArtifactSelector::Lines {
+            start_line: 1,
+            line_count: 1,
+        }),
+    };
+    assert_eq!(
+        engine.handle(legacy).expect_err("v2 selector").code,
+        FailureCode::SchemaUnsupported
+    );
+}
+
+/// US-007: a selection over the largest accepted observation stays inside the
+/// documented retrieval deadline and allocates a bounded multiple of its match
+/// payload.
+#[test]
+fn selection_over_the_largest_observation_stays_within_its_envelope() {
+    let (_directory, engine) = fixture();
+    let mut source = String::with_capacity(MAX_SOURCE_BYTES);
+    while source.len() < MAX_SOURCE_BYTES - 64 {
+        source.push_str("ordinary observation line without the literal\n");
+    }
+    source.push_str("DISTILL_RETRIEVAL_NEEDLE tail\n");
+    source.truncate(MAX_SOURCE_BYTES);
+    let artifact = committed(&engine, &source);
+
+    let started = std::time::Instant::now();
+    let outcome = selected(
+        &engine,
+        &artifact,
+        ArtifactSelector::Pattern {
+            pattern: ByteString::from_utf8("DISTILL_RETRIEVAL_NEEDLE"),
+            before_lines: Some(MAX_SELECTOR_CONTEXT_LINES),
+            after_lines: Some(MAX_SELECTOR_CONTEXT_LINES),
+            max_matches: Some(MAX_SELECTOR_MATCHES),
+        },
+        4_096,
+    )
+    .expect("large artifact search");
+    let elapsed = started.elapsed();
+
+    assert!(outcome.visible.bytes.contains("DISTILL_RETRIEVAL_NEEDLE"));
+    assert!(outcome.receipt.visible_count <= 4_096);
+    // At most 32 matches of at most 33 lines each bounds the selected payload
+    // far below the source, whatever the artifact size.
+    let selected_bytes: u64 = outcome
+        .receipt
+        .retained_spans
+        .iter()
+        .map(|span| span.end - span.start)
+        .sum();
+    assert!(selected_bytes <= 4_096);
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "retrieval over {} bytes took {elapsed:?}",
+        source.len()
     );
 }
 

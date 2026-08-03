@@ -2,7 +2,15 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{collections::BTreeMap, fmt, path::PathBuf};
 
-pub const CONTRACT_VERSION: &str = "distill.context/v2";
+pub const CONTRACT_VERSION: &str = "distill.context/v3";
+/// The preceding contract stays accepted unchanged. v3 adds only the optional
+/// artifact selector, so a v2 request that names none behaves identically.
+pub const CONTRACT_VERSION_V2: &str = "distill.context/v2";
+
+#[must_use]
+pub fn supported_contract_version(version: &str) -> bool {
+    version == CONTRACT_VERSION || version == CONTRACT_VERSION_V2
+}
 pub const ARTIFACT_SCHEMA_VERSION: &str = "distill.artifact/v1";
 pub const RECEIPT_SCHEMA_VERSION: &str = "distill.receipt/v1";
 pub const RESTORE_SCHEMA_VERSION: &str = "distill.restore/v1";
@@ -120,7 +128,7 @@ impl Request {
             serde_json::from_slice(line).map_err(|_| correlated(malformed()))?;
         if probe
             .contract_version
-            .is_some_and(|version| version != CONTRACT_VERSION)
+            .is_some_and(|version| !supported_contract_version(version))
         {
             return Err(correlated(Failure::new(
                 FailureCode::SchemaUnsupported,
@@ -162,6 +170,30 @@ pub enum Source {
     },
     Artifact {
         artifact: ArtifactRef,
+        /// Bounded retrieval over the committed source, added by
+        /// `distill.context/v3`. Absent means the whole artifact is projected.
+        #[serde(default)]
+        selector: Option<ArtifactSelector>,
+    },
+}
+
+/// A bounded region request over a committed artifact. Both variants describe
+/// data, never a pattern language: literal text only.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ArtifactSelector {
+    Lines {
+        start_line: u64,
+        line_count: u64,
+    },
+    Pattern {
+        pattern: ByteString,
+        #[serde(default)]
+        before_lines: Option<u64>,
+        #[serde(default)]
+        after_lines: Option<u64>,
+        #[serde(default)]
+        max_matches: Option<u64>,
     },
 }
 

@@ -687,6 +687,64 @@ fn an_oversized_first_line_keeps_the_prefix_fallback() {
     assert!(outcome.visible_count <= 180);
 }
 
+/// US-007: a selection whose plan fragments inside many regions still returns a
+/// receipt both persisted partitions can hold, in original source offsets.
+#[test]
+fn a_fragmented_selection_holds_the_receipt_span_ceiling() {
+    let mut source = String::new();
+    for block in 0..crate::contract::MAX_SELECTOR_MATCHES {
+        for filler in 0..20 {
+            source.push_str(&format!("filler {block:02}-{filler:02} separator line\n"));
+        }
+        source.push_str(&format!("SELECT_ME block {block:02}\n"));
+        for index in 0..32 {
+            source.push_str(&format!("warning W{block:02}{index:02}: optional fact\n"));
+            source.push_str("ordinary build output without policy facts\n");
+        }
+    }
+
+    let spec = ProjectionSpec::new("build-log/v1", &bytes(8_192)).expect("selection spec");
+    let outcome = project_selection(
+        source.as_bytes(),
+        &Selection::Pattern {
+            pattern: "SELECT_ME".to_owned(),
+            before_lines: 16,
+            after_lines: 16,
+            max_matches: crate::contract::MAX_SELECTOR_MATCHES,
+        },
+        spec,
+    )
+    .expect("fragmented selection");
+
+    assert_eq!(outcome.fidelity, Fidelity::Extractive);
+    assert!(outcome.visible_count <= 8_192);
+    assert_eq!(outcome.original_count, source.len() as u64);
+    assert!(
+        outcome.retained_spans.len() > 1,
+        "selection did not fragment across regions"
+    );
+    assert!(outcome.retained_spans.len() <= MAX_RECEIPT_SPANS);
+    assert!(outcome.omitted_spans.len() <= MAX_RECEIPT_SPANS);
+
+    // Retained and omitted spans still partition the whole committed source.
+    let mut coverage = vec![0_u8; source.len()];
+    for span in outcome
+        .retained_spans
+        .iter()
+        .chain(outcome.omitted_spans.iter())
+    {
+        for byte in &mut coverage[span.start as usize..span.end as usize] {
+            *byte += 1;
+        }
+    }
+    assert!(coverage.iter().all(|count| *count == 1));
+    // The visible payload is exactly the concatenation of the retained spans.
+    assert_eq!(
+        outcome.visible,
+        render(source.as_bytes(), &outcome.retained_spans).expect("retained render")
+    );
+}
+
 /// US-006: at the receipt span ceiling a candidate is joined to the nearest
 /// retained span, in either direction, so no fragment is dropped.
 #[test]
