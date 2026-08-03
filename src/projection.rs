@@ -201,6 +201,15 @@ impl SpanPlan {
 #[cfg(test)]
 const MAX_PLAN_FULL_RENDER_COUNTS: usize = 1;
 
+/// One retained span boundary that expansion can still grow from. A frontier
+/// that fails is retired: the remaining budget never grows back.
+#[derive(Clone, Copy, Debug)]
+struct Frontier {
+    offset: u64,
+    forward: bool,
+    active: bool,
+}
+
 #[cfg(test)]
 #[derive(Default)]
 struct PlanningMetrics {
@@ -413,18 +422,22 @@ fn project_text(
         retained = accept_candidate(spec, source.len(), text, retained, candidate, payload_limit);
     }
 
-    if retained.spans.is_empty() && payload_limit > 0 {
-        let (prefix_end, prefix_count) =
-            fitting_prefix_validated(text, spec, payload_limit, original_count);
-        if prefix_end > 0 {
-            retained = SpanPlan::prefix(
-                ByteSpan {
-                    start: 0,
-                    end: prefix_end as u64,
-                },
-                prefix_count,
-            );
+    if retained.spans.is_empty() {
+        if payload_limit > 0 {
+            let (prefix_end, prefix_count) =
+                fitting_prefix_validated(text, spec, payload_limit, original_count);
+            if prefix_end > 0 {
+                retained = SpanPlan::prefix(
+                    ByteSpan {
+                        start: 0,
+                        end: prefix_end as u64,
+                    },
+                    prefix_count,
+                );
+            }
         }
+    } else {
+        retained = fill_payload_budget(spec, source.len(), text, retained, payload_limit);
     }
 
     // The single full-render tokenization of the projection: it verifies the
@@ -589,6 +602,100 @@ fn accept_candidate(
     } else {
         plan
     }
+}
+
+/// Spends whatever payload budget selection left by growing the retained spans
+/// outward one line group at a time, alternating between frontiers so the
+/// visible payload keeps both the head and the tail of the observation.
+fn fill_payload_budget(
+    spec: ProjectionSpec,
+    source_len: usize,
+    text: &str,
+    mut plan: SpanPlan,
+    payload_limit: u64,
+) -> SpanPlan {
+    let mut frontiers = plan
+        .spans
+        .iter()
+        .flat_map(|entry| {
+            [
+                Frontier {
+                    offset: entry.span.end,
+                    forward: true,
+                    active: true,
+                },
+                Frontier {
+                    offset: entry.span.start,
+                    forward: false,
+                    active: true,
+                },
+            ]
+        })
+        .collect::<Vec<_>>();
+
+    loop {
+        let mut progressed = false;
+        for frontier in &mut frontiers {
+            if !frontier.active {
+                continue;
+            }
+            let Some(target) = growth_target(text, *frontier) else {
+                frontier.active = false;
+                continue;
+            };
+            let proposed = plan.with_candidate(spec, text, target);
+            if proposed.visible_count > payload_limit
+                || !receipt_shape_fits(source_len, &proposed.spans)
+            {
+                frontier.active = false;
+                continue;
+            }
+            frontier.offset = grown_boundary(&proposed, target, frontier.forward);
+            plan = proposed;
+            progressed = true;
+        }
+        if !progressed {
+            return plan;
+        }
+    }
+}
+
+fn growth_target(text: &str, frontier: Frontier) -> Option<ByteSpan> {
+    let offset = frontier.offset as usize;
+    if frontier.forward {
+        (offset < text.len()).then(|| ByteSpan {
+            start: frontier.offset,
+            end: next_line_start(text, offset) as u64,
+        })
+    } else {
+        (offset > 0).then(|| ByteSpan {
+            start: previous_line_start(text, offset) as u64,
+            end: frontier.offset,
+        })
+    }
+}
+
+/// The outer boundary of the span that absorbed a growth target, which is where
+/// that frontier resumes after spans merged.
+fn grown_boundary(plan: &SpanPlan, target: ByteSpan, forward: bool) -> u64 {
+    let probe = if forward {
+        target.start
+    } else {
+        target.end.saturating_sub(1)
+    };
+    plan.spans
+        .iter()
+        .find(|entry| entry.span.start <= probe && probe < entry.span.end)
+        .map_or_else(
+            || if forward { target.end } else { target.start },
+            |entry| {
+                if forward {
+                    entry.span.end
+                } else {
+                    entry.span.start
+                }
+            },
+        )
 }
 
 fn line_spans(source: &[u8]) -> impl Iterator<Item = ByteSpan> + '_ {

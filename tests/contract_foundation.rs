@@ -271,20 +271,27 @@ fn projection_matrix_reports_budget_utilization_and_retention() {
         "matrix source must overflow its payload budget"
     );
     assert_eq!(receipt.original_count, 2_805);
-    assert_eq!(receipt.visible_count, 5);
+    assert_eq!(receipt.visible_count, 173);
     assert_eq!(
         basis_points(receipt.visible_count, OVER_BUDGET_PAYLOAD_LIMIT),
-        277,
-        "frozen US-002 baseline budget utilization in basis points"
+        9_611,
+        "EP-002 budget utilization in basis points, against the 277 US-002 baseline"
     );
-    assert_eq!(retained_bytes(&receipt.retained_spans), 14);
+    assert_eq!(retained_bytes(&receipt.retained_spans), 686);
     assert_eq!(
         basis_points(retained_bytes(&receipt.retained_spans), source.len() as u64),
-        12,
-        "frozen US-002 baseline retained byte ratio in basis points"
+        606,
+        "EP-002 retained byte ratio in basis points, against the 12 US-002 baseline"
     );
+    // Expansion grows the head forward and the tail backward, so the receipt
+    // keeps two retained spans around a single omitted middle.
     assert_eq!(receipt.retained_spans.len(), 2);
     assert_eq!(receipt.omitted_spans.len(), 1);
+    assert_spends_payload_budget(
+        "plain-text/v1",
+        receipt.visible_count,
+        OVER_BUDGET_PAYLOAD_LIMIT,
+    );
     assert_partition(
         source.len() as u64,
         &receipt.retained_spans,
@@ -310,12 +317,10 @@ fn projection_matrix_reports_budget_utilization_and_retention() {
     assert!(under_budget.receipt.omitted_spans.is_empty());
 }
 
-/// EP-001 US-003: the payload-budget floor is asserted, not skipped. It records
-/// the failure frozen by the US-002 baseline, where `plain-text/v1` spends 5 of
-/// 180 payload tokens. EP-002 US-005 must make this assertion hold; removing
-/// `should_panic` is then the mechanical proof that it did.
+/// EP-001 US-003 asserted this floor as the expected failure frozen by the
+/// US-002 baseline, where `plain-text/v1` spent 5 of 180 payload tokens. EP-002
+/// US-005 made it hold: dropping `should_panic` is the mechanical proof.
 #[test]
-#[should_panic(expected = "budget utilization")]
 fn over_budget_projection_must_spend_its_payload_budget() {
     let (_directory, engine) = engine();
     let outcome = engine
@@ -326,17 +331,15 @@ fn over_budget_projection_must_spend_its_payload_budget() {
             "plain-text/v1",
         ))
         .expect("over-budget projection");
-    let measured = basis_points(outcome.receipt.visible_count, OVER_BUDGET_PAYLOAD_LIMIT);
-    eprintln!(
-        "US-002 baseline: plain-text/v1 spent {} of {OVER_BUDGET_PAYLOAD_LIMIT} payload tokens ({}.{:02}%)",
-        outcome.receipt.visible_count,
-        measured / 100,
-        measured % 100
-    );
     assert_spends_payload_budget(
         "plain-text/v1",
         outcome.receipt.visible_count,
         OVER_BUDGET_PAYLOAD_LIMIT,
+    );
+    assert!(outcome.receipt.visible_count <= OVER_BUDGET_PAYLOAD_LIMIT);
+    assert!(
+        outcome.receipt.visible_count.saturating_add(45) <= 225,
+        "visible count plus the reserved envelope must fit the total visible limit"
     );
 }
 

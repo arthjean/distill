@@ -381,11 +381,6 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
     let mut metrics = PlanningMetrics::default();
     let planned = project_with_metrics(source.as_bytes(), &budget, "build-log/v1", &mut metrics)
         .expect("planned projection");
-    // Incremental accounting selects exactly what full-render accounting does.
-    assert_eq!(planned.visible, baseline.visible);
-    assert_eq!(planned.visible_count, baseline.visible_count);
-    assert_eq!(planned.retained_spans, baseline.retained_spans);
-    assert_eq!(planned.omitted_spans, baseline.omitted_spans);
     assert_eq!(planned.mandatory_fact_ids, baseline.mandatory_fact_ids);
     assert!(planned.visible.contains("ERROR E1: mandatory fact"));
     assert!(planned.visible.contains("warning W000: optional fact"));
@@ -405,6 +400,13 @@ fn policy_heavy_planning_counts_incrementally_within_the_render_bound() {
         metrics.full_render_count_evaluations <= MAX_PLAN_FULL_RENDER_COUNTS,
         "{} full-render tokenizations exceed the {MAX_PLAN_FULL_RENDER_COUNTS} bound",
         metrics.full_render_count_evaluations
+    );
+    // Expansion spends the budget the unexpanded selection left unused.
+    assert!(planned.visible_count > baseline.visible_count);
+    assert!(
+        planned.visible_count * 100 >= 8_192 * 85,
+        "planned projection spent only {} of 8192 payload tokens",
+        planned.visible_count
     );
 
     for _ in 0..2 {
@@ -570,4 +572,117 @@ fn a_disagreeing_planned_count_fails_closed() {
         failure.expect_err("disagreeing plan").code,
         FailureCode::InvariantBreach
     );
+}
+
+fn real_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("evaluation/corpus/real/fixtures")
+            .join(name),
+    )
+    .expect("real corpus fixture")
+}
+
+/// US-005: expansion must spend the payload budget on the two fixtures the PRD
+/// measures, whose baseline utilization is 0.39% and 2.4%.
+#[test]
+fn expansion_spends_the_payload_budget_on_the_measured_fixtures() {
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 2_250,
+        reserved_envelope: 450,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+    for (name, baseline_visible_count) in
+        [("source-artifact-rs.txt", 7), ("log-git-log-stat.txt", 44)]
+    {
+        let source = real_fixture(name);
+        let outcome = project(&source, &budget, "plain-text/v1").expect(name);
+        assert_eq!(outcome.fidelity, Fidelity::Extractive);
+        assert!(outcome.visible_count > baseline_visible_count);
+        assert!(
+            outcome.visible_count * 100 >= 1_800 * 85,
+            "{name} spent {} of 1800 payload tokens",
+            outcome.visible_count
+        );
+        assert!(outcome.visible_count <= 1_800);
+        assert_eq!(
+            outcome.visible_count,
+            count(&outcome.visible, &budget).expect("rendered payload count")
+        );
+        assert!(std::str::from_utf8(outcome.visible.as_bytes()).is_ok());
+        assert!(outcome.retained_spans.len() <= MAX_RECEIPT_SPANS);
+        assert!(outcome.omitted_spans.len() <= MAX_RECEIPT_SPANS);
+    }
+}
+
+/// US-005: expansion keeps the head and the tail of the observation, grows only
+/// on line boundaries, and never displaces a mandatory span.
+#[test]
+fn expansion_grows_line_groups_around_retained_content() {
+    let mut source = String::from("first line\n");
+    for index in 0..400 {
+        source.push_str(&format!("filler line {index:03}\n"));
+        if index == 200 {
+            source.push_str("ERROR E1: mandatory fact\n\n\n");
+        }
+    }
+    source.push_str("last line\n");
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 225,
+        reserved_envelope: 45,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+    let outcome = project(source.as_bytes(), &budget, "build-log/v1").expect("expanded projection");
+
+    assert!(outcome.visible.contains("ERROR E1: mandatory fact"));
+    assert!(outcome.visible.starts_with("first line\n"));
+    assert!(outcome.visible.ends_with("last line\n"));
+    assert!(
+        outcome.visible_count * 100 >= 180 * 85,
+        "expansion spent {} of 180 payload tokens",
+        outcome.visible_count
+    );
+    // Growth advances a whole line group at a time, so no retained span ever
+    // starts or ends inside a line.
+    for span in &outcome.retained_spans {
+        if span.start > 0 {
+            assert_eq!(source.as_bytes()[span.start as usize - 1], b'\n');
+        }
+        if (span.end as usize) < source.len() {
+            assert_eq!(source.as_bytes()[span.end as usize - 1], b'\n');
+        }
+    }
+
+    for _ in 0..100 {
+        let repeated = project(source.as_bytes(), &budget, "build-log/v1").expect("repeat");
+        assert_eq!(repeated.visible, outcome.visible);
+        assert_eq!(repeated.retained_spans, outcome.retained_spans);
+        assert_eq!(repeated.omitted_spans, outcome.omitted_spans);
+        assert_eq!(repeated.visible_count, outcome.visible_count);
+    }
+}
+
+/// US-005: a first line that alone exceeds the payload budget leaves selection
+/// empty, so the prefix fallback still applies and still fills the budget.
+#[test]
+fn an_oversized_first_line_keeps_the_prefix_fallback() {
+    let source = format!("{}\n", "minified ".repeat(4_000));
+    let budget = Budget {
+        unit: CountUnit::Tokens,
+        total_visible_limit: 225,
+        reserved_envelope: 45,
+        token_profile: Some(CL100K_PROFILE.to_owned()),
+    };
+    let outcome = project(source.as_bytes(), &budget, "plain-text/v1").expect("prefix fallback");
+    assert_eq!(outcome.fidelity, Fidelity::Extractive);
+    assert_eq!(outcome.retained_spans.len(), 1);
+    assert_eq!(outcome.retained_spans[0].start, 0);
+    assert!(
+        outcome.visible_count * 100 >= 180 * 85,
+        "prefix fallback spent {} of 180 payload tokens",
+        outcome.visible_count
+    );
+    assert!(outcome.visible_count <= 180);
 }
