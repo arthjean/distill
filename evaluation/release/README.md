@@ -11,6 +11,132 @@ verdict: it establishes ground truth before any policy changes, and it
 overwrites and relabels no receipt. `evaluation/README.md` documents the corpus,
 the capture rules, and the reproduction commands.
 
+## Executed-path qualification
+
+`executed-path-v1-protocol.json` preregisters the first qualification of the
+projection path both product surfaces actually run, against the projection they
+actually ran before this release. Every earlier paired protocol selected a
+preservation profile per corpus category, which the product never does. Neither
+arm here passes `--profile` at all: each binary runs the default its own tree
+pins, so the measurement compares two executed paths. The runner aborts if
+either receipt reports any other requested profile.
+
+The comparator is the point of the design. The baseline arm is not a
+reimplementation and not a deterministic footnote: it is the binary that
+`evaluation/baseline/projection-baseline-v1.json` pins, rebuilt from revision
+`5f228cd` and verified against the digest that receipt recorded, running its own
+`plain-text/v1` default with no focus. Before any invocation the runner checks
+that it reproduces the frozen receipt fixture by fixture. Note that
+`--profile plain-text/v1` on the candidate binary is not a shortcut to this arm:
+the v3 contract keeps the retired identifier accepted but resolves it to the
+terminal-log shape policy, which fills the budget.
+
+The unbounded raw observation is deliberately not scored and consumes no
+invocation. The closed v5 qualification measured it at 50 of 50 against 50 of
+50 with a 0-point delta, and against the candidate's 25 of 26 retention ceiling
+it can only tie or lose, so it cannot discriminate. No claim resting on this
+evidence may assert parity with unbounded context.
+
+The protocol pins the real corpus manifest digest, the production `source_tree`,
+both binary digests, both executed default profiles, the model-scored budget
+(the executed Codex hook default, 2250 visible tokens with a 450-token reserved
+envelope) applied identically to both arms, the four deterministic accounting
+budgets the frozen baseline recorded, the sample, and the gates.
+
+The sample is 26 pairs and 52 subscription invocations: two exact-line questions
+on each real corpus fixture that is over budget at the executed budget and
+carries line structure, with 13 pairs in each invocation order.
+`json-cargo-metadata-full` is excluded and recorded as such:
+it is single-line minified JSON, so it carries no line rubric, and it stays in
+the deterministic accounting only. The rubric is the closed v5 rule, unchanged:
+strict JSON parse, exactly the declared keys, exact equality against one
+complete source line that occurs exactly once in the raw observation.
+
+This qualification runs one model host. The ChatGPT subscription is lapsed at
+preregistration, so every pair goes through Claude Code at the pinned
+`claude-fable-5` identity. The closed v5 protocol balanced two providers so that
+one host's parsing or formatting quirks could not drive the result, and that
+control is absent here; the invocation-order counterbalance is retained. It is
+materially less damaging under this comparator, because a quirk would have to
+discriminate between two payloads drawn from the same model on the same
+question. Every claim resting on this evidence is scoped to that host, and
+adding a second-host arm requires a new preregistration rather than an
+amendment.
+
+The aggregate is `GO` only when the paired report is `GO`, every preregistered
+gate command passes, and the report still binds this protocol, source tree, and
+both binaries. The paired report is `GO` only when all of these hold:
+
+- projected answer accuracy beats baseline answer accuracy by at least 65
+  percentage points;
+- the projected condition answers at least 15 of 26, a breakage guard and never
+  a performance gate;
+- the baseline condition answers at most 8 of 26, above which the rubric is
+  answerable without the observation often enough that the sample stops
+  measuring retention;
+- median budget utilization over the over-budget fixtures is at least 85%;
+- deterministic answer-line retention over the sample is 25 of 26 for the
+  candidate and 2 of 26 for the control;
+- every pair reports the required primary model identity.
+
+Each gate has one job, and the accuracy gate carries the claim alone. The
+structural margin is 88.46 points; the 65-point floor absorbs two confounds
+that the protocol records and the report measures. Model error costs the
+candidate only. Prior-answerability costs the control only, because several
+expected lines are short and idiomatic enough to be produced from priors, so it
+deflates the delta rather than flattering it. The control condition is itself a
+closed-book control on the 24 tasks whose answer line it does not retain, so
+that count is published rather than treated as an anomaly, and no task is ever
+excluded after the fact. The runner refuses any protocol whose worst admissible
+case under the two guards already clears the delta floor, which is what keeps
+the floor from being a restatement of the guards.
+
+Both retention numbers are reproduced before execution, and the runner refuses
+rather than adjusting a gate. `ep006-24` is retained by neither arm, so it costs
+the candidate nothing and no `GO` requires the model host to fail a task. The
+two control retentions, `ep006-19` and `ep006-21`, are the first line of a
+`git show` and of a `git log -p`, which the prefix behavior of `plain-text/v1`
+preserves. The runner also refuses if any task is retained by the control and
+not by the candidate, which the delta floor would otherwise absorb silently.
+
+Validate the preregistration without consuming an invocation. It rebuilds the
+canonical binary, materializes the control binary from the pinned revision with
+`git archive` into `/tmp/distill-executed-path-control-5f228cda`, so no worktree
+is registered and the candidate checkout is untouched, verifies every pinned
+digest, reproduces the preregistration measurement, and writes no receipt:
+
+```bash
+bun evaluation/release/run-executed-path-v1.mjs --validate-only
+```
+
+Execution is refused until the authorization ledger is durably consumed. Commit
+the complete preregistration, then consume it in one dedicated child commit that
+changes only `executed-path-v1-ledger.json`, records the preregistration commit,
+and sets `status` to `CONSUMED`. The runner rejects any other history shape, and
+refuses before reading a fixture or spawning a provider when the ledger is still
+`PRE_REGISTERED`, so an unauthorized attempt records no partial result.
+
+```bash
+bun evaluation/release/run-executed-path-v1.mjs --execute
+bun evaluation/release/check-executed-path-v1.mjs
+```
+
+Both write their report, execution ledger, and aggregate only under
+`/tmp/distill-executed-path-v1-20260804`, never into
+`evaluation/release/evidence/` and never into the worktree. The single durable
+repository record is `refs/distill/qualifications/executed-path-v1-20260804`:
+the runner creates it before the first invocation and atomically extends it
+after every call with the hashes of the prompt, observation, raw CLI output,
+and parsed response. The fixed state directory is the secondary one-shot lock;
+that ref and the consumption commit are the durable anti-replay record.
+
+The checker runs the preregistered contract, integrity, zero-network,
+executed-path, and corpus gates before it looks for the paired report, and
+writes no receipt when a gate fails or the report is absent.
+The closed v5 protocol, ledgers, runner, checker, and evidence, and the frozen
+projection baseline, are pinned by digest in the new ledger and verified on
+every invocation.
+
 ## Native surface contract v2
 
 `docs/integrations/cli-conformance-v2.json` and
