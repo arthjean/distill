@@ -1,0 +1,151 @@
+{
+  "schema_version": "distill.executed-path-aggregate/v1",
+  "qualification_id": "executed-path-v2-20260804",
+  "produced_at": "2026-08-04T09:22:02.716Z",
+  "status": "GO",
+  "paired": {
+    "status": "GO",
+    "path": "/tmp/distill-executed-path-v2-20260804/executed-path-v2-report.json",
+    "sha256": "f37af3ed53eb358f5a53029942e77386e6585771848da619fd31909e9fab7825",
+    "sample_size": 26,
+    "baseline_successes": 2,
+    "projected_successes": 25,
+    "delta_percentage_points": 88.46153846153845,
+    "minimum_delta_percentage_points": 65,
+    "termination": null
+  },
+  "conditions": {
+    "baseline": {
+      "description": "the executed plain-text/v1 default of the pinned pre-release revision, at the same Codex hook budget, no focus",
+      "control_revision": "5f228cda3c0215c8ce61907350e6c7da37896584",
+      "control_binary_sha256": "342217af37c0aa18054924aa78161ed9a8a5bef6e9038f344c94d39aa7fc37e5",
+      "observation_tokens": 446,
+      "budget_utilization_percent": 0.7778,
+      "retained_byte_ratio_percent": 0.1514,
+      "answer_accuracy": 0.07692307692307693,
+      "successes": 2,
+      "answer_line_retained": 2
+    },
+    "projected": {
+      "description": "the executed auto/v1 default at the Codex hook budget, with the task focus",
+      "observation_tokens": 46785,
+      "budget_utilization_percent": 100,
+      "retained_byte_ratio_percent": 36.285,
+      "answer_accuracy": 0.9615384615384616,
+      "successes": 25,
+      "answer_line_retained": 25
+    },
+    "frozen_baseline_receipt": {
+      "description": "the frozen US-002 receipt, reproduced fixture by fixture by the control arm before any invocation",
+      "path": "evaluation/baseline/projection-baseline-v1.json",
+      "sha256": "2d1c761668d37d16d1d9919e1de67a8286f9f88e260ed2e2f7b07462da10a1ff",
+      "observation_tokens": 446,
+      "budget_utilization_percent": 0.7778,
+      "retained_byte_ratio_percent": 0.1514
+    },
+    "unbounded_raw": {
+      "description": "not measured; see comparator.unbounded_raw_condition_decision",
+      "measured": false,
+      "decision": "The unbounded raw observation is not scored and consumes no invocation. The closed v5 qualification already measured it at 50 of 50 against 50 of 50 with a 0-point delta, and against a 25 of 26 retention ceiling it can only tie or lose, so it cannot discriminate. No claim resting on this evidence may assert parity with unbounded context."
+    },
+    "corpus_wide_accounting": {
+      "budget": "codex-hook-default",
+      "executed": {
+        "min_budget_utilization_percent": 99.4444,
+        "median_budget_utilization_percent": 100,
+        "max_budget_utilization_percent": 100,
+        "median_retained_byte_ratio_percent": 30.1017
+      },
+      "baseline": {
+        "comparable_fixtures": 14,
+        "divergent_fixtures": [],
+        "min_budget_utilization_percent": 0.1111,
+        "median_budget_utilization_percent": 0.7778,
+        "max_budget_utilization_percent": 100,
+        "median_retained_byte_ratio_percent": 0.1514
+      }
+    }
+  },
+  "model_distribution_asymmetry": {
+    "per_model": [
+      {
+        "model": "claude-haiku-4-5-20251001",
+        "baseline": 22,
+        "projected": 22,
+        "asymmetry": 0
+      },
+      {
+        "model": "claude-opus-5",
+        "baseline": 26,
+        "projected": 26,
+        "asymmetry": 0
+      }
+    ],
+    "maximum_asymmetry_invocations": 0,
+    "ceiling": 4,
+    "definition": "For each reported model id m, the asymmetry is the absolute difference between the number of baseline invocations reporting m and the number of projected invocations reporting m. The statistic is the maximum over all m, and it is computed once at the end of the run over the complete sample."
+  },
+  "bindings": {
+    "protocol_sha256": true,
+    "ledger_sha256": true,
+    "source_tree": true,
+    "binary_sha256": true,
+    "binary_unchanged": true,
+    "control_binary_sha256": true,
+    "control_revision": true,
+    "unbounded_raw_not_measured": true,
+    "worktree_clean": true,
+    "execution_ledger_sha256": true,
+    "real_corpus_manifest_sha256": true,
+    "baseline_sha256": true,
+    "invocation_ceiling_respected": true,
+    "source_tree_still_current": true,
+    "model_identity_was_not_a_flight_gate": true,
+    "model_distribution_within_ceiling": true
+  },
+  "gates": [
+    {
+      "command": "cargo test --locked --release --test contract_foundation",
+      "passed": true,
+      "exit_code": 0,
+      "duration_ms": 126,
+      "stderr_tail": "Finished `release` profile [optimized] target(s) in 0.04s\n     Running tests/contract_foundation.rs (target/release/deps/contract_foundation-767e96404ca2fb7d)"
+    },
+    {
+      "command": "cargo test --locked --release --test persisted_proof",
+      "passed": true,
+      "exit_code": 0,
+      "duration_ms": 57,
+      "stderr_tail": "Finished `release` profile [optimized] target(s) in 0.02s\n     Running tests/persisted_proof.rs (target/release/deps/persisted_proof-a3785f685623673d)"
+    },
+    {
+      "command": "cargo test --locked --release --test no_network",
+      "passed": true,
+      "exit_code": 0,
+      "duration_ms": 78,
+      "stderr_tail": "Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Finished `release` profile [optimized] target(s) in 0.04s\n     Running tests/no_network.rs (target/release/deps/no_network-59aa5d2ae9fe8d5d)"
+    },
+    {
+      "command": "cargo test --locked --release --test real_corpus",
+      "passed": true,
+      "exit_code": 0,
+      "duration_ms": 594,
+      "stderr_tail": "Finished `release` profile [optimized] target(s) in 0.03s\n     Running tests/real_corpus.rs (target/release/deps/real_corpus-361225b35da1f183)"
+    },
+    {
+      "command": "bun evaluation/corpus/check.mjs --verify",
+      "passed": true,
+      "exit_code": 0,
+      "duration_ms": 213,
+      "stderr_tail": ""
+    }
+  ],
+  "claim_scope": {
+    "executed_profile": "auto/v1",
+    "control_profile": "plain-text/v1",
+    "control_revision": "5f228cda3c0215c8ce61907350e6c7da37896584",
+    "per_category_profile_selection": false,
+    "unbounded_raw_condition_measured": false,
+    "note": "Every number in this receipt was produced under a preservation profile some product surface executes: auto/v1 for the candidate, plain-text/v1 for the release it replaces. No claim may cite a non-executed profile, and none may assert parity with unbounded context, which this qualification did not measure."
+  }
+}
