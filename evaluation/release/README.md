@@ -193,6 +193,41 @@ Preregistration and consumption remain two separate commits, in that order, and
 execution writes only under `/tmp/distill-executed-path-v2-20260804` with its
 durable record at `refs/distill/qualifications/executed-path-v2-20260804`.
 
+### Result
+
+`GO`. The complete sample ran: 52 invocations of 52, no early termination, no
+provider error. The preregistration was committed at `d774056` and consumed at
+`3351268`, both pushed before execution, so every gate was fixed before any
+result existed.
+
+| | control `plain-text/v1` | candidate `auto/v1` with focus |
+|---|---|---|
+| Exact answers | 2 of 26 | 25 of 26 |
+| Budget utilization | 0.78% | 100% |
+| Retained byte ratio | 0.15% | 36.3% |
+
+The delta is 88.46 points against a 65-point floor, with a conservative 95%
+Wilson interval of +57.0 to +97.2 points. Both confounds measured zero: prior
+answerability is 0 over the 24 closed-book tasks, so the control's two successes
+are exactly its two retained lines, and model error on retained content is 0.
+The candidate's only failure is `ep006-24`, disclosed before execution as
+retained by neither arm.
+
+The balance gate that replaced the in-flight identity control reports an
+asymmetry of 0 against a ceiling of 4: `claude-opus-5` on all 26 invocations of
+each arm and the auxiliary Haiku on 22 of each. All 26 pairs reported the
+requested model.
+
+Receipts are preserved as `executed-path-v2-report.json`,
+`executed-path-v2-execution-ledger.json` and `executed-path-v2-aggregate.json`,
+outside the closed `evidence/` tree, relabelling and overwriting nothing.
+
+The claim this evidence supports, and no more: at the budget the Codex hook
+applies, on this real corpus, with Claude Code at `claude-opus-5`, the executed
+`auto/v1` path answers questions the executed `plain-text/v1` path it replaces
+could not. It says nothing about parity with unbounded context, which was
+deliberately not measured, and it is scoped to one model host.
+
 ## Native surface contract v2
 
 `docs/integrations/cli-conformance-v2.json` and
