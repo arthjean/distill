@@ -1,9 +1,9 @@
 {
   "schema_version": "distill.executed-path-ledger/v1",
   "qualification_id": "executed-path-v1-20260804",
-  "status": "PRE_REGISTERED",
-  "pre_registration_commit": null,
-  "consumed_at": null,
+  "status": "CONSUMED",
+  "pre_registration_commit": "2c9a0a983b77fe9c3ec355592777986c29057527",
+  "consumed_at": "2026-08-04T08:40:07Z",
   "protocol_path": "evaluation/release/executed-path-v1-protocol.json",
   "protocol_sha256": "4946796a5138564ef2b28679f33633c71bcc8905d3ac8786c82200c4fcb9d7b9",
   "authorization": {
