@@ -1,0 +1,1602 @@
+{
+  "schema_version": "distill.executed-path-qualification-report/v1",
+  "qualification_id": "executed-path-v1-20260804",
+  "phase": "complete",
+  "started_at": "2026-08-04T08:57:42.422Z",
+  "completed_at": "2026-08-04T08:58:34.851Z",
+  "termination": {
+    "reason": "REQUIRED_PRIMARY_MODEL_NOT_REPORTED",
+    "task_id": "ep006-05",
+    "provider": "claude",
+    "invocations_consumed": 10,
+    "baseline_requested_model": "claude-fable-5",
+    "projected_requested_model": "claude-fable-5",
+    "baseline_reported_models": [
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "canonical_model": "claude-haiku-4-5",
+        "provider": "firstParty"
+      },
+      {
+        "id": "claude-opus-5",
+        "canonical_model": "claude-opus-5",
+        "provider": "firstParty"
+      }
+    ],
+    "projected_reported_models": [
+      {
+        "id": "claude-fable-5",
+        "canonical_model": "claude-fable-5",
+        "provider": "firstParty"
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "canonical_model": "claude-haiku-4-5",
+        "provider": "firstParty"
+      }
+    ],
+    "stopped_at": "2026-08-04T08:58:34.845Z",
+    "retry_permitted": false
+  },
+  "evaluated_inputs": {
+    "git_revision": "8477cb2b271844c3c55de904f83ab5ce4440b6e9",
+    "source_tree": "e781287b36d55bca53d374f2938e0373cf44e5cd",
+    "source_worktree_clean": true,
+    "native_binary_sha256": "ea521fbeced1f2a45d036c5c0df7d8ffaed6b7d4e253d03a48b1ad8b296217a5",
+    "native_binary_sha256_after_execution": "ea521fbeced1f2a45d036c5c0df7d8ffaed6b7d4e253d03a48b1ad8b296217a5",
+    "canonical_build_command": "cargo build --locked --release",
+    "canonical_binary_path": "target/release/distill",
+    "protocol_sha256": "4946796a5138564ef2b28679f33633c71bcc8905d3ac8786c82200c4fcb9d7b9",
+    "ledger_sha256": "568bc4c0ed3a133a8b89cc867329802b7f52a9d196a9bacd0221bf58cd4bf859",
+    "execution_ledger_sha256": "15e52f83555799760af739da12e44e673b0366f3fdaa6e7c1bfbb8384710d8fd",
+    "real_corpus_manifest_sha256": "02548a5da13cd42f78ed905229ce6834ea4d57d560080e99c451eace7364d2de",
+    "baseline_sha256": "2d1c761668d37d16d1d9919e1de67a8286f9f88e260ed2e2f7b07462da10a1ff"
+  },
+  "executed_path": {
+    "default_preservation_profile": "auto/v1",
+    "per_category_profile_selection": false,
+    "applied_profiles": {
+      "api-json/v1": 2,
+      "source-file/v1": 10,
+      "stack-trace/v1": 2,
+      "terminal-log/v1": 2,
+      "unified-diff/v1": 10
+    },
+    "focus_applied": true
+  },
+  "conditions": {
+    "baseline": {
+      "description": "the executed plain-text/v1 default of the pinned pre-release revision, at the same Codex hook budget, no focus",
+      "control_revision": "5f228cda3c0215c8ce61907350e6c7da37896584",
+      "control_binary_sha256": "342217af37c0aa18054924aa78161ed9a8a5bef6e9038f344c94d39aa7fc37e5",
+      "observation_tokens": 122,
+      "budget_utilization_percent": 0.8889,
+      "retained_byte_ratio_percent": 0.485,
+      "answer_accuracy": 0,
+      "successes": 0,
+      "answer_line_retained": 0
+    },
+    "projected": {
+      "description": "the executed auto/v1 default at the Codex hook budget, with the task focus",
+      "observation_tokens": 8986,
+      "budget_utilization_percent": 99.8889,
+      "retained_byte_ratio_percent": 47.5881,
+      "answer_accuracy": 1,
+      "successes": 5,
+      "answer_line_retained": 5
+    },
+    "frozen_baseline_receipt": {
+      "description": "the frozen US-002 receipt, reproduced fixture by fixture by the control arm before any invocation",
+      "path": "evaluation/baseline/projection-baseline-v1.json",
+      "sha256": "2d1c761668d37d16d1d9919e1de67a8286f9f88e260ed2e2f7b07462da10a1ff",
+      "observation_tokens": 122,
+      "budget_utilization_percent": 0.8889,
+      "retained_byte_ratio_percent": 0.485
+    },
+    "unbounded_raw": {
+      "description": "not measured; see comparator.unbounded_raw_condition_decision",
+      "measured": false,
+      "decision": "The unbounded raw observation is not scored and consumes no invocation. The closed v5 qualification already measured it at 50 of 50 against 50 of 50 with a 0-point delta, and against a 25 of 26 retention ceiling it can only tie or lose, so it cannot discriminate. No claim resting on this evidence may assert parity with unbounded context."
+    },
+    "corpus_wide_accounting": {
+      "budget": "codex-hook-default",
+      "executed": {
+        "min_budget_utilization_percent": 99.4444,
+        "median_budget_utilization_percent": 100,
+        "max_budget_utilization_percent": 100,
+        "median_retained_byte_ratio_percent": 30.1017
+      },
+      "baseline": {
+        "comparable_fixtures": 14,
+        "divergent_fixtures": [],
+        "min_budget_utilization_percent": 0.1111,
+        "median_budget_utilization_percent": 0.7778,
+        "max_budget_utilization_percent": 100,
+        "median_retained_byte_ratio_percent": 0.1514
+      }
+    }
+  },
+  "billing": {
+    "mode": "existing ChatGPT Pro and Claude Max subscriptions",
+    "api_keys_removed_from_child_environment": true,
+    "removed_environment_variables": [
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_BASE_URL",
+      "CLAUDE_CODE_USE_BEDROCK",
+      "CLAUDE_CODE_USE_VERTEX",
+      "CLAUDE_CODE_USE_FOUNDRY"
+    ],
+    "approved_incremental_spend_usd": 0,
+    "actual_incremental_spend_usd": 0,
+    "invocations": 10,
+    "maximum_invocations": 52,
+    "reported_api_equivalent_usd": 0.45216850000000003,
+    "note": "CLI-reported equivalent cost is usage telemetry, not an additional subscription charge."
+  },
+  "authentication": {
+    "claude": {
+      "logged_in": true,
+      "auth_method": "claude.ai",
+      "api_provider": "firstParty",
+      "subscription_type": "max"
+    },
+    "single_host": true,
+    "pii_fields_omitted": true
+  },
+  "providers": {
+    "claude": {
+      "subscription": "Claude Max",
+      "cli_version": "2.1.221 (Claude Code)",
+      "requested_model": "claude-fable-5",
+      "reported_model": [
+        "{\"id\":\"claude-fable-5\",\"canonical_model\":\"claude-fable-5\",\"provider\":\"firstParty\"}",
+        "{\"id\":\"claude-haiku-4-5-20251001\",\"canonical_model\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"}",
+        "{\"id\":\"claude-opus-5\",\"canonical_model\":\"claude-opus-5\",\"provider\":\"firstParty\"}"
+      ],
+      "sampling_parameters": {
+        "effort": "low",
+        "prompt_suggestions": false,
+        "temperature": "host-controlled and not exposed by Claude Code"
+      },
+      "tool_state": "safe mode, no tools, no session persistence"
+    }
+  },
+  "controls": {
+    "paired_primary_model_identity": false,
+    "reported_model_control_by_pair": [
+      {
+        "task_id": "ep006-01",
+        "provider": "claude",
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      },
+      {
+        "task_id": "ep006-02",
+        "provider": "claude",
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      },
+      {
+        "task_id": "ep006-03",
+        "provider": "claude",
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      },
+      {
+        "task_id": "ep006-04",
+        "provider": "claude",
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      },
+      {
+        "task_id": "ep006-05",
+        "provider": "claude",
+        "matches": false,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": false,
+        "reported_model_contract_satisfied": false,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-opus-5",
+            "canonical_model": "claude-opus-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    ],
+    "no_retry": true,
+    "early_stop_is_terminal": true,
+    "baseline_first_tasks": 13,
+    "projected_first_tasks": 13,
+    "provider_order_cells": {
+      "claude|baseline_first": 13,
+      "claude|projected_first": 13
+    },
+    "deterministic_rubric": "Strict JSON parse, exactly the declared keys, exact string equality against one complete source line that occurs exactly once in the raw observation.",
+    "minimum_projected_successes": 15,
+    "maximum_baseline_successes": 8,
+    "minimum_delta_percentage_points": 65,
+    "minimum_median_budget_utilization_percent": 85,
+    "minimum_focused_answer_line_retention": 25,
+    "maximum_control_answer_line_retention": 2,
+    "disclosed_ceiling": {
+      "candidate_answer_line_retention": "25 of 26",
+      "control_answer_line_retention": "2 of 26",
+      "unretained_by_either_arm": "ep006-24",
+      "retained_by_control": [
+        "ep006-19",
+        "ep006-21"
+      ],
+      "consequence": "ep006-24 is unanswerable in both arms, so it costs the candidate nothing in the delta and no GO requires the model host to fail a task. The two control retentions are the first line of a git show and a git log patch, which the prefix behavior of plain-text/v1 preserves. Every one of these numbers is reproduced before execution and none of them is a reason to reselect tasks."
+    }
+  },
+  "confounds": {
+    "prior_answerability_count": 0,
+    "prior_answered_task_ids": [],
+    "closed_book_tasks": 5,
+    "model_error_on_retained_content": 0,
+    "model_error_task_ids": [],
+    "note": "It is absorbed by the delta floor and bounded by maximum_baseline_successes. A task answered from priors is never excluded after the fact."
+  },
+  "scoring": {
+    "sample_size": 5,
+    "confidence_method": "conservative difference of two 95% Wilson intervals",
+    "baseline_successes": 0,
+    "projected_successes": 5,
+    "baseline_success_rate": 0,
+    "projected_success_rate": 1,
+    "delta_percentage_points": 100,
+    "confidence_interval_percentage_points": [
+      13.103507043365036,
+      100
+    ],
+    "failures": [
+      {
+        "id": "ep006-01",
+        "baseline_success": false,
+        "projected_success": true,
+        "answer_line_retained": {
+          "focused": true,
+          "unfocused": false,
+          "control": false
+        },
+        "baseline_parse_error": null,
+        "projected_parse_error": null
+      },
+      {
+        "id": "ep006-02",
+        "baseline_success": false,
+        "projected_success": true,
+        "answer_line_retained": {
+          "focused": true,
+          "unfocused": true,
+          "control": false
+        },
+        "baseline_parse_error": null,
+        "projected_parse_error": null
+      },
+      {
+        "id": "ep006-03",
+        "baseline_success": false,
+        "projected_success": true,
+        "answer_line_retained": {
+          "focused": true,
+          "unfocused": false,
+          "control": false
+        },
+        "baseline_parse_error": null,
+        "projected_parse_error": null
+      },
+      {
+        "id": "ep006-04",
+        "baseline_success": false,
+        "projected_success": true,
+        "answer_line_retained": {
+          "focused": true,
+          "unfocused": true,
+          "control": false
+        },
+        "baseline_parse_error": null,
+        "projected_parse_error": null
+      },
+      {
+        "id": "ep006-05",
+        "baseline_success": false,
+        "projected_success": true,
+        "answer_line_retained": {
+          "focused": true,
+          "unfocused": true,
+          "control": false
+        },
+        "baseline_parse_error": null,
+        "projected_parse_error": null
+      }
+    ]
+  },
+  "measurement": {
+    "budgets": [
+      {
+        "budget": "codex-hook-default",
+        "payload_limit": 1800,
+        "fixtures": 48,
+        "exact_fidelity": 34,
+        "extractive_fidelity": 14,
+        "typed_failures": {},
+        "baseline_typed_failures": {},
+        "over_budget_fixtures": 14,
+        "executed": {
+          "min_budget_utilization_percent": 99.4444,
+          "median_budget_utilization_percent": 100,
+          "max_budget_utilization_percent": 100,
+          "median_retained_byte_ratio_percent": 30.1017
+        },
+        "baseline": {
+          "comparable_fixtures": 14,
+          "divergent_fixtures": [],
+          "min_budget_utilization_percent": 0.1111,
+          "median_budget_utilization_percent": 0.7778,
+          "max_budget_utilization_percent": 100,
+          "median_retained_byte_ratio_percent": 0.1514
+        }
+      },
+      {
+        "budget": "tokens-512-envelope-64",
+        "payload_limit": 448,
+        "fixtures": 48,
+        "exact_fidelity": 23,
+        "extractive_fidelity": 25,
+        "typed_failures": {},
+        "baseline_typed_failures": {},
+        "over_budget_fixtures": 25,
+        "executed": {
+          "min_budget_utilization_percent": 81.9196,
+          "median_budget_utilization_percent": 100,
+          "max_budget_utilization_percent": 100,
+          "median_retained_byte_ratio_percent": 13.7692
+        },
+        "baseline": {
+          "comparable_fixtures": 25,
+          "divergent_fixtures": [],
+          "min_budget_utilization_percent": 0.4464,
+          "median_budget_utilization_percent": 6.25,
+          "max_budget_utilization_percent": 100,
+          "median_retained_byte_ratio_percent": 0.5052
+        }
+      },
+      {
+        "budget": "tokens-8192-envelope-1024",
+        "payload_limit": 7168,
+        "fixtures": 48,
+        "exact_fidelity": 43,
+        "extractive_fidelity": 5,
+        "typed_failures": {},
+        "baseline_typed_failures": {},
+        "over_budget_fixtures": 5,
+        "executed": {
+          "min_budget_utilization_percent": 99.9581,
+          "median_budget_utilization_percent": 99.9721,
+          "max_budget_utilization_percent": 100,
+          "median_retained_byte_ratio_percent": 85.4386
+        },
+        "baseline": {
+          "comparable_fixtures": 5,
+          "divergent_fixtures": [],
+          "min_budget_utilization_percent": 0.1953,
+          "median_budget_utilization_percent": 0.3906,
+          "max_budget_utilization_percent": 100,
+          "median_retained_byte_ratio_percent": 0.1514
+        }
+      },
+      {
+        "budget": "tokens-450-envelope-450",
+        "payload_limit": 0,
+        "fixtures": 48,
+        "exact_fidelity": 0,
+        "extractive_fidelity": 0,
+        "typed_failures": {
+          "budget_unsatisfiable": 48
+        },
+        "baseline_typed_failures": {
+          "budget_unsatisfiable": 48
+        },
+        "over_budget_fixtures": 0,
+        "executed": {
+          "min_budget_utilization_percent": null,
+          "median_budget_utilization_percent": null,
+          "max_budget_utilization_percent": null,
+          "median_retained_byte_ratio_percent": null
+        },
+        "baseline": {
+          "comparable_fixtures": 0,
+          "divergent_fixtures": [],
+          "min_budget_utilization_percent": null,
+          "median_budget_utilization_percent": null,
+          "max_budget_utilization_percent": null,
+          "median_retained_byte_ratio_percent": null
+        }
+      }
+    ],
+    "sample": {
+      "tasks": 26,
+      "focused_answer_line_retention": 25,
+      "unfocused_answer_line_retention": 13,
+      "control_answer_line_retention": 2,
+      "control_retained_task_ids": [
+        "ep006-19",
+        "ep006-21"
+      ],
+      "unretained_by_either_arm": [
+        "ep006-24"
+      ],
+      "retained_by_control_only": [],
+      "min_budget_utilization_percent": 99.6667,
+      "median_budget_utilization_percent": 100,
+      "control_median_budget_utilization_percent": 0.7778,
+      "applied_profiles": {
+        "api-json/v1": 2,
+        "source-file/v1": 10,
+        "stack-trace/v1": 2,
+        "terminal-log/v1": 2,
+        "unified-diff/v1": 10
+      },
+      "control_applied_profiles": {
+        "plain-text/v1": 26
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "ep006-01",
+      "fixture": "trace-rust-panic-full",
+      "shape": "stack-trace",
+      "provider": "claude",
+      "invocation_order": "baseline_first",
+      "question": "Which exact panic message explains why the budget argument was rejected? Copy the complete source line.",
+      "focus_applied": true,
+      "applied_profile": "stack-trace/v1",
+      "control_applied_profile": "plain-text/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "answer_line": "budget must be an unsigned integer of visible units: ParseIntError { kind: InvalidDigit }"
+        }
+      },
+      "observation": {
+        "budget": "codex-hook-default",
+        "payload_limit": 1800,
+        "raw_count": 3314,
+        "projected_count": 1798,
+        "budget_utilization_percent": 99.8889,
+        "retained_byte_ratio_percent": 52.4359,
+        "baseline_projected_count": 16,
+        "baseline_budget_utilization_percent": 0.8889,
+        "baseline_retained_byte_ratio_percent": 0.5052,
+        "frozen_baseline_projected_count": 16,
+        "frozen_baseline_budget_utilization_percent": 0.8889,
+        "frozen_baseline_retained_byte_ratio_percent": 0.5052
+      },
+      "answer_line_retained": {
+        "focused": true,
+        "unfocused": false,
+        "control": false
+      },
+      "baseline": {
+        "success": false,
+        "parsed": {
+          "answer_line": "UNKNOWN: the observation does not contain any panic message or source line to copy"
+        },
+        "parse_error": null,
+        "mismatched_fields": [
+          "answer_line"
+        ],
+        "response": "{\"answer_line\":\"UNKNOWN: the observation does not contain any panic message or source line to copy\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3312,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 120,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3312,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 120,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 3312,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3312
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.072974,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":6921,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"9d2f2dc5-d4e9-4c98-a34c-6620d3573d56\",\"total_cost_usd\":0.072974,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3312,\"cache_read_input_tokens\":0,\"output_tokens\":120,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3312,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":120,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":3312,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3312},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":639,\"outputTokens\":15,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.000714,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":120,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":3312,\"webSearchRequests\":0,\"costUSD\":0.07225999999999999,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"UNKNOWN: the observation does not contain any panic message or source line to copy\\\"}\",\"ttft_ms\":5443,\"ttft_stream_ms\":3834,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":6013,\"uuid\":\"4efc49b0-59d2-488c-81f7-d45d61d2811e\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "fa8e020cf8858666f6b42f0c0eae0751b927397621c0ca40f3194a4fecdbf1e6",
+          "observation_sha256": "b81c967539a829ffb85d0bc15a17719dec6fae6ce8ac220b8ebe254b74da3908",
+          "raw_stdout_sha256": "e1b34650b443b8a269a66b492a6284da377e9b4554e2f602a74fa2fecc09f3b8",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "8921eb6ab9106db6924d2ba40d3643d40d748a9b91beb02fe9fade97529fb932",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "e8a87587e0e4f486163c49bc36561d5b636bf65c"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "answer_line": "budget must be an unsigned integer of visible units: ParseIntError { kind: InvalidDigit }"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"answer_line\":\"budget must be an unsigned integer of visible units: ParseIntError { kind: InvalidDigit }\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2684,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 46,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2684,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 46,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 2684,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2684
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.061626,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":4414,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"e8006baa-32f6-4425-966c-c4b9fc08228b\",\"total_cost_usd\":0.061626,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2684,\"cache_read_input_tokens\":2972,\"output_tokens\":46,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2684,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":46,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":2684,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2684},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":2589,\"outputTokens\":13,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.002654,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":46,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":2684,\"webSearchRequests\":0,\"costUSD\":0.058972000000000004,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"budget must be an unsigned integer of visible units: ParseIntError { kind: InvalidDigit }\\\"}\",\"ttft_ms\":3051,\"ttft_stream_ms\":2548,\"time_to_request_ms\":11,\"type\":\"result\",\"duration_ms\":3129,\"uuid\":\"2a3d212e-0b57-4e06-9bb9-1a32032a810d\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "1076fb2284c060134fab557605bb150df6c1413e80ec41c9f4ab121c4692a842",
+          "observation_sha256": "57b2730d991a0b255d5b6ee4b1175afc0726a7fffd54a8422e62da1bf48a9c68",
+          "raw_stdout_sha256": "8729f25aca9ccd1a8ebabe9a92b6b47299dc20a33633b17f79dd1a6c79fd7caf",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "d0d9756e08efd2d53a2863e7bbb7e9ff8e346929567a3babea095eac6c86e244",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "28364fd7968add15041189c5c98495bd50ca7fc9"
+        }
+      },
+      "model_identity_control": {
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ep006-02",
+      "fixture": "trace-rust-panic-full",
+      "shape": "stack-trace",
+      "provider": "claude",
+      "invocation_order": "baseline_first",
+      "question": "At which source location did the main thread panic? Copy the complete source line that reports the panic location.",
+      "focus_applied": true,
+      "applied_profile": "stack-trace/v1",
+      "control_applied_profile": "plain-text/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "answer_line": "thread 'main' (3181615) panicked at src/main.rs:3:10:"
+        }
+      },
+      "observation": {
+        "budget": "codex-hook-default",
+        "payload_limit": 1800,
+        "raw_count": 3314,
+        "projected_count": 1794,
+        "budget_utilization_percent": 99.6667,
+        "retained_byte_ratio_percent": 47.5881,
+        "baseline_projected_count": 16,
+        "baseline_budget_utilization_percent": 0.8889,
+        "baseline_retained_byte_ratio_percent": 0.5052,
+        "frozen_baseline_projected_count": 16,
+        "frozen_baseline_budget_utilization_percent": 0.8889,
+        "frozen_baseline_retained_byte_ratio_percent": 0.5052
+      },
+      "answer_line_retained": {
+        "focused": true,
+        "unfocused": true,
+        "control": false
+      },
+      "baseline": {
+        "success": false,
+        "parsed": {
+          "answer_line": "  38:                0x0 - <unknown>"
+        },
+        "parse_error": null,
+        "mismatched_fields": [
+          "answer_line"
+        ],
+        "response": "{\"answer_line\":\"  38:                0x0 - <unknown>\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 339,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 107,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 339,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 107,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 339,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 339
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.015858999999999998,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":7299,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"31f9b132-e06a-41c2-8998-0df81213be05\",\"total_cost_usd\":0.015858999999999998,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":339,\"cache_read_input_tokens\":2972,\"output_tokens\":107,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":339,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":107,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":339,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":339},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":642,\"outputTokens\":19,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.000737,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":107,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":339,\"webSearchRequests\":0,\"costUSD\":0.015121999999999998,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"  38:                0x0 - <unknown>\\\"}\",\"ttft_ms\":4078,\"ttft_stream_ms\":2727,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":4348,\"uuid\":\"739152b6-206c-48cf-b770-537f5534f4e7\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "f32a5f4a1ce710a9b3a7527bdefe724c967e99d04e2a0bf857a9b4c62f42d9a6",
+          "observation_sha256": "b81c967539a829ffb85d0bc15a17719dec6fae6ce8ac220b8ebe254b74da3908",
+          "raw_stdout_sha256": "6463d6ca008994dd36f793db84b06801c8443833ea480a4ebe028354866970d1",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "6847f5230f3497f5c73d46a50e8e515840e1ce2d66659a76364a36c1beb013d6",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "0e79e5b0c89c84b908f1e1d3532323aa3872158d"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "answer_line": "thread 'main' (3181615) panicked at src/main.rs:3:10:"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"answer_line\":\"thread 'main' (3181615) panicked at src/main.rs:3:10:\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2568,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 38,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2568,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 38,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 2568,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2568
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.058894,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":5378,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"b9da79f4-4b0e-4904-94df-0ba05b7549cd\",\"total_cost_usd\":0.058894,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2568,\"cache_read_input_tokens\":2972,\"output_tokens\":38,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2568,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":38,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":2568,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2568},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":2532,\"outputTokens\":22,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.002642,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":38,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":2568,\"webSearchRequests\":0,\"costUSD\":0.056252,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"thread 'main' (3181615) panicked at src/main.rs:3:10:\\\"}\",\"ttft_ms\":4027,\"ttft_stream_ms\":3619,\"time_to_request_ms\":11,\"type\":\"result\",\"duration_ms\":4051,\"uuid\":\"d3ac7634-7ff5-488f-adbf-27677e70b867\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "8533ad2fa09e3534e90af8d4c416fc317878f03b1f1f1293cf749314871b4caa",
+          "observation_sha256": "1969075e9926c302227308edca651d57cf4ac108dd3430ea2cc540e4d2c6adcf",
+          "raw_stdout_sha256": "67bdfc5aa2c38ba4e8e9a1bd63150201fb49cefa2711db0f75b0dbaf212ce790",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "7903aabc1aa490bad782c7acf19767d5b9071c8264a84179dc314d325ae589f1",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "0502db92efbf7212fbd7bc7cb8216c9c84a24db5"
+        }
+      },
+      "model_identity_control": {
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ep006-03",
+      "fixture": "log-git-log-stat",
+      "shape": "terminal-log",
+      "provider": "claude",
+      "invocation_order": "projected_first",
+      "question": "Which commit subject line records that oversized module test suites were split? Copy the complete source line.",
+      "focus_applied": true,
+      "applied_profile": "terminal-log/v1",
+      "control_applied_profile": "plain-text/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "answer_line": "    refactor(tests): split oversized module suites"
+        }
+      },
+      "observation": {
+        "budget": "codex-hook-default",
+        "payload_limit": 1800,
+        "raw_count": 5821,
+        "projected_count": 1798,
+        "budget_utilization_percent": 99.8889,
+        "retained_byte_ratio_percent": 23.1331,
+        "baseline_projected_count": 44,
+        "baseline_budget_utilization_percent": 2.4444,
+        "baseline_retained_byte_ratio_percent": 0.485,
+        "frozen_baseline_projected_count": 44,
+        "frozen_baseline_budget_utilization_percent": 2.4444,
+        "frozen_baseline_retained_byte_ratio_percent": 0.485
+      },
+      "answer_line_retained": {
+        "focused": true,
+        "unfocused": false,
+        "control": false
+      },
+      "baseline": {
+        "success": false,
+        "parsed": {
+          "answer_line": "commit 5f228cda3c0215c8ce61907350e6c7da37896584"
+        },
+        "parse_error": null,
+        "mismatched_fields": [
+          "answer_line"
+        ],
+        "response": "{\"answer_line\":\"commit 5f228cda3c0215c8ce61907350e6c7da37896584\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 376,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 109,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 376,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 109,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 376,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 376
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.016752,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":5361,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"7057b9c0-de39-434f-85a7-be1f13d37b15\",\"total_cost_usd\":0.016752,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":376,\"cache_read_input_tokens\":2972,\"output_tokens\":109,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":376,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":109,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":376,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":376},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":675,\"outputTokens\":23,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.00079,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":109,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":376,\"webSearchRequests\":0,\"costUSD\":0.015962,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"commit 5f228cda3c0215c8ce61907350e6c7da37896584\\\"}\",\"ttft_ms\":3383,\"ttft_stream_ms\":1792,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":3774,\"uuid\":\"f8448707-86ca-45cd-9769-ccef6312c70a\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "fd43830dd9189ee138832546bf405a0ccf9cfe842c740397224c04f176ad2cca",
+          "observation_sha256": "de91c1d4c05c97ea0564863480acd69d9e4789b1497c8e96a18f06a4248dff2c",
+          "raw_stdout_sha256": "520ac91a4c6329643ac9a4ccaa3630117985171b3c59454599eeb60f2dc3b429",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "01dae9e769b1fee4b0884f75faa3fcec147e8be57438efb513d386549f168ae5",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "b96a45cf051dd50ce82baf1e0394b1c3206baeea"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "answer_line": "    refactor(tests): split oversized module suites"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"answer_line\":\"    refactor(tests): split oversized module suites\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2824,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 27,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2824,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 27,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 2824,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2824
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.063574,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":3597,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"75f49eca-3593-4cfa-a831-ece6d6f80ddc\",\"total_cost_usd\":0.063574,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2824,\"cache_read_input_tokens\":2972,\"output_tokens\":27,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2824,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":27,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":2824,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2824},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":2662,\"outputTokens\":18,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0027519999999999997,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":27,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":2824,\"webSearchRequests\":0,\"costUSD\":0.060822,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"    refactor(tests): split oversized module suites\\\"}\",\"ttft_ms\":2348,\"ttft_stream_ms\":1998,\"time_to_request_ms\":11,\"type\":\"result\",\"duration_ms\":2370,\"uuid\":\"d49c96f5-0c99-4a16-ba61-b74c22738c57\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "0b0410e2af3b9bbe69c1e1c7d2b4f55773f3ce67e3c3aa42e6917ea52aa9a33c",
+          "observation_sha256": "27435755bbf9dc465419660eb40df773a36aebbba59efd81232546bf26387ef9",
+          "raw_stdout_sha256": "54f94f204c5201195b7b1cf345731aff66afde5bfa54486daaf675bae6ae48b3",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "03cad5b78b538268744fcce8917dcb71056ebb1d1f228ea4c79b8d8916749342",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "33c9d0e7ae85b959bb0fd3d8405bf51c465a60ce"
+        }
+      },
+      "model_identity_control": {
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ep006-04",
+      "fixture": "log-git-log-stat",
+      "shape": "terminal-log",
+      "provider": "claude",
+      "invocation_order": "projected_first",
+      "question": "Which diffstat summary line belongs to the commit that centralized surface contracts? Copy the complete source line.",
+      "focus_applied": true,
+      "applied_profile": "terminal-log/v1",
+      "control_applied_profile": "plain-text/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "answer_line": " 7 files changed, 445 insertions(+), 224 deletions(-)"
+        }
+      },
+      "observation": {
+        "budget": "codex-hook-default",
+        "payload_limit": 1800,
+        "raw_count": 5821,
+        "projected_count": 1796,
+        "budget_utilization_percent": 99.7778,
+        "retained_byte_ratio_percent": 27.2107,
+        "baseline_projected_count": 44,
+        "baseline_budget_utilization_percent": 2.4444,
+        "baseline_retained_byte_ratio_percent": 0.485,
+        "frozen_baseline_projected_count": 44,
+        "frozen_baseline_budget_utilization_percent": 2.4444,
+        "frozen_baseline_retained_byte_ratio_percent": 0.485
+      },
+      "answer_line_retained": {
+        "focused": true,
+        "unfocused": true,
+        "control": false
+      },
+      "baseline": {
+        "success": false,
+        "parsed": {
+          "answer_line": " 10 files changed, 1898 insertions(+), 23 deletions(-)"
+        },
+        "parse_error": null,
+        "mismatched_fields": [
+          "answer_line"
+        ],
+        "response": "{\"answer_line\":\" 10 files changed, 1898 insertions(+), 23 deletions(-)\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 383,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 46,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 383,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 46,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 383,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 383
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.013707,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":3414,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"cb7d6d8c-88cf-4b4d-94b0-89d49dd32518\",\"total_cost_usd\":0.013707,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":383,\"cache_read_input_tokens\":2972,\"output_tokens\":46,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":383,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":46,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":383,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":383},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":675,\"outputTokens\":16,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.000755,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":46,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":383,\"webSearchRequests\":0,\"costUSD\":0.012952,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\" 10 files changed, 1898 insertions(+), 23 deletions(-)\\\"}\",\"ttft_ms\":2300,\"ttft_stream_ms\":1676,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":2337,\"uuid\":\"860a05ea-5b0c-41e0-8fcc-f83e5848830e\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "20d866531c80d86d94632b00f7fe8eacb1a68e4b256b628416bc5d0ed60ba42c",
+          "observation_sha256": "de91c1d4c05c97ea0564863480acd69d9e4789b1497c8e96a18f06a4248dff2c",
+          "raw_stdout_sha256": "94e9b4b7402b61f44bed8e541d33869199a8207b1915ab378e7b043ec1f58cb7",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "25323c512705f2579b1cc015ffcf7566a7606441447c0f946659d632248f38b9",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "b237ce41804fd3e7fc45c54c396d8c4ada8826ee"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "answer_line": " 7 files changed, 445 insertions(+), 224 deletions(-)"
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"answer_line\":\" 7 files changed, 445 insertions(+), 224 deletions(-)\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3060,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 37,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3060,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 37,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 3060,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3060
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.068957,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":4298,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"27a3c601-0078-481d-9052-ebcbf67b2e39\",\"total_cost_usd\":0.068957,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3060,\"cache_read_input_tokens\":2972,\"output_tokens\":37,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3060,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":37,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":3060,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3060},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":2815,\"outputTokens\":20,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0029149999999999996,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":37,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":3060,\"webSearchRequests\":0,\"costUSD\":0.066042,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\" 7 files changed, 445 insertions(+), 224 deletions(-)\\\"}\",\"ttft_ms\":2785,\"ttft_stream_ms\":2357,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":2802,\"uuid\":\"94ddade5-5927-4396-baa2-35f75bbf8c97\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "6ff6d7c4cb3fa57f5013889fec64afe4cf4deccd1e15246bc72d7f4bd30ccbc5",
+          "observation_sha256": "e76cac2cc8d679fcf9167e79b3c416c19bbfec829a7a23658a4419990860679d",
+          "raw_stdout_sha256": "bbe623a53ccc4fe0fedc1f9ce7e9f04800de22326ae01c0d22480bf643e7efc0",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "cc20e604fc60cebc2a63c65acaab07e579899faaca327b6979da37df4a4b1c08",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "be90db3ffe9327b4eba13da7e86826729d0f5c78"
+        }
+      },
+      "model_identity_control": {
+        "matches": true,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": true,
+        "reported_model_contract_satisfied": true,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ep006-05",
+      "fixture": "json-release-protocol",
+      "shape": "api-json",
+      "provider": "claude",
+      "invocation_order": "projected_first",
+      "question": "Which line declares the default destination directory of the qualification protocol? Copy the complete source line.",
+      "focus_applied": true,
+      "applied_profile": "api-json/v1",
+      "control_applied_profile": "plain-text/v1",
+      "rubric": {
+        "rule": "exact_json_object",
+        "expected": {
+          "answer_line": "    \"default_root\": \"/tmp/distill-architecture-hardening-v6-20260731\","
+        }
+      },
+      "observation": {
+        "budget": "codex-hook-default",
+        "payload_limit": 1800,
+        "raw_count": 2716,
+        "projected_count": 1800,
+        "budget_utilization_percent": 100,
+        "retained_byte_ratio_percent": 66.1752,
+        "baseline_projected_count": 2,
+        "baseline_budget_utilization_percent": 0.1111,
+        "baseline_retained_byte_ratio_percent": 0.0353,
+        "frozen_baseline_projected_count": 2,
+        "frozen_baseline_budget_utilization_percent": 0.1111,
+        "frozen_baseline_retained_byte_ratio_percent": 0.0353
+      },
+      "answer_line_retained": {
+        "focused": true,
+        "unfocused": true,
+        "control": false
+      },
+      "baseline": {
+        "success": false,
+        "parsed": {
+          "answer_line": ""
+        },
+        "parse_error": null,
+        "mismatched_fields": [
+          "answer_line"
+        ],
+        "response": "{\"answer_line\":\"\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-opus-5",
+            "canonical_model": "claude-opus-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 326,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 11,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 326,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.0045405,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":11238,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"2a4d7403-e45b-4b04-b142-049840d36003\",\"total_cost_usd\":0.0045405,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":326,\"cache_read_input_tokens\":2972,\"output_tokens\":11,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":326,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":627,\"outputTokens\":21,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0007319999999999999,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-opus-5\":{\"inputTokens\":2,\"outputTokens\":11,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":326,\"webSearchRequests\":0,\"costUSD\":0.0038085000000000003,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-opus-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"\\\"}\",\"ttft_ms\":9566,\"ttft_stream_ms\":9554,\"time_to_request_ms\":10,\"type\":\"result\",\"duration_ms\":9861,\"uuid\":\"0b3fda98-505a-448f-a918-82c046ec5f46\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "b5e9f427727147ccf6c3f28ddbc40a9087726c798c4e6335376cb21af6b670c1",
+          "observation_sha256": "d914176fd50bd7f565700006a31aa97b79d3ad17cee20c8e5ff2061d5cb74817",
+          "raw_stdout_sha256": "306e6158e466edb82b47590a4bd090ab7967a6c0881f3dfd1d75bc22c06c0a05",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "78aaa62f0bd609649f4e6d3ed032ca66aa8f92e3ad8ceda65516cbe1712d6ca4",
+          "reported_models_sha256": "590985e78dc5ac5bf07dd7fc3760c96cfe2a6485a8f92a92e419e1fd7ff41662",
+          "attestation_commit": "d21cf87183ce8c94d9fed5b8258c92dbc1c2c59f"
+        }
+      },
+      "projected": {
+        "success": true,
+        "parsed": {
+          "answer_line": "    \"default_root\": \"/tmp/distill-architecture-hardening-v6-20260731\","
+        },
+        "parse_error": null,
+        "mismatched_fields": [],
+        "response": "{\"answer_line\":\"    \\\"default_root\\\": \\\"/tmp/distill-architecture-hardening-v6-20260731\\\",\"}",
+        "requested_model": "claude-fable-5",
+        "reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ],
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3263,
+          "cache_read_input_tokens": 2972,
+          "output_tokens": 81,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3263,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 81,
+              "cache_read_input_tokens": 2972,
+              "cache_creation_input_tokens": 3263,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3263
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        },
+        "reported_api_equivalent_usd": 0.075285,
+        "provider_error": null,
+        "raw_cli": {
+          "exit_code": 0,
+          "stdout": "{\"is_error\":false,\"duration_api_ms\":4025,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"71f1d162-8576-4a31-8b7e-1d2a015be14c\",\"total_cost_usd\":0.075285,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3263,\"cache_read_input_tokens\":2972,\"output_tokens\":81,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3263,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":81,\"cache_read_input_tokens\":2972,\"cache_creation_input_tokens\":3263,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3263},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":2853,\"outputTokens\":26,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.002983,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\"},\"claude-fable-5\":{\"inputTokens\":2,\"outputTokens\":81,\"cacheReadInputTokens\":2972,\"cacheCreationInputTokens\":3263,\"webSearchRequests\":0,\"costUSD\":0.072302,\"contextWindow\":1000000,\"maxOutputTokens\":64000,\"canonicalModel\":\"claude-fable-5\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"answer_line\\\":\\\"    \\\\\\\"default_root\\\\\\\": \\\\\\\"/tmp/distill-architecture-hardening-v6-20260731\\\\\\\",\\\"}\",\"ttft_ms\":1866,\"ttft_stream_ms\":1378,\"time_to_request_ms\":24,\"type\":\"result\",\"duration_ms\":2486,\"uuid\":\"f32fd983-bae0-4929-aad3-1a5acb5890d9\"}\n",
+          "stderr": ""
+        },
+        "evidence": {
+          "prompt_sha256": "64ac755b20f1f0a671af568b6363dc23495404621bb367ce7f96002a4bfd9a5e",
+          "observation_sha256": "eff84e241501d624434732a4ad47400e764a7e1b666a674bdc25c6064e20ed43",
+          "raw_stdout_sha256": "705423e2effc10cf5489ff8edbd4830665ed0dfeee0879b31a23901c0b5c338f",
+          "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "response_sha256": "67cefa0e378ec521ed46099f15701ec1bf0c3f7db73c552487bfaff4336daad9",
+          "reported_models_sha256": "2b2028fb85e9df2a1b1eb8e494c69ca809fbbdfa81f54133dabf697e2f766ae8",
+          "attestation_commit": "3423f7862b8c8f4d75ac2eebb8fc86aba6759def"
+        }
+      },
+      "model_identity_control": {
+        "matches": false,
+        "expected_requested_model": "claude-fable-5",
+        "pair_reported_models_equal": false,
+        "reported_model_contract_satisfied": false,
+        "baseline_requested_model": "claude-fable-5",
+        "projected_requested_model": "claude-fable-5",
+        "baseline_reported_models": [
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-opus-5",
+            "canonical_model": "claude-opus-5",
+            "provider": "firstParty"
+          }
+        ],
+        "projected_reported_models": [
+          {
+            "id": "claude-fable-5",
+            "canonical_model": "claude-fable-5",
+            "provider": "firstParty"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "canonical_model": "claude-haiku-4-5",
+            "provider": "firstParty"
+          }
+        ]
+      }
+    }
+  ],
+  "status": "NO-GO"
+}

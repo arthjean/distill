@@ -137,6 +137,62 @@ The closed v5 protocol, ledgers, runner, checker, and evidence, and the frozen
 projection baseline, are pinned by digest in the new ledger and verified on
 every invocation.
 
+### Executed-path v1, terminal
+
+`executed-path-v1-20260804` terminated `NO-GO` after 10 of 52 invocations, on
+`ep006-05`, reason `REQUIRED_PRIMARY_MODEL_NOT_REPORTED`. Claude Code answered
+that pair's baseline condition with `claude-opus-5` and `claude-haiku-4-5` while
+`--model` requested `claude-fable-5`, reporting `is_error` false,
+`api_error_status` null and `terminal_reason` completed. The substitution was
+silent and the nine other invocations reported the requested identity. Its
+no-retry and no-replay rules stand: it is never rerun and never relabelled.
+
+Its terminal evidence is preserved as
+`executed-path-v1-terminal-report.json` and
+`executed-path-v1-terminal-execution-ledger.json`, outside the closed
+`evidence/` tree, and pinned by digest in the v2 ledger along with its protocol,
+ledger, runner and checker. The five completed pairs measured baseline 0 of 5
+against projected 5 of 5, with prior-answerability 0 and no model error on
+retained content. That is diagnostic only: the sample is 5 of 26, no
+preregistered gate was reached, and no release claim rests on it.
+
+## Executed-path qualification v2
+
+`executed-path-v2-protocol.json` supersedes v1 and changes three things. The
+corpus, the binaries, the comparator, the 26 tasks, the rubric, the budgets and
+every accuracy gate are byte-identical.
+
+The requested model becomes `claude-opus-5`. Pinning a model no caller runs
+reproduces the exact error this release exists to correct: measuring a
+configuration the product does not meet.
+
+No model identity is enforced in flight. Claude Code dispatches auxiliary and
+subagent models of its own accord, and fighting the host is not a product
+control. Every invocation still records and attests its complete `modelUsage`
+list.
+
+Internal validity moves to an end-of-run balance gate. For each reported model,
+the asymmetry is the difference between how many baseline and how many projected
+invocations used it; the statistic is the worst case over all models, and the
+ceiling is 4 invocations. An asymmetry of k can inflate the delta by at most
+k/26 of the sample, so 4 leaves 73.1 points against the 65-point floor. A host
+that dispatches symmetrically scores zero. The rationale for moving rather than
+deleting the control: v3, v4 and v1 each died near the tenth invocation on host
+telemetry, so the criterion was sound and the instrument was not.
+
+The one remaining in-flight terminal condition is three consecutive pairs of
+provider errors, which stops a dead transport from consuming the ceiling.
+
+```bash
+bun evaluation/release/run-executed-path-v2.mjs --validate-only
+bun evaluation/release/run-executed-path-v2.mjs --execute
+bun evaluation/release/check-executed-path-v2.mjs
+```
+
+Preregistration and consumption remain two separate commits, in that order, and
+execution writes only under `/tmp/distill-executed-path-v2-20260804` with its
+durable record at `refs/distill/qualifications/executed-path-v2-20260804`.
+
 ## Native surface contract v2
 
 `docs/integrations/cli-conformance-v2.json` and

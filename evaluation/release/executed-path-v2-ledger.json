@@ -1,0 +1,116 @@
+{
+  "schema_version": "distill.executed-path-ledger/v1",
+  "qualification_id": "executed-path-v2-20260804",
+  "status": "PRE_REGISTERED",
+  "pre_registration_commit": null,
+  "consumed_at": null,
+  "protocol_path": "evaluation/release/executed-path-v2-protocol.json",
+  "protocol_sha256": "1281bedd1d9f561cfea6bac8cd167d989e550cf6fd105e70f9b4c0f9724d1e29",
+  "authorization": {
+    "recorded_at": "2026-08-04",
+    "authorized_by": "maintainer, after the v1 terminal NO-GO",
+    "decision_scope": "preregistration only; the paired execution is a separate maintainer action",
+    "maximum_subscription_invocations": 52,
+    "approved_incremental_spend_usd": 0,
+    "minimum_delta_percentage_points": 65,
+    "minimum_delta_rationale": "The comparator is the projection the surfaces executed before this release, not the unbounded observation. Deterministic retention is 25 of 26 for the candidate against 2 of 26 for the control, so the structural margin is 88.46 points. The floor absorbs the two confounds the protocol records: model error, which costs the candidate, and prior-answerability, which costs the control and therefore deflates the delta. It is the single accuracy gate, and the runner rejects any protocol in which the guards already imply it. A floor at parity, or at the closed v5 minus 2 points, would pass on a projection that changed nothing.",
+    "claude_access": "Claude Code through Claude Max",
+    "codex_access": null,
+    "codex_access_note": "The ChatGPT subscription is lapsed at preregistration. This qualification is single-host by authorization, not by omission; a Codex arm requires a new preregistration.",
+    "claude_model": "claude-opus-5",
+    "claude_prompt_suggestions": false,
+    "primary_model_identity_is_gate": false,
+    "auxiliary_model_telemetry_is_gate": false,
+    "api_or_api_key_use_permitted": false,
+    "fallback_api_permitted": false,
+    "claude_model_decision": "The model a caller actually runs. Requesting an unused model would measure a configuration the product does not meet.",
+    "primary_model_identity_decision": "Claude Code legitimately dispatches auxiliary and subagent models, so identity is recorded and attested per invocation but judged only by the end-of-run balance gate. v1, v4 and v3 each died in flight on this property."
+  },
+  "predecessor": {
+    "qualification_id": "executed-path-v1-20260804",
+    "outcome": "NO-GO",
+    "pre_registration_commit": "2c9a0a983b77fe9c3ec355592777986c29057527",
+    "consumption_commit": "8477cb2b271844c3c55de904f83ab5ce4440b6e9",
+    "attestation_ref": "refs/distill/qualifications/executed-path-v1-20260804",
+    "invocations_consumed": 10,
+    "closed": true,
+    "closed_note": "Its protocol, ledger, runner, checker and terminal evidence are immutable and pinned below. It is never rerun, resumed or relabelled."
+  },
+  "historical_evidence": [
+    {
+      "path": "evaluation/release/executed-path-v1-protocol.json",
+      "sha256": "4946796a5138564ef2b28679f33633c71bcc8905d3ac8786c82200c4fcb9d7b9"
+    },
+    {
+      "path": "evaluation/release/executed-path-v1-ledger.json",
+      "sha256": "568bc4c0ed3a133a8b89cc867329802b7f52a9d196a9bacd0221bf58cd4bf859"
+    },
+    {
+      "path": "evaluation/release/run-executed-path-v1.mjs",
+      "sha256": "3c48688402bbccaaefc8d2dd3260b91f516a76c4eb49623ece909e836b225fc2"
+    },
+    {
+      "path": "evaluation/release/check-executed-path-v1.mjs",
+      "sha256": "4ccdd84eef3e7b0a010c6d70635380493641a0ac8dd8ac25da31fa0d41678b7e"
+    },
+    {
+      "path": "evaluation/release/executed-path-v1-terminal-report.json",
+      "sha256": "94f183b4c2253a1ccd9ae0bd4ae91120dbc60677c391fbcba42b3745566e394a"
+    },
+    {
+      "path": "evaluation/release/executed-path-v1-terminal-execution-ledger.json",
+      "sha256": "15e52f83555799760af739da12e44e673b0366f3fdaa6e7c1bfbb8384710d8fd"
+    },
+    {
+      "path": "evaluation/release/run-paired-v5.mjs",
+      "sha256": "bec66a13cf2bb6344281d1064f143c040c1474dcdd0e0f365a3d01adbfdbfb6d"
+    },
+    {
+      "path": "evaluation/release/paired-tasks-v5.json",
+      "sha256": "888bc3e27487693885ae735132b395f4347cb26f5e30729e5cb3b7157fcb91a7"
+    },
+    {
+      "path": "evaluation/release/paired-qualification-v5-ledger.json",
+      "sha256": "11e5b41b9787bb11b9c74825bacb1fd895bd7eea2c5ea6fdc6105718659e95b2"
+    },
+    {
+      "path": "evaluation/release/check-us018-v5.mjs",
+      "sha256": "43504d2d5430ef63115ecd2949f45961e5f564f8f7605f0ff52b141bc8908a36"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-v5.json",
+      "sha256": "e56314f4516943e85bde6d0cb3fb3414375ed7ca318f78a6527b655464e31779"
+    },
+    {
+      "path": "evaluation/release/evidence/paired-tasks-v5-execution-ledger.json",
+      "sha256": "6d425ea1a0deec9b4afb9b87120a4f40e7b9a80004322ad8f0d674256a18c06e"
+    },
+    {
+      "path": "evaluation/release/evidence/us018-qualification-v5.json",
+      "sha256": "a9548795655f089ecd5d2081abeb20b5f907d38b873249ba752650bb8e205d1c"
+    },
+    {
+      "path": "evaluation/release/evidence/macos-arm64-v5.json",
+      "sha256": "fa465bb75fb070dc3796d7f3717bfc67e2455a615b4818f798d3af4c4fd06c99"
+    },
+    {
+      "path": "evaluation/baseline/projection-baseline-v1.json",
+      "sha256": "2d1c761668d37d16d1d9919e1de67a8286f9f88e260ed2e2f7b07462da10a1ff"
+    },
+    {
+      "path": "evaluation/baseline/run-projection-baseline.mjs",
+      "sha256": "4a7d3e785c6f1222ed55e96faa4b67d3e4d2a20746d710019b67684cffe668c0"
+    }
+  ],
+  "execution": {
+    "required_source_worktree_clean": true,
+    "external_state_directory": "/tmp/distill-executed-path-v2-20260804",
+    "one_shot": true,
+    "resume_or_replay_permitted": false,
+    "no_retry": true,
+    "attestation_ref": "refs/distill/qualifications/executed-path-v2-20260804",
+    "report_name": "executed-path-v2-report.json",
+    "execution_ledger_name": "executed-path-v2-execution-ledger.json",
+    "aggregate_report_name": "executed-path-v2-aggregate.json"
+  }
+}
