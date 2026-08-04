@@ -1,0 +1,504 @@
+{
+ "schema_version": "distill.executed-path-qualification/v2",
+ "qualification_id": "executed-path-v3-20260804",
+ "recorded_at": "2026-08-04",
+ "purpose": "Close the two questions the v2 comparator left open. v2 proved the executed auto/v1 path beats the plain-text/v1 path it replaced, and stated that no claim resting on it may assert parity with unbounded context. v3 measures that parity directly, and measures the executed path under the focus production actually derives rather than a hand-written one.",
+ "prd": {
+  "file": "tasks/prd-distill-projection-intelligence.md",
+  "story": "US-019 follow-on",
+  "note": "This qualification adds arms. It does not amend, replace, or reopen the closed v2 result."
+ },
+ "predecessor": {
+  "qualification_id": "executed-path-v2-20260804",
+  "protocol_path": "evaluation/release/executed-path-v2-protocol.json",
+  "aggregate_path": "evaluation/release/executed-path-v2-aggregate.json",
+  "result": "GO at 88.46 points, baseline 2 of 26 against projected 25 of 26",
+  "relationship": "Same corpus, same 26 questions, same rubric, same response schema, same budget, same host. v3 changes only which observation each arm sees."
+ },
+ "candidate": {
+  "source_tree": "e781287b36d55bca53d374f2938e0373cf44e5cd",
+  "source_tree_command": "scripts/source-tree.sh",
+  "canonical_build_command": "cargo build --locked --release",
+  "canonical_binary_path": "target/release/distill",
+  "binary_sha256": "ea521fbeced1f2a45d036c5c0df7d8ffaed6b7d4e253d03a48b1ad8b296217a5",
+  "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "capture_host_class": "linux-x86_64",
+  "binary_digest_is_a_hard_gate": true,
+  "binary_digest_note": "The pinned digest reproduces from the pinned source tree on the recorded host class and toolchain, verified by a forced rebuild at preregistration. A divergent digest refuses execution."
+ },
+ "executed_path": {
+  "default_preservation_profile": "auto/v1",
+  "profile_source": "src/surface.rs DEFAULT_PRESERVATION_PROFILE, pinned by both product surfaces",
+  "per_category_profile_selection": false,
+  "per_category_profile_selection_note": "Neither arm ever passes --profile. Each binary runs the default its own tree pins, so the measurement compares two executed paths and no per-category selection can enter it. The runner aborts if a receipt reports any other requested profile.",
+  "projection_command": "target/release/distill --store <temporary> project --budget 2250 --reserve 450 --unit tokens --json --focus <task focus>",
+  "focus_source": "the task focus, supplied exactly as an MCP caller supplies it after EP-005",
+  "measured_through": "the CLI seam over Engine::handle"
+ },
+ "corpus": {
+  "real_manifest_path": "evaluation/corpus/real/manifest.jsonl",
+  "real_manifest_sha256": "02548a5da13cd42f78ed905229ce6834ea4d57d560080e99c451eace7364d2de",
+  "fixtures": 48,
+  "generated_manifest_path": "evaluation/corpus/manifest.jsonl",
+  "generated_manifest_sha256": "3e16733392422d43ea3697fbf54b0ddddb9424dcf46f4e3d2ca1f61dcbfb4f40",
+  "generated_corpus_role": "regression fixture only; no model-scored task reads it"
+ },
+ "arms": {
+  "raw": {
+   "description": "the complete unbounded observation, exactly as the tool emitted it, with no Distill in the path",
+   "distill_applied": false,
+   "focus": null,
+   "role": "the ceiling this release can be measured against, and the arm v2 declined to score"
+  },
+  "production": {
+   "description": "the executed auto/v1 default at the Codex hook budget, with the focus derived_focus builds from the recorded tool input",
+   "distill_applied": true,
+   "focus_derivation": "src/codex.rs derived_focus over FOCUS_FIELDS, bounded to MAX_FOCUS_BYTES",
+   "focus_fields": [
+    "command",
+    "file_path",
+    "path",
+    "pattern",
+    "query"
+   ],
+   "focus_is_hand_written": false,
+   "role": "the projection a Codex user actually receives"
+  }
+ },
+ "claim_under_test": "At the budget the Codex hook applies, with the focus production derives, the executed path answers the same questions the unbounded observation answers.",
+ "budgets": {
+  "model_scored": {
+   "id": "codex-hook-default",
+   "unit": "tokens",
+   "total_visible_limit": 2250,
+   "reserved_envelope": 450,
+   "payload_limit": 1800,
+   "role": "executed Codex hook default (SAFE_OUTPUT_CAP_TOKENS, DEFAULT_RESERVED_TOKENS), applied identically to both arms",
+   "host_independence_note": "This budget is a Distill surface constant, not a property of the answering model host. It is the budget the frozen US-002 baseline recorded, so keeping it is what makes the comparison valid; the model host only scores the questions."
+  },
+  "deterministic_accounting": [
+   {
+    "id": "codex-hook-default",
+    "unit": "tokens",
+    "total_visible_limit": 2250,
+    "reserved_envelope": 450
+   },
+   {
+    "id": "tokens-512-envelope-64",
+    "unit": "tokens",
+    "total_visible_limit": 512,
+    "reserved_envelope": 64
+   },
+   {
+    "id": "tokens-8192-envelope-1024",
+    "unit": "tokens",
+    "total_visible_limit": 8192,
+    "reserved_envelope": 1024
+   },
+   {
+    "id": "tokens-450-envelope-450",
+    "unit": "tokens",
+    "total_visible_limit": 450,
+    "reserved_envelope": 450
+   }
+  ],
+  "deterministic_accounting_role": "the four budgets the frozen baseline recorded, so executed-path utilization, retained ratio, and typed failures compare to it at every recorded budget"
+ },
+ "response_schema": {
+  "id": "answer-line/v1",
+  "keys": [
+   "answer_line"
+  ],
+  "description": "One JSON string containing the complete source line copied verbatim, including its leading whitespace and any diff marker."
+ },
+ "rubric": {
+  "rule": "exact_json_object",
+  "description": "Strict JSON parse, exactly the declared keys, exact string equality against one complete source line that occurs exactly once in the raw observation.",
+  "inherited_from": "evaluation/release/paired-tasks-v5.json"
+ },
+ "providers": {
+  "claude": {
+   "subscription": "Claude Max",
+   "model": "claude-opus-5",
+   "model_decision": "The model a caller actually runs today. The qualification asks what a real agent experiences, so requesting an unused model would measure a configuration the product does not meet, which is the defect this PRD was written to close.",
+   "reasoning_effort": "low",
+   "prompt_suggestions": false,
+   "reported_model_control": "None in flight. Every invocation records and attests its complete modelUsage list, and the only identity gate is the end-of-run balance check in gates.maximum_model_distribution_asymmetry_invocations. A substituted or auxiliary model never stops the run.",
+   "tool_state": "safe mode, no tools, no session persistence"
+  }
+ },
+ "sample": {
+  "size": 26,
+  "pairs": 26,
+  "calls_per_pair": 2,
+  "maximum_invocations": 52,
+  "selection_rule": "the v2 sample verbatim; no task is added, removed, or reworded",
+  "shape_coverage": {
+   "stack-trace": 2,
+   "terminal-log": 2,
+   "api-json": 2,
+   "source-file": 10,
+   "unified-diff": 10
+  },
+  "provider_coverage": {
+   "claude": 26
+  },
+  "order_coverage": {
+   "raw_first": 13,
+   "production_first": 13
+  },
+  "single_host": true,
+  "single_host_reason": "Only the Claude Max subscription is available at preregistration; the ChatGPT subscription is lapsed. The qualification runs one model host rather than deferring until both are available.",
+  "single_host_limitation": "The closed v5 protocol balanced two providers so that one host's parsing or formatting quirks could not drive the result. That control is absent here. It is materially less damaging under this comparator than under a raw-versus-projected design, because a host quirk would have to discriminate between two payloads drawn from the same model and the same question, which the invocation-order counterbalance controls. Every claim resting on this evidence remains scoped to Claude Code at the pinned model identity, and a second-host arm requires a new preregistration rather than an amendment to this one.",
+  "order_counterbalance_retained": true
+ },
+ "preregistration_measurement": {
+  "recorded_at": "2026-08-04",
+  "reproduced_by": "bun evaluation/release/run-executed-path-v3.mjs --validate-only",
+  "tolerance_percentage_points": 0.5,
+  "deterministic_answer_line_retention": {
+   "raw": 26,
+   "production": 17,
+   "v2_protocol_focus": 25,
+   "unfocused": 13,
+   "control_plain_text_v1": 2,
+   "note": "The raw arm retains every answer line by construction. The production focus retains 17 of 26, between the unfocused 13 and the hand-written 25. This is measured before execution and is the reason v3 exists: the v2 delta was obtained under a focus production does not produce."
+  },
+  "per_shape_production_retention": {
+   "api-json": "2 of 2",
+   "source-file": "9 of 10",
+   "stack-trace": "1 of 2",
+   "terminal-log": "0 of 2",
+   "unified-diff": "5 of 10"
+  }
+ },
+ "gates": {
+  "parity_threshold_percentage_points": 10,
+  "parity_decision": "PARITY when raw successes minus production successes is at most 10 percentage points. The threshold is declared before execution and is not a release gate: v3 publishes its measured delta in either direction. A result outside parity is a disclosed limitation of the executed path under production focus, not a failure of the run.",
+  "deterministic_ceiling": "Production retention is 17 of 26 at preregistration, so production cannot exceed 65.4 percent except through prior-answerability. Raw is bounded only by model error and context rot. A raw result materially below 26 of 26 is itself the finding: it would show the unbounded observation is not the ceiling it is assumed to be.",
+  "minimum_raw_successes": 0,
+  "no_gate_can_be_satisfied_by_reselection": "Tasks, questions, expected lines, and fixtures are inherited verbatim from the closed v2 protocol and cannot be reselected after execution."
+ },
+ "confounds": {
+  "prior_answerability": {
+   "description": "The rubric is exact equality against one complete source line. Several expected lines are short and idiomatic enough to be produced from model priors without the observation, for example a power-of-two byte constant or a canonical Node digest call.",
+   "effect": "It inflates both arms here rather than one, because both arms are scored on the same questions.",
+   "measurement": "Reported per arm as successes on tasks whose answer line the arm does not retain."
+  },
+  "context_rot": {
+   "description": "The raw arm delivers up to 27,000 tokens of unstructured observation for a single-line answer. Published measurement across 18 frontier models reports non-uniform degradation well before the documented window.",
+   "effect": "It deflates the raw arm only.",
+   "measurement": "Reported as raw failures whose answer line was present in the observation.",
+   "handling": "Not corrected. It is a real property of the alternative this release is compared against."
+  },
+  "cross_run_comparability": {
+   "description": "v3 runs after v2 rather than in the same batch.",
+   "effect": "Model identity or host behavior could drift between runs.",
+   "measurement": "Model identity is recorded per invocation and reported as an end-of-run balance, as in v2.",
+   "handling": "v3 does not restate the v2 baseline or projected numbers as its own. Any comparison to v2 is labelled cross-run in the report."
+  }
+ },
+ "execution_policy": {
+  "no_retry": true,
+  "stop_in_flight_on_model_identity": false,
+  "stop_in_flight_on_model_identity_note": "v1, v4 and v3 each terminated near the tenth invocation on a host telemetry property rather than on the product. Identity is now a diagnostic per invocation and a balance gate at the end.",
+  "maximum_consecutive_provider_errors": 3,
+  "maximum_consecutive_provider_errors_role": "breakage guard; a dead transport must not silently consume the invocation ceiling. It is the only in-flight terminal condition.",
+  "auxiliary_model_telemetry_is_diagnostic": true,
+  "early_stop_is_terminal": true,
+  "requires_clean_source_worktree": true,
+  "requires_consumed_authorization": true,
+  "evidence_outside_worktree": "/tmp/distill-executed-path-v3-20260804",
+  "attestation_ref": "refs/distill/qualifications/executed-path-v3-20260804",
+  "one_shot": true,
+  "unauthorized_run_records_no_partial_result": true
+ },
+ "tasks": [
+  {
+   "id": "ep006v3-01",
+   "fixture": "trace-rust-panic-full",
+   "shape": "stack-trace",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which exact panic message explains why the budget argument was rejected? Copy the complete source line.",
+   "production_focus": "cargo run --offline --quiet",
+   "v2_protocol_focus": "why did the budget argument fail to parse",
+   "expected": "budget must be an unsigned integer of visible units: ParseIntError { kind: InvalidDigit }"
+  },
+  {
+   "id": "ep006v3-02",
+   "fixture": "trace-rust-panic-full",
+   "shape": "stack-trace",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "At which source location did the main thread panic? Copy the complete source line that reports the panic location.",
+   "production_focus": "cargo run --offline --quiet",
+   "v2_protocol_focus": "which source location did the thread panic at",
+   "expected": "thread 'main' (3181615) panicked at src/main.rs:3:10:"
+  },
+  {
+   "id": "ep006v3-03",
+   "fixture": "log-git-log-stat",
+   "shape": "terminal-log",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which commit subject line records that oversized module test suites were split? Copy the complete source line.",
+   "production_focus": "git --no-pager log --stat -40 5f228cd",
+   "v2_protocol_focus": "which commit split the oversized module suites",
+   "expected": "    refactor(tests): split oversized module suites"
+  },
+  {
+   "id": "ep006v3-04",
+   "fixture": "log-git-log-stat",
+   "shape": "terminal-log",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which diffstat summary line belongs to the commit that centralized surface contracts? Copy the complete source line.",
+   "production_focus": "git --no-pager log --stat -40 5f228cd",
+   "v2_protocol_focus": "how many files changed in the commit that centralized surface contracts",
+   "expected": " 7 files changed, 445 insertions(+), 224 deletions(-)"
+  },
+  {
+   "id": "ep006v3-05",
+   "fixture": "json-release-protocol",
+   "shape": "api-json",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line declares the default destination directory of the qualification protocol? Copy the complete source line.",
+   "production_focus": "cat evaluation/release/architecture-hardening-v6-protocol.json",
+   "v2_protocol_focus": "what is the default root directory of the protocol",
+   "expected": "    \"default_root\": \"/tmp/distill-architecture-hardening-v6-20260731\","
+  },
+  {
+   "id": "ep006v3-06",
+   "fixture": "json-release-protocol",
+   "shape": "api-json",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line records the CPU-second ceiling authorized by the qualification protocol? Copy the complete source line.",
+   "production_focus": "cat evaluation/release/architecture-hardening-v6-protocol.json",
+   "v2_protocol_focus": "what is the maximum authorized cpu second ceiling",
+   "expected": "    \"maximum_cpu_seconds\": 14400,"
+  },
+  {
+   "id": "ep006v3-07",
+   "fixture": "source-artifact-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line rejects an artifact whose expiry instant is not after its creation instant? Copy the complete source line.",
+   "production_focus": "cat src/artifact.rs",
+   "v2_protocol_focus": "where is expires_at compared with created_at",
+   "expected": "        if expires_at <= created_at {"
+  },
+  {
+   "id": "ep006v3-08",
+   "fixture": "source-artifact-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line defines how long a tombstone is retained before collection? Copy the complete source line.",
+   "production_focus": "cat src/artifact.rs",
+   "v2_protocol_focus": "how long is a tombstone retained",
+   "expected": "const TOMBSTONE_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;"
+  },
+  {
+   "id": "ep006v3-09",
+   "fixture": "source-projection-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line defines the function that computes a validated fitting prefix? Copy the complete source line.",
+   "production_focus": "cat src/projection.rs",
+   "v2_protocol_focus": "where is fitting_prefix_validated defined",
+   "expected": "fn fitting_prefix_validated(text: &str, spec: ProjectionSpec, limit: u64) -> usize {"
+  },
+  {
+   "id": "ep006v3-10",
+   "fixture": "source-projection-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line begins the definition of the function deciding whether a plan fits? Copy the complete source line.",
+   "production_focus": "cat src/projection.rs",
+   "v2_protocol_focus": "where is plan_fits defined",
+   "expected": "fn plan_fits("
+  },
+  {
+   "id": "ep006v3-11",
+   "fixture": "source-mcp-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line defines the function that resynchronizes the reader after an oversized frame? Copy the complete source line.",
+   "production_focus": "cat src/mcp.rs",
+   "v2_protocol_focus": "how does drain_line resynchronize an oversized frame",
+   "expected": "fn drain_line<R: BufRead>(reader: &mut R) -> Result<(), SurfaceError> {"
+  },
+  {
+   "id": "ep006v3-12",
+   "fixture": "source-mcp-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line defines the maximum protocol message size accepted on the wire? Copy the complete source line.",
+   "production_focus": "cat src/mcp.rs",
+   "v2_protocol_focus": "what is the maximum message size accepted on the wire",
+   "expected": "const MAX_MESSAGE_BYTES: usize = 1024 * 1024;"
+  },
+  {
+   "id": "ep006v3-13",
+   "fixture": "source-cli-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line carries the error text emitted when two configured roots share an identifier? Copy the complete source line.",
+   "production_focus": "cat src/cli.rs",
+   "v2_protocol_focus": "what does the parser say when two roots share an ID",
+   "expected": "                        \"root IDs must be nonempty and unique\","
+  },
+  {
+   "id": "ep006v3-14",
+   "fixture": "source-cli-rs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line defines the serialized schema version of the command-line surface? Copy the complete source line.",
+   "production_focus": "cat src/cli.rs",
+   "v2_protocol_focus": "which schema version does the CLI serialize",
+   "expected": "const CLI_SCHEMA_VERSION: &str = \"distill.cli/v2\";"
+  },
+  {
+   "id": "ep006v3-15",
+   "fixture": "source-corpus-lib-mjs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line computes the hexadecimal SHA-256 digest of a byte buffer? Copy the complete source line.",
+   "production_focus": "cat evaluation/corpus/lib.mjs",
+   "v2_protocol_focus": "how is the sha256 digest of a fixture computed",
+   "expected": "  return createHash(\"sha256\").update(bytes).digest(\"hex\");"
+  },
+  {
+   "id": "ep006v3-16",
+   "fixture": "source-corpus-lib-mjs",
+   "shape": "source-file",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line exports the function computing a percentile over sorted values? Copy the complete source line.",
+   "production_focus": "cat evaluation/corpus/lib.mjs",
+   "v2_protocol_focus": "where is the percentile helper exported",
+   "expected": "export function percentile(sortedValues, fraction) {"
+  },
+  {
+   "id": "ep006v3-17",
+   "fixture": "diff-git-two-commits",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which added line enforces the total visible budget over the rendered envelope? Copy the complete source line including its diff marker.",
+   "production_focus": "git --no-pager diff 8e6626d..5f228cd",
+   "v2_protocol_focus": "where is the total visible limit enforced on the envelope",
+   "expected": "+    if count_visible(&envelope, budget.unit) > budget.total_visible_limit {"
+  },
+  {
+   "id": "ep006v3-18",
+   "fixture": "diff-git-two-commits",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which diff file header introduces the new envelope test module? Copy the complete source line.",
+   "production_focus": "git --no-pager diff 8e6626d..5f228cd",
+   "v2_protocol_focus": "which file header introduces the envelope tests",
+   "expected": "diff --git a/src/surface/envelope/tests.rs b/src/surface/envelope/tests.rs"
+  },
+  {
+   "id": "ep006v3-19",
+   "fixture": "diff-git-show",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line names the commit identifier this shown patch belongs to? Copy the complete source line.",
+   "production_focus": "git --no-pager show 5f228cd",
+   "v2_protocol_focus": "which commit identifier does this patch belong to",
+   "expected": "commit 5f228cda3c0215c8ce61907350e6c7da37896584"
+  },
+  {
+   "id": "ep006v3-20",
+   "fixture": "diff-git-show",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which added line wraps the artifact recovery instruction in a JSON value? Copy the complete source line including its diff marker.",
+   "production_focus": "git --no-pager show 5f228cd",
+   "v2_protocol_focus": "where is the recovery instruction built as json",
+   "expected": "+        json!(format!(\"distill artifact get {}\", outcome.artifact.id)),"
+  },
+  {
+   "id": "ep006v3-21",
+   "fixture": "diff-git-log-patch",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which line names the commit identifier that isolated artifact verification? Copy the complete source line.",
+   "production_focus": "git --no-pager log -p -1 e06dbf9",
+   "v2_protocol_focus": "which commit isolated artifact verification",
+   "expected": "commit e06dbf94ae3515f074f87b0ed22bbb9b1255d54d"
+  },
+  {
+   "id": "ep006v3-22",
+   "fixture": "diff-git-log-patch",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which added line defines the exact-digest verification function? Copy the complete source line including its diff marker.",
+   "production_focus": "git --no-pager log -p -1 e06dbf9",
+   "v2_protocol_focus": "where is verify_exact_digest defined",
+   "expected": "+pub(super) fn verify_exact_digest("
+  },
+  {
+   "id": "ep006v3-23",
+   "fixture": "diff-git-scoped",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which added line defines the lineage chain digest function? Copy the complete source line including its diff marker.",
+   "production_focus": "git --no-pager diff 2272231..5f228cd -- src/",
+   "v2_protocol_focus": "where is the lineage chain digest computed",
+   "expected": "+pub(super) fn lineage_chain_sha256(previous: &str, sequence: u64, receipt_json: &[u8]) -> String {"
+  },
+  {
+   "id": "ep006v3-24",
+   "fixture": "diff-git-scoped",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which added import line gives the lifecycle module its nonnegative helper? Copy the complete source line including its diff marker.",
+   "production_focus": "git --no-pager diff 2272231..5f228cd -- src/",
+   "v2_protocol_focus": "which import does the lifecycle module gain",
+   "expected": "+use super::{GcReport, TOMBSTONE_TTL_SECONDS, integrity::nonnegative_u64};"
+  },
+  {
+   "id": "ep006v3-25",
+   "fixture": "diff-git-format-patch",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "production_first",
+   "question": "Which line carries the subject of this formatted patch? Copy the complete source line.",
+   "production_focus": "git --no-pager format-patch --stdout -1 5f228cd",
+   "v2_protocol_focus": "what is the subject of this formatted patch",
+   "expected": "Subject: [PATCH] refactor(adapters): centralize surface contracts"
+  },
+  {
+   "id": "ep006v3-26",
+   "fixture": "diff-git-format-patch",
+   "shape": "unified-diff",
+   "provider": "claude",
+   "invocation_order": "raw_first",
+   "question": "Which added line defines the shared default request constructor? Copy the complete source line including its diff marker.",
+   "production_focus": "git --no-pager format-patch --stdout -1 5f228cd",
+   "v2_protocol_focus": "where is default_request defined",
+   "expected": "+pub(crate) fn default_request(request_id: String, source: Source, budget: Budget) -> Request {"
+  }
+ ]
+}
