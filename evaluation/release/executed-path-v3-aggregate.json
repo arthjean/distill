@@ -1,0 +1,55 @@
+{
+  "schema_version": "distill.executed-path-aggregate/v2",
+  "qualification_id": "executed-path-v3-20260804",
+  "produced_at": "2026-08-04T09:59:28.781Z",
+  "status": "COMPLETE",
+  "claim_under_test": "At the budget the Codex hook applies, with the focus production derives, the executed path answers the same questions the unbounded observation answers.",
+  "report_sha256": "b170ec7d96d3d92c7654651cd1ed58436824de2029a7e4fa812533d58edc371f",
+  "sample_size": 26,
+  "raw_successes": 26,
+  "production_successes": 17,
+  "delta_percentage_points": 34.61538461538461,
+  "parity_threshold_percentage_points": 10,
+  "parity": false,
+  "deterministic_retention": {
+    "raw": 26,
+    "production": 17,
+    "per_shape": {
+      "stack-trace": {
+        "raw": 2,
+        "production": 1,
+        "total": 2
+      },
+      "terminal-log": {
+        "raw": 2,
+        "production": 0,
+        "total": 2
+      },
+      "api-json": {
+        "raw": 2,
+        "production": 2,
+        "total": 2
+      },
+      "source-file": {
+        "raw": 10,
+        "production": 9,
+        "total": 10
+      },
+      "unified-diff": {
+        "raw": 10,
+        "production": 5,
+        "total": 10
+      }
+    }
+  },
+  "predecessor": {
+    "qualification_id": "executed-path-v2-20260804",
+    "result": "GO at 88.46 points, baseline 2 of 26 against projected 25 of 26",
+    "comparison_is_cross_run": true
+  },
+  "limitations": [
+    "The closed v5 protocol balanced two providers so that one host's parsing or formatting quirks could not drive the result. That control is absent here. It is materially less damaging under this comparator than under a raw-versus-projected design, because a host quirk would have to discriminate between two payloads drawn from the same model and the same question, which the invocation-order counterbalance controls. Every claim resting on this evidence remains scoped to Claude Code at the pinned model identity, and a second-host arm requires a new preregistration rather than an amendment to this one.",
+    "v3 does not restate the v2 baseline or projected numbers as its own. Any comparison to v2 is labelled cross-run in the report.",
+    "Not corrected. It is a real property of the alternative this release is compared against."
+  ]
+}
