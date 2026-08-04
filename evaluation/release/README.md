@@ -228,6 +228,64 @@ applies, on this real corpus, with Claude Code at `claude-opus-5`, the executed
 could not. It says nothing about parity with unbounded context, which was
 deliberately not measured, and it is scoped to one model host.
 
+## Executed-path qualification v3
+
+v2 left two questions open and said so in its own comparator: it never scored
+the unbounded observation, and the focus it scored was hand written. v3 closes
+both on the same corpus, the same 26 questions, the same rubric, the same host
+and the same budget. Its two arms are `raw`, the complete observation with no
+Distill in the path, and `production`, the executed `auto/v1` default under the
+focus `derived_focus` builds from the tool input Codex records.
+
+v3 is a measurement, not a release gate. Its parity threshold was declared
+before execution and its result is published in either direction.
+
+### Result
+
+`COMPLETE`, and **not parity**. The complete sample ran: 52 invocations of 52,
+no early termination, no provider error. Preregistration was committed at
+`3526d18` and consumed at `ecc5275`, in that order, before execution.
+
+| | `raw`, unbounded | `production`, executed path |
+|---|---|---|
+| Exact answers | 26 of 26 | 17 of 26 |
+| Answer line retained | 26 of 26 | 17 of 26 |
+| Budget utilization | not applicable | 100% median |
+
+The delta is 34.6 points against a declared parity threshold of 10, so the
+executed path under a production focus does **not** reach parity with the
+unbounded observation on this sample.
+
+Two facts qualify that number, and both are visible in the report. First, the
+model arm reproduces the deterministic arm exactly: zero successes without the
+retained answer line and zero failures with it, in both arms. The loss is
+entirely retention, not model capability, and prior answerability contributed
+nothing. Second, the raw arm scored 26 of 26 on observations up to roughly
+27,000 tokens, so no context-rot effect appeared at these sizes to offset the
+loss.
+
+The loss is concentrated by shape: unified diffs retain 5 of 10, terminal logs
+0 of 2, stack traces 1 of 2, source files 9 of 10, API JSON 2 of 2. The nine
+lost tasks share one cause, which the preregistered focus values make plain:
+a focus derived from a command line describes the command, not the intent
+(`git --no-pager diff 8e6626d..5f228cd`), so it carries no lexical signal the
+scorer can use. The same corpus under the v2 hand-written focus retains 25 of
+26, and with no focus at all 13 of 26.
+
+Model identity balance reports an asymmetry of 3 on the auxiliary Haiku and 0
+on the requested `claude-opus-5`, which ran all 26 invocations of each arm.
+
+Receipts are preserved as `executed-path-v3-report.json`,
+`executed-path-v3-execution-ledger.json` and `executed-path-v3-aggregate.json`,
+outside the closed `evidence/` tree, relabelling and overwriting nothing.
+
+The claim this evidence supports, and no more: at the budget the Codex hook
+applies, on this real corpus, with Claude Code at `claude-opus-5`, the executed
+path under the focus production derives answers 17 of the 26 questions the
+unbounded observation answers. It does not support a parity claim, and the gap
+is a property of focus derivation on the Codex surface rather than of the
+projection policy, which loses nothing the retained content contains.
+
 ## Native surface contract v2
 
 `docs/integrations/cli-conformance-v2.json` and
