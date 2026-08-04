@@ -22,7 +22,10 @@ const EXECUTED_PROFILE: &str = distill::AUTO_PROFILE;
 /// The executed Codex hook default: 2250 total visible tokens with a 450-token
 /// reserved envelope, so 1800 tokens of payload.
 const HOOK_TOTAL_VISIBLE_LIMIT: u64 = 2_250;
-const HOOK_RESERVED_ENVELOPE: u64 = 450;
+/// The adapter default. It is not slack: the envelope carries the payload as an
+/// escaped JSON string, so its cost scales with the payload and reaches 621
+/// tokens on this corpus.
+const HOOK_RESERVED_ENVELOPE: u64 = 800;
 const HOOK_PAYLOAD_LIMIT: u64 = HOOK_TOTAL_VISIBLE_LIMIT - HOOK_RESERVED_ENVELOPE;
 
 /// EP-002 requires a median budget utilization of at least 85% on over-budget
@@ -496,4 +499,128 @@ fn distill_focus(command: &[String]) -> String {
         focus.truncate(boundary);
     }
     focus
+}
+
+/// The whole Codex `active` path, end to end, on every real fixture.
+///
+/// The engine-level tests above measure the payload. They cannot see the
+/// envelope the adapter wraps around it, whose cost scales with the payload
+/// once the projector fills its budget. Four source fixtures returned
+/// `invariant_breach` instead of a projection before the reserve was corrected,
+/// and no test observed it, because none of them ran the adapter.
+#[test]
+fn the_codex_active_path_projects_every_real_fixture() {
+    let temp = tempfile::TempDir::new().expect("temp");
+    let store = temp.path().join("store/artifacts.db");
+    let store_directory = store.parent().expect("parent");
+    fs::create_dir_all(store_directory).expect("store directory");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(store_directory, fs::Permissions::from_mode(0o700))
+            .expect("private store directory");
+    }
+    let mut projected = 0_usize;
+    for (fixture, bytes) in real_corpus() {
+        let body = String::from_utf8_lossy(&bytes).into_owned();
+        let event = serde_json::json!({
+            "schema_version": "codex.post-tool-use/v2",
+            "session_id": "real-corpus",
+            "cwd": "/tmp",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_use_id": fixture.id,
+            "tool_input": {"command": fixture.command.join(" ")},
+            "tool_response": body,
+        });
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_distill"))
+            .args([
+                "--store",
+                &store.display().to_string(),
+                "codex-hook",
+                "--mode",
+                "active",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                child
+                    .stdin
+                    .take()
+                    .expect("stdin")
+                    .write_all(event.to_string().as_bytes())?;
+                child.wait_with_output()
+            })
+            .expect("codex hook");
+        assert!(output.status.success(), "{} exited non-zero", fixture.id);
+        let stdout = String::from_utf8(output.stdout).expect("hook stdout");
+        if stdout.trim().is_empty() {
+            // Exact fidelity: the observation already fits and passes through.
+            continue;
+        }
+        let response: serde_json::Value = serde_json::from_str(&stdout).expect("hook response");
+        let reason = response["reason"].as_str().expect("blocking feedback");
+        let envelope: serde_json::Value = serde_json::from_str(reason).expect("envelope");
+        assert!(
+            envelope.get("error").is_none(),
+            "{} returned {} instead of a projection",
+            fixture.id,
+            envelope["error"]["code"]
+        );
+        assert!(
+            envelope.get("projection").is_some(),
+            "{} has no payload",
+            fixture.id
+        );
+        projected += 1;
+    }
+    assert!(
+        projected > 0,
+        "no real fixture exercised the projecting path"
+    );
+}
+
+/// A diff is a list of independent edits, so a budget spent on its opening
+/// hunks is a budget spent on one edit. Selection in source order retained 34%
+/// of the bytes of the diff fixtures and 0 of their 10 answer lines, which is
+/// worse than chance; ranking lines inside their hunk spreads the same budget.
+#[test]
+fn diff_selection_spreads_across_the_whole_observation() {
+    let (_directory, engine) = engine();
+    let mut measured = 0_usize;
+    for (fixture, bytes) in real_corpus() {
+        if fixture.shape != "unified-diff" {
+            continue;
+        }
+        let outcome = engine
+            .handle(request(&fixture.id, bytes.clone()))
+            .unwrap_or_else(|failure| panic!("{} failed: {failure}", fixture.id));
+        if outcome.receipt.fidelity == Fidelity::Exact {
+            continue;
+        }
+        measured += 1;
+        let source_length = bytes.len() as u64;
+        let retained = &outcome.receipt.retained_spans;
+        let last_end = retained.last().expect("retained spans").end;
+        let covered_second_half = retained
+            .iter()
+            .any(|span| span.start >= source_length / 2 && span.end < source_length);
+        assert!(
+            covered_second_half,
+            "{}: selection never reached past the midpoint (last span ends at {last_end} of {source_length})",
+            fixture.id
+        );
+        assert!(
+            retained.len() >= 4,
+            "{}: {} retained spans, too concentrated to cover independent hunks",
+            fixture.id,
+            retained.len()
+        );
+    }
+    assert!(
+        measured >= 4,
+        "{measured} over-budget diff fixtures measured"
+    );
 }

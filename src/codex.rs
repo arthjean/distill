@@ -13,7 +13,14 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
+mod session;
+
 pub(crate) const HOOK_SCHEMA_VERSION: &str = "codex.post-tool-use/v2";
+/// The events the adapter is installed on. `PostToolUse` carries observations;
+/// `UserPromptSubmit` carries the intent they are read for.
+pub(crate) const TOOL_EVENT: &str = "PostToolUse";
+pub(crate) const PROMPT_EVENT: &str = "UserPromptSubmit";
+const MAX_SESSION_ID_BYTES: usize = 256;
 const PROJECTION_SCHEMA_VERSION: &str = "distill.codex-projection/v1";
 pub(crate) const HOST_OUTPUT_CAP_TOKENS: u64 = 2_500;
 pub(crate) const SAFE_OUTPUT_CAP_TOKENS: u64 = HOST_OUTPUT_CAP_TOKENS * 9 / 10;
@@ -22,7 +29,22 @@ pub(crate) const SETUP_TIMEOUT_SECONDS: u64 = 30;
 pub(crate) const SETUP_STATUS_MESSAGE: &str = "Distill context projection v1";
 #[cfg(test)]
 pub(crate) const SUPPORTED_MODES: &[&str] = &["off", "observe", "active"];
-const DEFAULT_RESERVED_TOKENS: u64 = 450;
+/// What the hook envelope costs around the payload.
+///
+/// The cost is not constant. Roughly 165 tokens are structural, and the rest
+/// scales with the payload, because the projection is carried as a JSON string
+/// and every quote, backslash, and newline it contains is escaped before the
+/// host counts it. On the real corpus the total reaches 621 tokens, against the
+/// 450 this reserved when a payload of 44 tokens left hundreds of tokens of
+/// slack and no shortfall could surface. Once the projector began filling its
+/// budget the payload reached its limit exactly, the envelope check failed the
+/// whole outcome rather than shrinking it, and four source fixtures returned
+/// `invariant_breach` instead of a projection.
+///
+/// The reserve carries about a third of headroom over the measured worst case.
+/// The check that follows the render stays fail-closed for content that escapes
+/// more densely than anything in the corpus.
+const DEFAULT_RESERVED_TOKENS: u64 = 800;
 const MAX_HOOK_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +96,17 @@ struct PostToolUseEvent {
     tool_response: Value,
 }
 
+/// The event that states why the turn exists. It carries no observation, so it
+/// never projects: it records the intent `PostToolUse` will read.
+#[derive(Debug, Deserialize)]
+struct UserPromptSubmitEvent {
+    #[serde(default, alias = "hook_schema_version")]
+    schema_version: Option<String>,
+    session_id: String,
+    hook_event_name: String,
+    prompt: String,
+}
+
 pub(crate) fn run<R: Read, W: Write>(
     config: EngineConfig,
     mut args: VecDeque<String>,
@@ -121,10 +154,29 @@ pub(crate) fn run<R: Read, W: Write>(
         );
     }
 
-    let event = match read_event(input) {
-        Ok(event) => event,
+    let payload = match read_payload(input) {
+        Ok(payload) => payload,
         Err((code, message)) => {
             return write_feedback(output, &compact_feedback(code, message, None));
+        }
+    };
+    // The intent event carries no observation and produces no model-visible
+    // output: it only records what the caller asked for, so the next observation
+    // of this session can be projected against it.
+    if payload.get("hook_event_name").and_then(Value::as_str) == Some(PROMPT_EVENT) {
+        return record_intent(&config, payload, output);
+    }
+    let event: PostToolUseEvent = match serde_json::from_value(payload) {
+        Ok(event) => event,
+        Err(_) => {
+            return write_feedback(
+                output,
+                &compact_feedback(
+                    FailureCode::InvalidRequest,
+                    "PostToolUse hook JSON is malformed",
+                    None,
+                ),
+            );
         }
     };
     if let Err((code, message)) = validate_event(&event) {
@@ -146,6 +198,9 @@ pub(crate) fn run<R: Read, W: Write>(
         Ok(source) => source,
         Err(failure) => return write_mode_failure(output, mode, &failure),
     };
+    // The focus is resolved before the engine takes the configuration, because
+    // session intent lives beside the store rather than inside it.
+    let focus = focus_for(&config.store_path, &event);
     let engine = match Engine::new(config) {
         Ok(engine) => engine,
         Err(failure) => return write_mode_failure(output, mode, &failure),
@@ -157,7 +212,7 @@ pub(crate) fn run<R: Read, W: Write>(
             media_type: Some("application/json".to_owned()),
         },
         budget_for(CountUnit::Tokens, total_tokens, reserved_tokens),
-        derived_focus(&event.tool_input),
+        focus,
     );
     let handled = catch_unwind(AssertUnwindSafe(|| engine.handle(request)));
     let outcome = match handled {
@@ -196,7 +251,7 @@ pub(crate) fn run<R: Read, W: Write>(
     write_feedback(output, &projection)
 }
 
-fn read_event<R: Read>(input: &mut R) -> Result<PostToolUseEvent, (FailureCode, &'static str)> {
+fn read_payload<R: Read>(input: &mut R) -> Result<Value, (FailureCode, &'static str)> {
     let mut bytes = Vec::new();
     input
         .take(MAX_HOOK_INPUT_BYTES + 1)
@@ -216,6 +271,62 @@ fn read_event<R: Read>(input: &mut R) -> Result<PostToolUseEvent, (FailureCode, 
     })
 }
 
+/// Records the intent of a turn and returns no model-visible output.
+///
+/// Recording is best effort by design. A store that cannot hold the record
+/// leaves the hook exactly where it was: the next observation is projected
+/// against the focus its tool input derives.
+fn record_intent<W: Write>(
+    config: &EngineConfig,
+    payload: Value,
+    output: &mut W,
+) -> Result<(), SurfaceError> {
+    let event: UserPromptSubmitEvent = match serde_json::from_value(payload) {
+        Ok(event) => event,
+        Err(_) => {
+            return write_feedback(
+                output,
+                &compact_feedback(
+                    FailureCode::InvalidRequest,
+                    "UserPromptSubmit hook JSON is malformed",
+                    None,
+                ),
+            );
+        }
+    };
+    if event
+        .schema_version
+        .as_deref()
+        .is_some_and(|version| version != HOOK_SCHEMA_VERSION)
+        || event.hook_event_name != PROMPT_EVENT
+        || event.session_id.is_empty()
+        || event.session_id.len() > MAX_SESSION_ID_BYTES
+    {
+        return write_feedback(
+            output,
+            &compact_feedback(
+                FailureCode::SchemaUnsupported,
+                "unsupported UserPromptSubmit hook event",
+                None,
+            ),
+        );
+    }
+    session::record(&config.store_path, &event.session_id, &event.prompt);
+    Ok(())
+}
+
+/// The focus of an observation: the intent this session stated, and the tool
+/// input only when it stated none.
+///
+/// A command line names what ran, not what the caller wanted to know, which the
+/// executed-path v3 qualification measured at 17 retained answer lines of 26
+/// against 25 for an intent focus. Session intent therefore outranks it, and
+/// the derivation from tool input remains the fallback for a session that
+/// recorded nothing.
+fn focus_for(store_path: &std::path::Path, event: &PostToolUseEvent) -> Option<String> {
+    session::recall(store_path, &event.session_id).or_else(|| derived_focus(&event.tool_input))
+}
+
 fn validate_event(event: &PostToolUseEvent) -> Result<(), (FailureCode, &'static str)> {
     if event
         .schema_version
@@ -227,7 +338,7 @@ fn validate_event(event: &PostToolUseEvent) -> Result<(), (FailureCode, &'static
             "unsupported Codex hook schema version",
         ));
     }
-    if event.hook_event_name != "PostToolUse" {
+    if event.hook_event_name != TOOL_EVENT {
         return Err((
             FailureCode::SchemaUnsupported,
             "hook event is not PostToolUse",
@@ -429,6 +540,110 @@ mod tests {
             &mut output,
         );
         (result, output)
+    }
+
+    fn prompt_event(prompt: &str) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "schema_version": HOOK_SCHEMA_VERSION,
+            "session_id": "session",
+            "turn_id": "turn",
+            "cwd": "/workspace",
+            "hook_event_name": PROMPT_EVENT,
+            "prompt": prompt,
+        }))
+        .expect("prompt event")
+    }
+
+    /// The two events together: an observation projected against the intent the
+    /// caller stated, rather than against the command that produced it.
+    #[test]
+    fn session_intent_outranks_the_command_a_tool_input_names() {
+        let temp = TempDir::new().expect("temp");
+        // Source-shaped output: it does not aggregate, so nothing but selection
+        // decides what survives, and the answer sits in the omitted middle.
+        let mut observation = (0..300)
+            .map(|index| {
+                format!(
+                    "pub fn routine_{index:04}(argument: u32) -> u32 {{ argument + {index} }}\n"
+                )
+            })
+            .collect::<String>();
+        observation.push_str("pub fn redistributable_widget(seed: u32) -> u32 { seed }\n");
+        observation.push_str(
+            &(300..600)
+                .map(|index| {
+                    format!(
+                        "pub fn routine_{index:04}(argument: u32) -> u32 {{ argument + {index} }}\n"
+                    )
+                })
+                .collect::<String>(),
+        );
+
+        // Without intent the focus is the command, which says nothing about a
+        // widget, so the answer sits in the omitted middle.
+        let (result, output) = invoke(config(&temp), "active", &event("Bash", json!(observation)));
+        assert!(result.is_ok());
+        let response: Value = serde_json::from_slice(&output).expect("response");
+        let envelope: Value =
+            serde_json::from_str(response["reason"].as_str().expect("reason")).expect("envelope");
+        assert!(
+            !envelope["projection"]
+                .as_str()
+                .expect("projection")
+                .contains("pub fn redistributable_widget")
+        );
+
+        // The same observation, in a session that stated what it was looking
+        // for. The intent event itself returns nothing to the model.
+        let intent_config = config(&temp);
+        let (result, output) = invoke(
+            intent_config,
+            "active",
+            &prompt_event("where is the redistributable widget"),
+        );
+        assert!(result.is_ok());
+        assert!(output.is_empty(), "the intent event must stay silent");
+
+        let (result, output) = invoke(config(&temp), "active", &event("Bash", json!(observation)));
+        assert!(result.is_ok());
+        let response: Value = serde_json::from_slice(&output).expect("response");
+        let envelope: Value =
+            serde_json::from_str(response["reason"].as_str().expect("reason")).expect("envelope");
+        assert!(
+            envelope["projection"]
+                .as_str()
+                .expect("projection")
+                .contains("pub fn redistributable_widget"),
+            "session intent did not reach the projection"
+        );
+    }
+
+    #[test]
+    fn a_malformed_or_foreign_intent_event_never_fails_the_hook() {
+        let temp = TempDir::new().expect("temp");
+        let (result, output) = invoke(
+            config(&temp),
+            "active",
+            b"{\"hook_event_name\":\"UserPromptSubmit\"}",
+        );
+        assert!(result.is_ok());
+        let response: Value = serde_json::from_slice(&output).expect("response");
+        let envelope: Value =
+            serde_json::from_str(response["reason"].as_str().expect("reason")).expect("envelope");
+        assert_eq!(envelope["error"]["code"], "invalid_request");
+
+        let unknown = serde_json::to_vec(&json!({
+            "session_id": "session",
+            "cwd": "/workspace",
+            "hook_event_name": "SessionStart",
+        }))
+        .expect("unknown event");
+        let (result, output) = invoke(config(&temp), "active", &unknown);
+        assert!(result.is_ok());
+        let response: Value = serde_json::from_slice(&output).expect("response");
+        let envelope: Value =
+            serde_json::from_str(response["reason"].as_str().expect("reason")).expect("envelope");
+        assert_eq!(envelope["error"]["code"], "invalid_request");
     }
 
     #[test]

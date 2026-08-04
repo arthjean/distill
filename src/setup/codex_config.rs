@@ -22,17 +22,62 @@ struct CommandHook {
     status_message: String,
 }
 
+/// Installs the adapter on both events it needs.
+///
+/// `PostToolUse` carries the observations to project. `UserPromptSubmit` carries
+/// the intent they are read for, which the executed-path v3 qualification
+/// measured as the difference between 17 and 25 retained answer lines of 26.
+/// One command serves both: the binary routes on `hook_event_name`.
 pub(super) fn install(
     document: &mut Value,
     store_path: Option<&Path>,
     binary: &str,
     mode: codex::Mode,
 ) -> Result<ManagedEdit, SurfaceError> {
+    let command = hook_command(binary, store_path, mode);
+    let desired = serde_json::to_value(HookGroup {
+        matcher: codex::SETUP_MATCHER.to_owned(),
+        hooks: vec![CommandHook {
+            kind: "command".to_owned(),
+            command,
+            timeout: codex::SETUP_TIMEOUT_SECONDS,
+            status_message: codex::SETUP_STATUS_MESSAGE.to_owned(),
+        }],
+    })
+    .map_err(|_| SurfaceError::invalid("cannot serialize Codex hook configuration"))?;
+
+    // Both events are validated before either is mutated, so an ambiguous
+    // configuration never leaves the file half owned.
     let root = document
         .as_object_mut()
         .ok_or_else(|| SurfaceError::invalid("configuration root must be an object"))?;
     let hooks = document::object_entry(root, "hooks")?;
-    let groups = document::array_entry(hooks, "PostToolUse")?;
+    for event in [codex::TOOL_EVENT, codex::PROMPT_EVENT] {
+        validate_event_groups(document::array_entry(hooks, event)?)?;
+    }
+
+    let mut changed = false;
+    for event in [codex::TOOL_EVENT, codex::PROMPT_EVENT] {
+        let groups = document::array_entry(hooks, event)?;
+        match groups.iter_mut().find(|group| is_managed(group)) {
+            Some(existing) if *existing == desired => {}
+            Some(existing) => {
+                *existing = desired.clone();
+                changed = true;
+            }
+            None => {
+                groups.push(desired.clone());
+                changed = true;
+            }
+        }
+    }
+    Ok(ManagedEdit {
+        changed,
+        entry: desired,
+    })
+}
+
+fn validate_event_groups(groups: &[Value]) -> Result<(), SurfaceError> {
     if groups
         .iter()
         .any(|group| has_status(group) && !is_managed(group))
@@ -46,35 +91,7 @@ pub(super) fn install(
             "Codex configuration contains duplicate Distill hook entries",
         ));
     }
-
-    let desired = serde_json::to_value(HookGroup {
-        matcher: codex::SETUP_MATCHER.to_owned(),
-        hooks: vec![CommandHook {
-            kind: "command".to_owned(),
-            command: hook_command(binary, store_path, mode),
-            timeout: codex::SETUP_TIMEOUT_SECONDS,
-            status_message: codex::SETUP_STATUS_MESSAGE.to_owned(),
-        }],
-    })
-    .map_err(|_| SurfaceError::invalid("cannot serialize Codex hook configuration"))?;
-    if let Some(existing) = groups.iter_mut().find(|group| is_managed(group)) {
-        if *existing == desired {
-            return Ok(ManagedEdit {
-                changed: false,
-                entry: desired,
-            });
-        }
-        *existing = desired.clone();
-        return Ok(ManagedEdit {
-            changed: true,
-            entry: desired,
-        });
-    }
-    groups.push(desired.clone());
-    Ok(ManagedEdit {
-        changed: true,
-        entry: desired,
-    })
+    Ok(())
 }
 
 fn has_status(group: &Value) -> bool {

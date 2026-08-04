@@ -1,0 +1,143 @@
+{
+  "schema_version": "distill.codex-hook-conformance/v3",
+  "supersedes": "distill.codex-hook-conformance/v2",
+  "source": "https://learn.chatgpt.com/docs/hooks.md",
+  "adapter_input_version": "codex.post-tool-use/v2",
+  "host_output_cap": {
+    "documented_approximate_tokens": 2500,
+    "distill_maximum_tokens": 2250,
+    "safety_margin_percent": 10,
+    "reserved_envelope_tokens": 800,
+    "reserved_envelope_rationale": "The envelope carries the payload as an escaped JSON string, so its cost scales with the payload and reached 621 tokens on the real corpus. The previous 450 was measured when payloads were 44 tokens and could not surface the shortfall."
+  },
+  "setup": {
+    "matcher": "*",
+    "timeout_seconds": 30,
+    "status_message": "Distill context projection v1",
+    "command_arguments": [
+      "codex-hook",
+      "--mode",
+      "active"
+    ],
+    "installed_events": [
+      "PostToolUse",
+      "UserPromptSubmit"
+    ],
+    "one_command_for_both_events": true
+  },
+  "surfaces": [
+    {
+      "category": "shell",
+      "matcher": "Bash",
+      "status": "supported",
+      "fixture": "Bash"
+    },
+    {
+      "category": "unified_exec",
+      "matcher": "Bash",
+      "status": "supported",
+      "fixture": "Bash"
+    },
+    {
+      "category": "patch",
+      "matcher": "apply_patch|Edit|Write",
+      "status": "supported",
+      "fixture": "apply_patch"
+    },
+    {
+      "category": "mcp",
+      "matcher": "mcp__.*",
+      "status": "supported",
+      "fixture": "mcp__filesystem__read_file"
+    },
+    {
+      "category": "local_function",
+      "matcher": "update_plan|Agent",
+      "status": "supported",
+      "fixture": "update_plan"
+    },
+    {
+      "category": "hosted_tools",
+      "matcher": null,
+      "status": "no_event",
+      "diagnostic": null,
+      "limitation": "Codex does not invoke the local function-tool hook path."
+    },
+    {
+      "category": "specialized_bypass",
+      "matcher": null,
+      "status": "no_event",
+      "diagnostic": null,
+      "limitation": "Specialized tool paths may opt out of the default hook path."
+    },
+    {
+      "category": "unsupported_event_received",
+      "matcher": "*",
+      "status": "diagnostic",
+      "fixture": "WebSearch",
+      "diagnostic": "unsupported_surface"
+    }
+  ],
+  "modes": {
+    "off": "No event decoding, capture, evaluation, or replacement.",
+    "observe": "Capture and evaluate supported events without replacing the original result.",
+    "active": "Replace supported over-budget results with bounded projection feedback; never label a failed projection as success."
+  },
+  "preservation": {
+    "owner": "Engine::handle",
+    "default_profile": "auto/v1",
+    "derivation": "shape-detected from a bounded prefix of the observation",
+    "policy_version": "distill.preservation/v2",
+    "declared_content_class": false,
+    "distributing_shapes": {
+      "unified-diff/v1": "ranks lines within their hunk so selection spreads across every hunk instead of filling the first ones"
+    }
+  },
+  "focus": {
+    "owner": "Engine::handle",
+    "optional": true,
+    "max_bytes": 256,
+    "content_class": "literal UTF-8 text",
+    "derived_from": "session intent recorded by UserPromptSubmit, and tool_input only when the session recorded none",
+    "derived_fields": [
+      "command",
+      "file_path",
+      "path",
+      "pattern",
+      "query"
+    ],
+    "underivable_input_behavior": "request proceeds without a focus",
+    "receipt_field": "preservation.focus_applied",
+    "precedence": [
+      "UserPromptSubmit prompt",
+      "tool_input fields"
+    ],
+    "session_record": {
+      "location": "a private directory beside the artifact store",
+      "name": "sha256 of the session identifier",
+      "permissions": "0700 directory, 0600 record",
+      "ttl_hours": 12,
+      "content_class": "untrusted inert text, bounded to max_bytes, never logged"
+    },
+    "measured_retention": {
+      "corpus": "evaluation/corpus/real",
+      "sample": "the 26 executed-path v3 questions",
+      "intent_focus": 26,
+      "tool_input_focus": 18,
+      "no_focus": 16,
+      "note": "Measured after the unified-diff distribution fix. The v3 qualification measured 25, 17 and 13 before it."
+    }
+  },
+  "events": {
+    "PostToolUse": {
+      "role": "carries the observation to project",
+      "adapter_input_version": "codex.post-tool-use/v2"
+    },
+    "UserPromptSubmit": {
+      "role": "carries the intent the observation is read for; records a session focus and returns no model-visible output",
+      "adapter_input_version": "codex.post-tool-use/v2",
+      "recorded_field": "prompt",
+      "failure_behavior": "a store that cannot hold the record leaves the request on its tool-input focus"
+    }
+  }
+}

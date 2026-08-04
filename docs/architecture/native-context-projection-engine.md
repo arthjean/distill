@@ -200,6 +200,14 @@ Byte budgets are exact. Token budgets accept only the versioned
 `cl100k_base@js-tiktoken-1.0.15` profile. An unknown tokenizer fails with
 `token_profile_unsupported`; there is no silent fallback.
 
+A shape whose sections are independent ranks its candidate lines within their
+section instead of accepting them in source order, and divides the reducer work
+limit among the sections it counted. A diff is the one such shape: no hunk
+explains another, so selection in source order spent the whole budget on the
+opening hunks and retained none of the ten answer lines the real corpus asks
+for, against 34% of the bytes. The other shapes carry meaning in their order and
+keep it.
+
 V1 does not include model-backed summarization, dynamic reducer plugins, AST
 parsers, or executable user projection code.
 

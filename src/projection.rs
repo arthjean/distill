@@ -22,6 +22,31 @@ pub(crate) use retrieval::Selection;
 /// crowding out the structure the shape policy found.
 const MAX_REDUCER_SPANS: usize = 256;
 
+/// How deep into each section a distributing shape offers candidates, given how
+/// many sections it has.
+///
+/// The work limit admits candidates in source order, so on a diff of 669
+/// changed lines only the first 256 were ever offered, and selection could not
+/// reach past the opening third whatever order it then applied. Dividing the
+/// same slots by the number of sections spreads them instead: a two-hunk diff
+/// still offers every line it has, and a fifty-hunk diff offers the opening of
+/// each. Nothing here is tuned to a corpus, and expansion widens the retained
+/// spans from whatever the depth admits.
+fn section_candidate_depth(sections: u32) -> u32 {
+    let sections = sections.max(1);
+    (MAX_REDUCER_SPANS as u32 / sections).max(1)
+}
+
+/// Counts the sections of a distributing shape, so the candidate depth can be
+/// divided among them before any line is ranked.
+fn count_sections(text: &str, shape: Shape) -> u32 {
+    text.split_inclusive('\n')
+        .filter(|line| shape.opens_section(line))
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
 /// The profile both product surfaces send: the policy is derived from the
 /// detected shape of the observation rather than declared by the caller.
 pub const AUTO_PROFILE: &str = "auto/v1";
@@ -143,6 +168,10 @@ struct Candidate {
     /// The rank the shape policy gave the line: a preferred line outranks the
     /// boundary spans every observation offers.
     structural: u8,
+    /// Where the line sits inside its section, for a shape whose sections are
+    /// independent. `u32::MAX` marks a line that carries no section rank, which
+    /// keeps boundary spans at the end of the order.
+    section_rank: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -818,6 +847,12 @@ fn analyze(
     let mut lines = 0_u64;
     let mut structural_count = 0_usize;
     let mut focused_count = 0_usize;
+    let mut section_rank = 0_u32;
+    let section_depth = if spec.shape.distributes() {
+        section_candidate_depth(count_sections(text, spec.shape))
+    } else {
+        u32::MAX
+    };
     for span in line_spans(source) {
         lines += 1;
         first.get_or_insert(span);
@@ -827,6 +862,16 @@ fn analyze(
         let class = spec.shape.classify(line, &lowercase);
         let matched = focus.map_or(0, |focus| focus.matches(&lowercase));
         focus::accumulate(&mut matched_lines, matched);
+        // A shape whose sections are independent ranks its lines within their
+        // section, so selection can spread across all of them instead of
+        // filling the first ones.
+        if spec.shape.distributes() {
+            if spec.shape.opens_section(line) {
+                section_rank = 0;
+            } else {
+                section_rank = section_rank.saturating_add(1);
+            }
+        }
         match class {
             LineClass::Mandatory => {
                 if mandatory.len() == MAX_REDUCER_SPANS {
@@ -844,7 +889,10 @@ fn analyze(
             // structure already filled the table.
             LineClass::Preferred | LineClass::Ordinary => {
                 let structural = u8::from(class == LineClass::Preferred);
-                let by_structure = structural > 0 && structural_count < MAX_REDUCER_SPANS;
+                let within_section_depth =
+                    !spec.shape.distributes() || section_rank <= section_depth;
+                let by_structure =
+                    structural > 0 && within_section_depth && structural_count < MAX_REDUCER_SPANS;
                 let by_focus = matched > 0 && focused_count < MAX_REDUCER_SPANS;
                 if by_structure || by_focus {
                     structural_count += usize::from(by_structure);
@@ -854,6 +902,11 @@ fn analyze(
                         matched,
                         lexical: 0,
                         structural,
+                        section_rank: if spec.shape.distributes() {
+                            section_rank
+                        } else {
+                            0
+                        },
                     });
                 }
             }
@@ -881,9 +934,10 @@ fn analyze(
             matched: 0,
             lexical: 0,
             structural: 0,
+            section_rank: u32::MAX,
         });
     }
-    order_candidates(&mut candidates);
+    order_candidates(&mut candidates, spec.shape.distributes());
     Ok(Analysis {
         mandatory,
         candidates,
@@ -899,14 +953,15 @@ fn analyze(
 /// the same way. A focus no line carries scores nothing, and an observation read
 /// without one scores nothing either: both keep the source order the shape
 /// policy produced, so ordering can only take effect where it discriminates.
-fn order_candidates(candidates: &mut [Candidate]) {
-    if candidates.iter().all(|candidate| candidate.lexical == 0) {
+fn order_candidates(candidates: &mut [Candidate], distributes: bool) {
+    if !distributes && candidates.iter().all(|candidate| candidate.lexical == 0) {
         return;
     }
     candidates.sort_by_key(|candidate| {
         (
             std::cmp::Reverse(candidate.lexical),
             std::cmp::Reverse(candidate.structural),
+            candidate.section_rank,
             candidate.span.start,
             candidate.span.end,
         )

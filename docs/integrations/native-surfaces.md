@@ -31,11 +31,31 @@ that backup with `--restore`. Codex setup rejects `--root`; Claude setup rejects
 `--mode` and duplicate root IDs. These target-specific options fail before
 configuration mutation.
 
+The adapter is installed on two events. `PostToolUse` carries the observation
+to project. `UserPromptSubmit` carries the intent it is read for: the hook
+records the prompt as a session focus and returns nothing to the model, so the
+next observation of that session is projected against what the caller asked
+rather than against the command that produced it. On the real corpus this is the
+difference between 17 and 25 retained answer lines of 26. The record lives in a
+private directory beside the artifact store, named by the digest of the session
+identifier, bounded to the contract's focus limit, expired after twelve hours,
+and treated as untrusted inert text. A store that cannot hold it leaves the
+request on its tool-input focus: nothing here can fail a projection. The
+versioned matrix is
+[`codex-hook-conformance-v3.json`](codex-hook-conformance-v3.json); the closed
+v2 matrix remains unchanged.
+
+The adapter reserves 800 tokens for its envelope rather than 450. The envelope
+carries the projection as an escaped JSON string, so its cost scales with the
+payload and reaches 621 tokens on the real corpus. While payloads were 44 tokens
+the shortfall could not surface; once the projector filled its budget, four
+source fixtures returned `invariant_breach` instead of a projection.
+
 Codex replacement uses documented `PostToolUse` blocking feedback because
 `updatedMCPToolOutput` is parsed but unsupported. The adapter caps feedback at
 2,250 tokens against Codex's approximate 2,500-token model-visible hook-output
 limit. The current versioned matrix is
-[`codex-hook-conformance-v2.json`](codex-hook-conformance-v2.json). The closed
+[`codex-hook-conformance-v3.json`](codex-hook-conformance-v3.json). The closed
 v1 matrix remains unchanged. Hosted tools and specialized paths that do not
 emit `PostToolUse` remain blind spots and
 cannot produce a Distill diagnostic. One executable conformance test binds the

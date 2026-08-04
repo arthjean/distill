@@ -13,10 +13,17 @@ fn invoke(arguments: Vec<String>) -> Result<Value, SurfaceError> {
 #[test]
 fn codex_setup_conforms_to_adapter_and_versioned_fixture() {
     let fixture: Value = serde_json::from_str(include_str!(
-        "../../docs/integrations/codex-hook-conformance-v2.json"
+        "../../docs/integrations/codex-hook-conformance-v3.json"
     ))
     .expect("conformance fixture");
     assert_eq!(fixture["adapter_input_version"], codex::HOOK_SCHEMA_VERSION);
+    // The adapter is installed on both events, and the matrix pins which.
+    assert_eq!(
+        fixture["setup"]["installed_events"],
+        json!([codex::TOOL_EVENT, codex::PROMPT_EVENT])
+    );
+    assert!(fixture["events"][codex::TOOL_EVENT].is_object());
+    assert!(fixture["events"][codex::PROMPT_EVENT].is_object());
     assert_eq!(
         fixture["host_output_cap"]["documented_approximate_tokens"],
         codex::HOST_OUTPUT_CAP_TOKENS
@@ -43,6 +50,10 @@ fn codex_setup_conforms_to_adapter_and_versioned_fixture() {
     assert_eq!(focus["optional"], true);
     assert_eq!(focus["max_bytes"], distill::MAX_FOCUS_BYTES);
     assert_eq!(focus["derived_fields"], json!(codex::FOCUS_FIELDS));
+    assert_eq!(
+        focus["precedence"],
+        json!(["UserPromptSubmit prompt", "tool_input fields"])
+    );
     assert_eq!(focus["receipt_field"], "preservation.focus_applied");
     assert_eq!(fixture["setup"]["matcher"], codex::SETUP_MATCHER);
     assert_eq!(
@@ -155,6 +166,12 @@ fn codex_setup_is_dry_runnable_idempotent_and_exactly_reversible() {
             .as_str()
             .expect("hook command")
             .contains("'\"'\"'")
+    );
+    // The intent event is installed with the same command: the binary routes on
+    // `hook_event_name`, so one managed entry serves both.
+    assert_eq!(
+        installed_json["hooks"][codex::PROMPT_EVENT][0],
+        installed_json["hooks"][codex::TOOL_EVENT][0]
     );
     assert_eq!(fs::read(backup_path(&config)).expect("backup"), original);
     assert_eq!(

@@ -71,6 +71,32 @@ impl Shape {
         )
     }
 
+    /// Whether the sections of this shape are independent of one another.
+    ///
+    /// A diff is a list of edits: no hunk explains another, and an answer is as
+    /// likely to sit in the last as in the first. Selection in source order
+    /// therefore spends the whole budget on the opening hunks, which measured
+    /// worse than chance on the real corpus: 34% of the bytes retained, and 0 of
+    /// 10 answer lines. Ranking lines inside their hunk spreads the same budget
+    /// across every hunk instead.
+    ///
+    /// The other shapes are not lists of equals. A build log leads to its
+    /// errors, a source file opens with what it declares, a stack trace is
+    /// ordered by causation, so their source order carries meaning that
+    /// spreading would destroy.
+    pub(crate) fn distributes(self) -> bool {
+        matches!(self, Self::UnifiedDiff)
+    }
+
+    /// Whether this line opens a new section of a distributing shape.
+    pub(crate) fn opens_section(self, raw: &str) -> bool {
+        let trimmed = raw.trim_end_matches(['\n', '\r']);
+        match self {
+            Self::UnifiedDiff => is_hunk_header(trimmed) || trimmed.starts_with("diff --git "),
+            _ => false,
+        }
+    }
+
     /// Ranks one line under this shape. `raw` keeps the original bytes, because
     /// leading whitespace and the first character carry diff and source
     /// structure; `lowercase` is the normalized form the markers match.
